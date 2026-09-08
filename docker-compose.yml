@@ -1,0 +1,107 @@
+# Stack PoC — LDAP + GLPI
+# Usage : docker compose up -d
+# GLPI  : http://localhost:8080  (auto-install au premier démarrage)
+# PLA   : http://localhost:8081  (login DN : cn=admin,dc=univ-corse,dc=fr)
+# LDAP  : ldap://localhost:389   (bind : cn=admin,dc=univ-corse,dc=fr / mot de passe dans .env)
+
+name: bisgambiglia-poc
+
+services:
+  # ---------------------------------------------------------------- LDAP
+  ldap:
+    image: osixia/openldap:latest
+    container_name: poc-ldap
+    hostname: ldap.univ-corse.fr
+    environment:
+      LDAP_ORGANISATION: "Université de Corse Pasquale Paoli"
+      LDAP_DOMAIN: "univ-corse.fr"
+      LDAP_ADMIN_PASSWORD: "${LDAP_ADMIN_PASSWORD}"
+      LDAP_CONFIG_PASSWORD: "${LDAP_CONFIG_PASSWORD}"
+      LDAP_RFC2307BIS_SCHEMA: "true"
+      LDAP_REMOVE_INSTANCE_AFTER_POWEROFF: "true"
+    command: ["--copy-service"]
+    volumes:
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+      - ./ldap/bootstrap.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-bootstrap.ldif:ro
+    ports:
+      - "389:389"
+    networks:
+      - poc_net
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost -b '' -s base '(objectclass=*)' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ------------------------------------------------------- phpLDAPadmin
+  phpldapadmin:
+    image: osixia/phpldapadmin:latest
+    container_name: poc-phpldapadmin
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: ldap
+      PHPLDAPADMIN_HTTPS: "false"
+    ports:
+      - "8081:80"
+    networks:
+      - poc_net
+    depends_on:
+      ldap:
+        condition: service_healthy
+
+  # ------------------------------------------------------------------ DB
+  db:
+    image: mariadb:11
+    container_name: poc-db
+    environment:
+      MARIADB_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD}"
+      MARIADB_DATABASE: glpi
+      MARIADB_USER: glpi
+      MARIADB_PASSWORD: "${MARIADB_PASSWORD}"
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - poc_net
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------- GLPI
+  glpi:
+    image: glpi/glpi:11.0.8
+    container_name: poc-glpi
+    environment:
+      GLPI_DB_HOST: db
+      GLPI_DB_PORT: 3306
+      GLPI_DB_NAME: glpi
+      GLPI_DB_USER: glpi
+      GLPI_DB_PASSWORD: "${MARIADB_PASSWORD}"
+    volumes:
+      - glpi_config:/var/glpi/config
+      - glpi_files:/var/glpi/files
+      - glpi_marketplace:/var/glpi/marketplace
+    ports:
+      - "8080:80"
+    networks:
+      - poc_net
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  ldap_data:
+  ldap_config:
+  db_data:
+  glpi_config:
+  glpi_files:
+  glpi_marketplace:
+
+networks:
+  poc_net:
+    driver: bridge

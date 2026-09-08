@@ -1,0 +1,136 @@
+# Annuaire LDAP fictif — Université de Corse Pasquale Paoli
+# Chargé automatiquement au premier démarrage du conteneur (bootstrap osixia/openldap).
+# Base : dc=univ-corse,dc=fr — Admin : cn=admin,dc=univ-corse,dc=fr
+# NB : l'entrée de base dc=univ-corse,dc=fr est déjà créée par l'image (LDAP_DOMAIN).
+
+dn: ou=people,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: organizationalUnit
+ou: groups
+
+# ------------------------------------------------------------------ étudiants
+dn: uid=marie.paoli,ou=people,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: marie.paoli
+cn: Marie Paoli
+sn: Paoli
+givenName: Marie
+mail: marie.paoli@univ-corse.fr
+userPassword: marie2026
+title: Étudiante M2 DE
+
+dn: uid=jean.rossi,ou=people,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: jean.rossi
+cn: Jean Rossi
+sn: Rossi
+givenName: Jean
+mail: jean.rossi@univ-corse.fr
+userPassword: jean2026
+title: Étudiant M2 DE
+
+dn: uid=julie.martin,ou=people,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: julie.martin
+cn: Julie Martin
+sn: Martin
+givenName: Julie
+mail: julie.martin@univ-corse.fr
+userPassword: julie2026
+title: Étudiante L3 Info
+
+# ----------------------------------------------------------------- enseignants
+dn: uid=pierre.leoni,ou=people,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: pierre.leoni
+cn: Pierre Leoni
+sn: Leoni
+givenName: Pierre
+mail: pierre.leoni@univ-corse.fr
+userPassword: leoni2026
+title: Enseignant-chercheur
+
+dn: uid=claire.ferrari,ou=people,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: claire.ferrari
+cn: Claire Ferrari
+sn: Ferrari
+givenName: Claire
+mail: claire.ferrari@univ-corse.fr
+userPassword: claire2026
+title: Maître de conférences
+
+# ------------------------------------------------------- personnel administratif
+dn: uid=antoine.susini,ou=people,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: antoine.susini
+cn: Antoine Susini
+sn: Susini
+givenName: Antoine
+mail: antoine.susini@univ-corse.fr
+userPassword: susini2026
+title: Technicien DSI
+
+dn: uid=sophie.bernard,ou=people,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: sophie.bernard
+cn: Sophie Bernard
+sn: Bernard
+givenName: Sophie
+mail: sophie.bernard@univ-corse.fr
+userPassword: sophie2026
+title: Gestionnaire scolarité
+
+# ---------------------------------------------------------------------- groupes
+dn: cn=etudiants,ou=groups,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: groupOfNames
+cn: etudiants
+member: uid=marie.paoli,ou=people,dc=univ-corse,dc=fr
+member: uid=jean.rossi,ou=people,dc=univ-corse,dc=fr
+member: uid=julie.martin,ou=people,dc=univ-corse,dc=fr
+
+dn: cn=enseignants,ou=groups,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: groupOfNames
+cn: enseignants
+member: uid=pierre.leoni,ou=people,dc=univ-corse,dc=fr
+member: uid=claire.ferrari,ou=people,dc=univ-corse,dc=fr
+
+dn: cn=techniciens,ou=groups,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: groupOfNames
+cn: techniciens
+member: uid=antoine.susini,ou=people,dc=univ-corse,dc=fr
+
+dn: cn=administratifs,ou=groups,dc=univ-corse,dc=fr
+objectClass: top
+objectClass: groupOfNames
+cn: administratifs
+member: uid=sophie.bernard,ou=people,dc=univ-corse,dc=fr
