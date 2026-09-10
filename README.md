@@ -54,6 +54,15 @@ docker exec poc-ldap ldapsearch -x -H ldap://localhost \
   -LLL -b "dc=example,dc=org" "(uid=camille.dupont)"
 ```
 
+> ⚠️ L'image osixia n'importe `ldap/bootstrap.ldif` que si la base LDAP est vide au démarrage.
+> Si le conteneur a été recréé après une première initialisation, l'import est sauté
+> (le test ci-dessus ne renvoie rien). Dans ce cas, charger le LDIF à la main :
+> ```bash
+> docker exec poc-ldap sh -c 'ldapadd -x -c -H ldap://localhost \
+>   -D "cn=admin,dc=example,dc=org" -w "$LDAP_ADMIN_PASSWORD" \
+>   -f /container/service/slapd/assets/config/bootstrap/ldif/custom/50-bootstrap.ldif'
+> ```
+
 ## API REST GLPI (activée)
 
 L'API est activée avec login par identifiants, et le client API "full access from localhost"
@@ -95,7 +104,7 @@ curl http://localhost:8080/apirest.php/Ticket \
 | Filtre de connexion (login) | `(&(objectClass=inetOrgPerson)(uid=*))` |
 | Champ login | `uid` |
 | Champ nom | `sn` |
-| Champ prénom | `givenName` |
+| Champ prénom | `givenname` (en minuscules, sinon le prénom reste vide) |
 | Champ email | `mail` |
 | Bind DN (compte de lecture) | `cn=admin,dc=example,dc=org` |
 | Mot de passe bind | valeur de `LDAP_ADMIN_PASSWORD` |
