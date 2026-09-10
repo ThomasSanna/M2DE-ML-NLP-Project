@@ -1,8 +1,8 @@
 # Stack PoC — LDAP + GLPI
 # Usage : docker compose up -d
 # GLPI  : http://localhost:8080  (auto-install au premier démarrage)
-# PLA   : http://localhost:8081  (login DN : cn=admin,dc=univ-corse,dc=fr)
-# LDAP  : ldap://localhost:389   (bind : cn=admin,dc=univ-corse,dc=fr / mot de passe dans .env)
+# PLA   : http://localhost:8081  (login DN : cn=admin,dc=example,dc=org)
+# LDAP  : ldap://localhost:389   (bind : cn=admin,dc=example,dc=org / mot de passe dans .env)
 
 name: bisgambiglia-poc
 
@@ -11,10 +11,10 @@ services:
   ldap:
     image: osixia/openldap:latest
     container_name: poc-ldap
-    hostname: ldap.univ-corse.fr
+    hostname: ldap.example.org
     environment:
-      LDAP_ORGANISATION: "Université de Corse Pasquale Paoli"
-      LDAP_DOMAIN: "univ-corse.fr"
+      LDAP_ORGANISATION: "Organisation de test (exemple)"
+      LDAP_DOMAIN: "example.org"
       LDAP_ADMIN_PASSWORD: "${LDAP_ADMIN_PASSWORD}"
       LDAP_CONFIG_PASSWORD: "${LDAP_CONFIG_PASSWORD}"
       LDAP_RFC2307BIS_SCHEMA: "true"

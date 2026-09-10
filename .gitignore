@@ -1,4 +1,7 @@
 .env
+annuaire.ldif
+.playwright-mcp/
+rien.txt
 
 # Documents PDF (trop lourds pour le dépôt)
 doc/*.pdf

@@ -1,136 +1,137 @@
-# Annuaire LDAP fictif — Université de Corse Pasquale Paoli
+# Annuaire LDAP fictif — organisation de test (exemple)
 # Chargé automatiquement au premier démarrage du conteneur (bootstrap osixia/openldap).
-# Base : dc=univ-corse,dc=fr — Admin : cn=admin,dc=univ-corse,dc=fr
-# NB : l'entrée de base dc=univ-corse,dc=fr est déjà créée par l'image (LDAP_DOMAIN).
+# Base : dc=example,dc=org — Admin : cn=admin,dc=example,dc=org
+# NB : l'entrée de base dc=example,dc=org est déjà créée par l'image (LDAP_DOMAIN).
+# Tous les noms, UID et adresses mail sont fictifs (domaine réservé example.org).
 
-dn: ou=people,dc=univ-corse,dc=fr
+dn: ou=people,dc=example,dc=org
 objectClass: top
 objectClass: organizationalUnit
 ou: people
 
-dn: ou=groups,dc=univ-corse,dc=fr
+dn: ou=groups,dc=example,dc=org
 objectClass: top
 objectClass: organizationalUnit
 ou: groups
 
 # ------------------------------------------------------------------ étudiants
-dn: uid=marie.paoli,ou=people,dc=univ-corse,dc=fr
+dn: uid=camille.dupont,ou=people,dc=example,dc=org
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
 objectClass: inetOrgPerson
-uid: marie.paoli
-cn: Marie Paoli
-sn: Paoli
-givenName: Marie
-mail: marie.paoli@univ-corse.fr
-userPassword: marie2026
+uid: camille.dupont
+cn: Camille Dupont
+sn: Dupont
+givenName: Camille
+mail: thomassanna2e@gmail.com
+userPassword: camille2026
 title: Étudiante M2 DE
 
-dn: uid=jean.rossi,ou=people,dc=univ-corse,dc=fr
+dn: uid=lucas.moreau,ou=people,dc=example,dc=org
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
 objectClass: inetOrgPerson
-uid: jean.rossi
-cn: Jean Rossi
-sn: Rossi
-givenName: Jean
-mail: jean.rossi@univ-corse.fr
-userPassword: jean2026
+uid: lucas.moreau
+cn: Lucas Moreau
+sn: Moreau
+givenName: Lucas
+mail: lucas.moreau@example.org
+userPassword: lucas2026
 title: Étudiant M2 DE
 
-dn: uid=julie.martin,ou=people,dc=univ-corse,dc=fr
+dn: uid=lea.petit,ou=people,dc=example,dc=org
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
 objectClass: inetOrgPerson
-uid: julie.martin
-cn: Julie Martin
-sn: Martin
-givenName: Julie
-mail: julie.martin@univ-corse.fr
-userPassword: julie2026
+uid: lea.petit
+cn: Lea Petit
+sn: Petit
+givenName: Lea
+mail: lea.petit@example.org
+userPassword: lea2026
 title: Étudiante L3 Info
 
 # ----------------------------------------------------------------- enseignants
-dn: uid=pierre.leoni,ou=people,dc=univ-corse,dc=fr
+dn: uid=thomas.girard,ou=people,dc=example,dc=org
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
 objectClass: inetOrgPerson
-uid: pierre.leoni
-cn: Pierre Leoni
-sn: Leoni
-givenName: Pierre
-mail: pierre.leoni@univ-corse.fr
-userPassword: leoni2026
+uid: thomas.girard
+cn: Thomas Girard
+sn: Girard
+givenName: Thomas
+mail: thomas.girard@example.org
+userPassword: thomas2026
 title: Enseignant-chercheur
 
-dn: uid=claire.ferrari,ou=people,dc=univ-corse,dc=fr
+dn: uid=emma.lambert,ou=people,dc=example,dc=org
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
 objectClass: inetOrgPerson
-uid: claire.ferrari
-cn: Claire Ferrari
-sn: Ferrari
-givenName: Claire
-mail: claire.ferrari@univ-corse.fr
-userPassword: claire2026
+uid: emma.lambert
+cn: Emma Lambert
+sn: Lambert
+givenName: Emma
+mail: emma.lambert@example.org
+userPassword: emma2026
 title: Maître de conférences
 
 # ------------------------------------------------------- personnel administratif
-dn: uid=antoine.susini,ou=people,dc=univ-corse,dc=fr
+dn: uid=hugo.mercier,ou=people,dc=example,dc=org
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
 objectClass: inetOrgPerson
-uid: antoine.susini
-cn: Antoine Susini
-sn: Susini
-givenName: Antoine
-mail: antoine.susini@univ-corse.fr
-userPassword: susini2026
+uid: hugo.mercier
+cn: Hugo Mercier
+sn: Mercier
+givenName: Hugo
+mail: hugo.mercier@example.org
+userPassword: hugo2026
 title: Technicien DSI
 
-dn: uid=sophie.bernard,ou=people,dc=univ-corse,dc=fr
+dn: uid=chloe.renard,ou=people,dc=example,dc=org
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
 objectClass: inetOrgPerson
-uid: sophie.bernard
-cn: Sophie Bernard
-sn: Bernard
-givenName: Sophie
-mail: sophie.bernard@univ-corse.fr
-userPassword: sophie2026
+uid: chloe.renard
+cn: Chloe Renard
+sn: Renard
+givenName: Chloe
+mail: chloe.renard@example.org
+userPassword: chloe2026
 title: Gestionnaire scolarité
 
 # ---------------------------------------------------------------------- groupes
-dn: cn=etudiants,ou=groups,dc=univ-corse,dc=fr
+dn: cn=etudiants,ou=groups,dc=example,dc=org
 objectClass: top
 objectClass: groupOfNames
 cn: etudiants
-member: uid=marie.paoli,ou=people,dc=univ-corse,dc=fr
-member: uid=jean.rossi,ou=people,dc=univ-corse,dc=fr
-member: uid=julie.martin,ou=people,dc=univ-corse,dc=fr
+member: uid=camille.dupont,ou=people,dc=example,dc=org
+member: uid=lucas.moreau,ou=people,dc=example,dc=org
+member: uid=lea.petit,ou=people,dc=example,dc=org
 
-dn: cn=enseignants,ou=groups,dc=univ-corse,dc=fr
+dn: cn=enseignants,ou=groups,dc=example,dc=org
 objectClass: top
 objectClass: groupOfNames
 cn: enseignants
-member: uid=pierre.leoni,ou=people,dc=univ-corse,dc=fr
-member: uid=claire.ferrari,ou=people,dc=univ-corse,dc=fr
+member: uid=thomas.girard,ou=people,dc=example,dc=org
+member: uid=emma.lambert,ou=people,dc=example,dc=org
 
-dn: cn=techniciens,ou=groups,dc=univ-corse,dc=fr
+dn: cn=techniciens,ou=groups,dc=example,dc=org
 objectClass: top
 objectClass: groupOfNames
 cn: techniciens
-member: uid=antoine.susini,ou=people,dc=univ-corse,dc=fr
+member: uid=hugo.mercier,ou=people,dc=example,dc=org
 
-dn: cn=administratifs,ou=groups,dc=univ-corse,dc=fr
+dn: cn=administratifs,ou=groups,dc=example,dc=org
 objectClass: top
 objectClass: groupOfNames
 cn: administratifs
-member: uid=sophie.bernard,ou=people,dc=univ-corse,dc=fr
+member: uid=chloe.renard,ou=people,dc=example,dc=org

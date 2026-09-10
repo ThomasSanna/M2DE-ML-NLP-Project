@@ -14,7 +14,7 @@
 - **Problème actuel : aucune mémoire** de ce qui a déjà été répondu. Chaque réponse est réinventée, les questions récurrentes re-consommées manuellement.
 - **LDAP est public ; GLPI non public** → le PoC simulera les deux (on génère nos propres données).
 
-> **Vérification (08/09/2026)** : le LDAP de l'univ (`ldap.univ-corse.fr`, RENATER) existe mais **n'est pas interrogeable publiquement** (bind anonyme rejeté, filtrage firewall ; auth via CAS `auth.univ-corse.fr` + Shibboleth, Base DN non publié). → Le PoC utilisera un **OpenLDAP simulé** (Docker, base fictive réaliste `dc=univ-corse,dc=fr` + `ou=people`), à confirmer avec le prof si un accès réel était attendu.
+> **Vérification (08/09/2026)** : le LDAP de l'établissement (annuaire RENATER) existe mais **n'est pas interrogeable publiquement** (bind anonyme rejeté, filtrage firewall ; auth via CAS + Shibboleth, Base DN non publié). → Le PoC utilisera un **OpenLDAP simulé** (Docker, base fictive réaliste `dc=example,dc=org` + `ou=people`), à confirmer avec le prof si un accès réel était attendu.
 
 ## 2. Objectif
 
@@ -46,24 +46,6 @@ Serveur mis à disposition :
 
 ## 5. Architecture envisagée
 
-```
-Utilisateur (persona LDAP)
-   │  question
-   ▼
-API du chatbot (FastAPI)
-   │
-   ├─► Mémoire (BDD tickets + embeddings + scores de pondération)
-   ├─► Recherche internet (si la mémoire ne suffit pas)
-   │
-   ▼
-LLM local (H200) → projet de réponse (avec sources citées)
-   │
-   ▼
-Validation technicien → envoi au client
-   │
-   ▼
-Feedback client (utile / pas utile) → mise à jour des poids mémoire
-```
 
 Composants techniques pressentis :
 - **Génération de données** : LLM (via API pendant la dev, le PoC tournant lui en local) → tickets GLPI synthétiques réalistes.

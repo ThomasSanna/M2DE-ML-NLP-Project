@@ -1,6 +1,6 @@
 # Stack LDAP + GLPI — PoC Chatbot
 
-Environnement simulé pour le PoC : annuaire **LDAP** (`univ-corse.fr`) + **GLPI 11** (tickets) + **MariaDB**.
+Environnement simulé pour le PoC : annuaire **LDAP** (`example.org`, fictif) + **GLPI 11** (tickets) + **MariaDB**.
 
 ## Services
 
@@ -8,8 +8,8 @@ Environnement simulé pour le PoC : annuaire **LDAP** (`univ-corse.fr`) + **GLPI
 |---|---|---|
 | **GLPI** | http://localhost:8080 | `glpi` / `glpi` (admin par défaut — à changer) |
 | **API REST GLPI** | http://localhost:8080/apirest.php/ | voir §API |
-| **phpLDAPadmin** | http://localhost:8081 | Login DN : `cn=admin,dc=univ-corse,dc=fr` / mot de passe `LDAP_ADMIN_PASSWORD` du `.env` |
-| **LDAP** | `ldap://localhost:389` | Base : `dc=univ-corse,dc=fr` |
+| **phpLDAPadmin** | http://localhost:8081 | Login DN : `cn=admin,dc=example,dc=org` / mot de passe `LDAP_ADMIN_PASSWORD` du `.env` |
+| **LDAP** | `ldap://localhost:389` | Base : `dc=example,dc=org` |
 | **MariaDB** | interne (`db:3306`) | `glpi` / `MARIADB_PASSWORD` du `.env` |
 
 ## Démarrage
@@ -36,20 +36,22 @@ docker compose up -d
 
 | UID | Rôle | Groupe | Mot de passe |
 |---|---|---|---|
-| `marie.paoli` | Étudiante M2 DE | etudiants | `marie2026` |
-| `jean.rossi` | Étudiant M2 DE | etudiants | `jean2026` |
-| `julie.martin` | Étudiante L3 Info | etudiants | `julie2026` |
-| `pierre.leoni` | Enseignant-chercheur | enseignants | `leoni2026` |
-| `claire.ferrari` | Maître de conférences | enseignants | `claire2026` |
-| `antoine.susini` | Technicien DSI | techniciens | `susini2026` |
-| `sophie.bernard` | Gestionnaire scolarité | administratifs | `sophie2026` |
+| `camille.dupont` | Étudiante M2 DE | etudiants | `camille2026` |
+| `lucas.moreau` | Étudiant M2 DE | etudiants | `lucas2026` |
+| `lea.petit` | Étudiante L3 Info | etudiants | `lea2026` |
+| `thomas.girard` | Enseignant-chercheur | enseignants | `thomas2026` |
+| `emma.lambert` | Maître de conférences | enseignants | `emma2026` |
+| `hugo.mercier` | Technicien DSI | techniciens | `hugo2026` |
+| `chloe.renard` | Gestionnaire scolarité | administratifs | `chloe2026` |
+
+(Annuaire public)
 
 Test rapide :
 
 ```bash
 docker exec poc-ldap ldapsearch -x -H ldap://localhost \
-  -D "cn=admin,dc=univ-corse,dc=fr" -w "ChangeMeAdmin2026!" \
-  -LLL -b "dc=univ-corse,dc=fr" "(uid=marie.paoli)"
+  -D "cn=admin,dc=example,dc=org" -w "ChangeMeAdmin2026!" \
+  -LLL -b "dc=example,dc=org" "(uid=camille.dupont)"
 ```
 
 ## API REST GLPI (activée)
@@ -89,17 +91,17 @@ curl http://localhost:8080/apirest.php/Ticket \
 | Nom | Univ Corse LDAP |
 | Serveur | `ldap` (nom du service Docker) |
 | Port | 389 |
-| Base DN | `dc=univ-corse,dc=fr` |
+| Base DN | `dc=example,dc=org` |
 | Filtre de connexion (login) | `(&(objectClass=inetOrgPerson)(uid=*))` |
 | Champ login | `uid` |
 | Champ nom | `sn` |
 | Champ prénom | `givenName` |
 | Champ email | `mail` |
-| Bind DN (compte de lecture) | `cn=admin,dc=univ-corse,dc=fr` |
+| Bind DN (compte de lecture) | `cn=admin,dc=example,dc=org` |
 | Mot de passe bind | valeur de `LDAP_ADMIN_PASSWORD` |
 
 Puis activer la source dans `Configuration > Authentification > Configuration > Avancé`
-et tester avec un persona (ex. `marie.paoli` / `marie2026`).
+et tester avec un persona (ex. `camille.dupont` / `camille2026`).
 
 ## Arrêt / reset
 
