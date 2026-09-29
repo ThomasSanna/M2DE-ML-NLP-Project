@@ -44,7 +44,7 @@ docker compose up -d
 | `hugo.mercier` | Technicien DSI | techniciens | `hugo2026` |
 | `chloe.renard` | Gestionnaire scolarité | administratifs | `chloe2026` |
 
-(Annuaire public)
+(Annuaire **fictif**, simulé : le LDAP réel de l'université n'est pas interrogeable publiquement — voir §1 de `doc/note-projet-complet.md`.)
 
 Test rapide :
 

@@ -29,8 +29,9 @@ Positionnement : réponses **simples mais correctes**, pas pointues. Validation 
 ## 3. Infrastructure cible
 
 Serveur mis à disposition :
-- **~282 Go de VRAM** (probablement 2× NVIDIA **H200** de 141 Go), **2 To de RAM** (32×64 Go).
-- **MIG** : chaque H200 se découpe en **7 unités de compute** → plusieurs modèles/expériences en parallèle sur le même serveur.
+- **~282 Go de VRAM**, soit **2× NVIDIA H200** de 141 Go, et **2 To de RAM** (32×64 Go).
+- **MIG** : chaque H200 se découpe en **7 unités de compute** (~18 Go de VRAM chacune), soit jusqu'à 14 instances → plusieurs modèles/expériences en parallèle sur le même serveur.
+- *Note : la note d'origine parle d'« 1 carte H200 divisée en 7 » ; cela décrit le découpage MIG d'une carte, pas le nombre total de cartes (282 Go = 2 × 141 Go).*
 - Conséquence : **inférence 100 % locale** (pas d'API externe payante), modèles ouverts type Llama / Mistral / Qwen.
 
 ## 4. Décisions arrêtées
