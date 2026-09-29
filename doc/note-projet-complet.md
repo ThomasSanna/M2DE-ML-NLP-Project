@@ -22,17 +22,16 @@
 1. **Une mémoire** construite à partir de l'historique des tickets (questions/réponses passées), avec un **vrai mécanisme de pondération** basé sur les retours ("la réponse était-elle utile ?").
 2. **La recherche internet** (dans le périmètre) pour ce qui n'est pas dans la mémoire.
 
-Positionnement : réponses **simples mais correctes**, pas pointues. Validation par le client/technicien avant envoi final.
+Positionnement : réponses **simples mais correctes**, pas pointues. Envoi **direct** (ticket + mail **SMTP**), sans validation technicien ; feedback **utilisateur** après réception. Garde-fous **ShieldStral 3B** en entrée (question malveillante/inutile → ticket en attente, technicien répond) et en sortie (données sensibles).
 
 **Enjeu concurrentiel** : ce projet est comparé à d'autres groupes → il faut **innover sur toutes les fonctionnalités** pour être meilleur (voir §6).
 
 ## 3. Infrastructure cible
 
 Serveur mis à disposition :
-- **~282 Go de VRAM**, soit **2× NVIDIA H200** de 141 Go, et **2 To de RAM** (32×64 Go).
-- **MIG** : chaque H200 se découpe en **7 unités de compute** (~18 Go de VRAM chacune), soit jusqu'à 14 instances → plusieurs modèles/expériences en parallèle sur le même serveur.
-- *Note : la note d'origine parle d'« 1 carte H200 divisée en 7 » ; cela décrit le découpage MIG d'une carte, pas le nombre total de cartes (282 Go = 2 × 141 Go).*
-- Conséquence : **inférence 100 % locale** (pas d'API externe payante), modèles ouverts type Llama / Mistral / Qwen.
+- **~282 Go de VRAM** (probablement 2× NVIDIA **H200** de 141 Go), **2 To de RAM** (32×64 Go).
+- **MIG** : chaque H200 se découpe en **7 unités de compute** → plusieurs modèles/expériences en parallèle sur le même serveur.
+- Conséquence : **inférence 100 % locale** (pas d'API externe payante). Modèles fixés : **Gemma 4 12B thinking** (raisonnement/agent), **ShieldStral 3B** (garde-fous IN/OUT), **Gemma 4 E2B** (notation du feedback), embeddings **BGE-M3**.
 
 ## 4. Décisions arrêtées
 
@@ -43,6 +42,11 @@ Serveur mis à disposition :
 | Feedback | Donné **par l'utilisateur final** par défaut ; possible d'innover (feedback technicien, implicite…) |
 | Recherche internet | **Dans le périmètre** du PoC |
 | Démonstration | Via une **API** (le PoC est exposé comme service) |
+| Trigger pipeline | **Webhook GLPI** à la création du ticket (et à chaque réponse user) → `POST /ingest/ticket` (temps réel ; polling `GET /Ticket` écarté) |
+| Modèles | **Gemma 4 12B thinking** (agent : répondre ou websearch, KV cache) + **ShieldStral 3B** (garde-fous IN/OUT) + **Gemma 4 E2B** (notation) ; embeddings **BGE-M3** |
+| Garde-fous | ShieldStral 3B sur la question (malveillance/inutilité) et sur la réponse (données sensibles) ; blocage → ticket **en attente**, réponse technicien |
+| Feedback | Réponse user (webhook) → **note Gemma 4 E2B** → embed + index de la paire Q/R avec score |
+| Envoi réponse | Post **ticket GLPI** + **mail SMTP**, direct, sans validation tech |
 | Critères d'évaluation | Pas encore définis par le prof — on verra |
 
 ## 5. Architecture envisagée
@@ -54,15 +58,29 @@ Composants techniques pressentis :
 - **Base vectorielle** : Qdrant / Chroma / pgvector.
 - **LLM local** : quantifié pour tenir dans une unité MIG.
 - **API** : FastAPI + petite interface de chat pour la démo.
+- **Ingest temps réel** : endpoint FastAPI `POST /ingest/ticket` alimenté par le **webhook GLPI** (secret partagé + file de retry).
+
+### Pipeline LLM (détaillé — cf. Page-2 `doc/diagramme.drawio`)
+1. **Webhook GLPI** à la création du ticket — et à chaque réponse user dans le fil.
+2. **GET ticket** : question seule, ou **fil de discussion** complet si la question suit un ou plusieurs échanges Q/R du même ticket.
+3. **Garde-fou IN — ShieldStral 3B** : juge la discussion en insistant sur la nouvelle question (malveillante ? vaut-elle une réponse ?). Si bloqué → ticket **en attente**, un **technicien** répond.
+4. **Embeddings BGE-M3** de la question / du fil.
+5. **Top-k + scores** des paires Q/R indexées → injectés dans le **prompt initial**.
+6. **Appel LLM — Gemma 4 12B thinking** (KV cache conservé entre appels).
+7. **Actions LLM** : **répondre**, ou **websearch** (x recherches) → nouvel appel Gemma 4 avec contexte + résultats web → boucle jusqu'à réponse.
+8. **Garde-fou OUT — ShieldStral 3B** : pas de données sensibles dans la réponse (prompt système, etc.).
+9. **Post dans le ticket GLPI + mail SMTP** à la personne. Envoi direct, sans validation tech.
+10. **Feedback** : la réponse de l'user repasse par webhook et sert de feedback.
+11. **Gemma 4 E2B** note l'échange → **embed + index** de la discussion/réponse LLM avec son score → la mémoire grandit.
 
 ## 6. Mécanisme de mémoire & pondération — le cœur à innover
 
-### Score de chaque "connaissance" (réponse validée)
+### Score de chaque "connaissance" (paire Q/R validée)
 Score multi-facteurs, ex. :
 
 ```
-score = w1·feedback_utilisateur      (utile / pas utile, stocké par ticket)
-      + w2·validation_technicien     (règle la confiance de base)
+score = w1·feedback_utilisateur      (note **Gemma 4 E2B** sur la réponse user + utile/pas utile, stockée par paire Q/R)
+      + w2·validation_technicien     (hors live : pas de validation avant envoi ; sert en révision différée si le tech corrige)
       + w3·taux_de_réutilisation     (nb de fois réutilisée avec succès)
       + w4·fraîcheur                 (décroissance temporelle — une réponse de 2019 pèse moins)
       + w5·similarité_contextuelle   (même catégorie/même type de demande)
@@ -89,7 +107,7 @@ score = w1·feedback_utilisateur      (utile / pas utile, stocké par ticket)
 | Livrable | Contenu |
 |---|---|
 | **Rapport** | Contexte, état de l'art (RAG, mémoire, feedback), architecture, mécanisme de pondération, évaluation |
-| **Démonstration** | API + chat : boucle complète question → réponse → validation → feedback → score mis à jour |
+| **Démonstration** | API + chat : boucle complète question → garde-fous → réponse → feedback noté → score mis à jour |
 | **Présentation** | Pitch : le problème, notre mécanisme de mémoire, démo live, résultats |
 
 Échéance : **6 octobre**.
@@ -97,10 +115,11 @@ score = w1·feedback_utilisateur      (utile / pas utile, stocké par ticket)
 ## 9. Questions ouvertes / à trancher
 
 - [ ] Critères d'évaluation exacts du prof (rapport / démo / présentation) — à demander.
-- [ ] Choix du LLM local et du modèle d'embeddings (à tester sur le serveur MIG).
+- [x] Choix du LLM local et du modèle d'embeddings → **validés le 17/09/2026** : `mistralai/Shieldstral-1.0-3B` (garde-fous), `google/gemma-4-12B-it` (thinking), `google/gemma-4-E2B-it` (notation, ex-« 3B »), `BAAI/bge-m3` (embeddings).
 - [ ] Volume du jeu de données synthétique (ordre de grandeur : centaines ? milliers de tickets ?).
 - [ ] Le feedback utilisateur est-il dans la démo (client simulé) ou hors périmètre du live ?
 - [ ] Moteur de recherche web : simple (DuckDuckGo/SearXNG) vs API structurée.
+- [ ] Envoi SMTP des réponses : réutiliser le runbook Brevo existant (`doc/runbook-smtp-brevo-2026-09-09.md`) ?
 - [ ] Multi-utilisateurs MIG : qui déploie quoi sur le serveur (coordination avec le prof) ?
 
 ---
