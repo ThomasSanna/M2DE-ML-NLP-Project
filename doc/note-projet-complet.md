@@ -14,7 +14,9 @@
 - **Problème actuel : aucune mémoire** de ce qui a déjà été répondu. Chaque réponse est réinventée, les questions récurrentes re-consommées manuellement.
 - **LDAP est public ; GLPI non public** → le PoC simulera les deux (on génère nos propres données).
 
-> **Vérification (08/09/2026)** : le LDAP de l'établissement (annuaire RENATER) existe mais **n'est pas interrogeable publiquement** (bind anonyme rejeté, filtrage firewall ; auth via CAS + Shibboleth, Base DN non publié). → Le PoC utilisera un **OpenLDAP simulé** (Docker, base fictive réaliste `dc=example,dc=org` + `ou=people`), à confirmer avec le prof si un accès réel était attendu.
+> **Vérification (08/09/2026)** : le LDAP de l'établissement (annuaire RENATER) existe mais **n'est pas interrogeable publiquement** (bind anonyme rejeté, filtrage firewall ; auth via CAS + Shibboleth, Base DN non publié). → Le PoC utilise un **OpenLDAP simulé** (Docker, base fictive réaliste `dc=example,dc=org` + `ou=people`).
+>
+> **Correction (doc du prof, `Projet M2.pdf`)** : l'annuaire réel est un **Active Directory** (`idcsrv-01.udcpp.priv`, base `dc=udcpp,dc=priv`), **interrogeable via le VPN de l'université** (`vpn.univ-corse.fr`) avec un bind authentifié par son propre compte (`votre_compte@udcpp.priv`). Garder l'OpenLDAP simulé ou brancher l'AD réel : à trancher (cf. §9).
 
 ## 2. Objectif
 
@@ -22,7 +24,7 @@
 1. **Une mémoire** construite à partir de l'historique des tickets (questions/réponses passées), avec un **vrai mécanisme de pondération** basé sur les retours ("la réponse était-elle utile ?").
 2. **La recherche internet** (dans le périmètre) pour ce qui n'est pas dans la mémoire.
 
-Positionnement : réponses **simples mais correctes**, pas pointues. Envoi **direct** (ticket + mail **SMTP**), sans validation technicien ; feedback **utilisateur** après réception. Garde-fous **ShieldStral 3B** en entrée (question malveillante/inutile → ticket en attente, technicien répond) et en sortie (données sensibles).
+Positionnement : réponses **simples mais correctes**, pas pointues. Envoi **direct** (ticket + mail **SMTP**), sans validation technicien ; feedback **utilisateur** après réception. Garde-fous en entrée (question malveillante/inutile → ticket en attente, technicien répond) et en sortie (données sensibles) ; **ShieldStral 3B** prévu mais **pas encore déployé** par l'université → **Gemma 3 4B en attendant**, cf. §3.
 
 **Enjeu concurrentiel** : ce projet est comparé à d'autres groupes → il faut **innover sur toutes les fonctionnalités** pour être meilleur (voir §6).
 
@@ -31,7 +33,16 @@ Positionnement : réponses **simples mais correctes**, pas pointues. Envoi **dir
 Serveur mis à disposition :
 - **~282 Go de VRAM** (probablement 2× NVIDIA **H200** de 141 Go), **2 To de RAM** (32×64 Go).
 - **MIG** : chaque H200 se découpe en **7 unités de compute** → plusieurs modèles/expériences en parallèle sur le même serveur.
-- Conséquence : **inférence 100 % locale** (pas d'API externe payante). Modèles fixés : **Gemma 4 12B thinking** (raisonnement/agent), **ShieldStral 3B** (garde-fous IN/OUT), **Gemma 4 E2B** (notation du feedback), embeddings **BGE-M3**.
+- Conséquence : **inférence sur le serveur de l'université** (pas d'API externe payante). Les modèles sont **déjà déployés par l'université** et exposés en HTTP (vLLM, API compatible OpenAI), **VPN de l'université obligatoire** (`vpn.univ-corse.fr`). Liste fournie par le prof (`Projet M2.pdf`) :
+
+| Rôle | Modèle | Endpoint |
+|---|---|---|
+| LLM principal (agent) | `google/gemma3-12b-it` | `http://193.48.31.6:32297/v1/chat/completions` |
+| LLM léger (notation ; garde-fous en attendant ShieldStral) | `google/gemma3-4b-it` | `http://193.48.31.6:30091/v1/chat/completions` |
+| Embeddings | `BAAI/bge-multilingual-gemma2` (3584 dimensions) | `http://193.48.31.6:31550/v1/embeddings` |
+| Reranker | `BAAI/bge-reranker-v2-gemma` | `http://193.48.31.6:31127/rerank` (corps `{"pairs": [[question, doc], …]}`) |
+
+> **Correction** : les notes prévoyaient Gemma 4 12B thinking, Gemma 4 E2B, ShieldStral 3B et BGE-M3. Ce ne sont **pas** les modèles servis : c'est **Gemma 3** (12B et 4B, sans mode thinking), des embeddings **bge-multilingual-gemma2**, et un **reranker** en plus. **ShieldStral 3B** reste prévu pour les garde-fous mais n'est **pas encore déployé** : Gemma 3 4B le remplace d'ici là.
 
 ## 4. Décisions arrêtées
 
@@ -43,9 +54,10 @@ Serveur mis à disposition :
 | Recherche internet | **Dans le périmètre** du PoC |
 | Démonstration | Via une **API** (le PoC est exposé comme service) |
 | Trigger pipeline | **Webhook GLPI** à la création du ticket (et à chaque réponse user) → `POST /ingest/ticket` (temps réel ; polling `GET /Ticket` écarté) |
-| Modèles | **Gemma 4 12B thinking** (agent : répondre ou websearch, KV cache) + **ShieldStral 3B** (garde-fous IN/OUT) + **Gemma 4 E2B** (notation) ; embeddings **BGE-M3** |
-| Garde-fous | ShieldStral 3B sur la question (malveillance/inutilité) et sur la réponse (données sensibles) ; blocage → ticket **en attente**, réponse technicien |
-| Feedback | Réponse user (webhook) → **note Gemma 4 E2B** → embed + index de la paire Q/R avec score |
+| Modèles | Ceux servis par l'université (§3) : **Gemma 3 12B** (agent : répondre ou websearch) + **Gemma 3 4B** (notation ; garde-fous en attendant ShieldStral 3B) ; embeddings **bge-multilingual-gemma2** ; reranker **bge-reranker-v2-gemma** |
+| Garde-fous | Sur la question (malveillance/inutilité) et sur la réponse (données sensibles), par **ShieldStral 3B** une fois déployé par l'université ; **en attendant, prompt de modération sur Gemma 3 4B** ; blocage → ticket **en attente**, réponse technicien |
+| Feedback | Réponse user (webhook) → **note Gemma 3 4B** → embed + index de la paire Q/R avec score |
+| Base vectorielle | **PostgreSQL + pgvector** (API mémoire dans `api/`) |
 | Envoi réponse | Post **ticket GLPI** + **mail SMTP**, direct, sans validation tech |
 | Critères d'évaluation | Pas encore définis par le prof — on verra |
 
@@ -54,24 +66,25 @@ Serveur mis à disposition :
 
 Composants techniques pressentis :
 - **Génération de données** : LLM (via API pendant la dev, le PoC tournant lui en local) → tickets GLPI synthétiques réalistes.
-- **Embeddings** : modèle multilingue français (ex. BGE-M3, multilingual-e5).
-- **Base vectorielle** : Qdrant / Chroma / pgvector.
-- **LLM local** : quantifié pour tenir dans une unité MIG.
+- **Embeddings** : `BAAI/bge-multilingual-gemma2`, servi par l'université.
+- **Base vectorielle** : PostgreSQL + pgvector (retenu).
+- **LLM** : Gemma 3 12B / 4B servis par l'université (pas de déploiement de notre côté).
+- **GLPI** : API REST activée (App Token + User Token, cf. `Projet M2.pdf`) pour lire les tickets et y poster les réponses.
 - **API** : FastAPI + petite interface de chat pour la démo.
 - **Ingest temps réel** : endpoint FastAPI `POST /ingest/ticket` alimenté par le **webhook GLPI** (secret partagé + file de retry).
 
 ### Pipeline LLM (détaillé — cf. Page-2 `doc/diagramme.drawio`)
 1. **Webhook GLPI** à la création du ticket — et à chaque réponse user dans le fil.
 2. **GET ticket** : question seule, ou **fil de discussion** complet si la question suit un ou plusieurs échanges Q/R du même ticket.
-3. **Garde-fou IN — ShieldStral 3B** : juge la discussion en insistant sur la nouvelle question (malveillante ? vaut-elle une réponse ?). Si bloqué → ticket **en attente**, un **technicien** répond.
-4. **Embeddings BGE-M3** de la question / du fil.
-5. **Top-k + scores** des paires Q/R indexées → injectés dans le **prompt initial**.
-6. **Appel LLM — Gemma 4 12B thinking** (KV cache conservé entre appels).
-7. **Actions LLM** : **répondre**, ou **websearch** (x recherches) → nouvel appel Gemma 4 avec contexte + résultats web → boucle jusqu'à réponse.
-8. **Garde-fou OUT — ShieldStral 3B** : pas de données sensibles dans la réponse (prompt système, etc.).
+3. **Garde-fou IN — ShieldStral 3B** (en attendant son déploiement : **Gemma 3 4B**, prompt de modération) : juge la discussion en insistant sur la nouvelle question (malveillante ? vaut-elle une réponse ?). Si bloqué → ticket **en attente**, un **technicien** répond.
+4. **Embeddings bge-multilingual-gemma2** de la question / du fil.
+5. **Top-k + scores** des paires Q/R indexées, **reclassés par le reranker** bge-reranker-v2-gemma → injectés dans le **prompt initial**.
+6. **Appel LLM — Gemma 3 12B** (le cache KV est géré côté serveur par vLLM, pas par nous).
+7. **Actions LLM** : **répondre**, ou **websearch** (x recherches) → nouvel appel Gemma 3 avec contexte + résultats web → boucle jusqu'à réponse.
+8. **Garde-fou OUT — ShieldStral 3B** (en attendant : **Gemma 3 4B**) : pas de données sensibles dans la réponse (prompt système, etc.).
 9. **Post dans le ticket GLPI + mail SMTP** à la personne. Envoi direct, sans validation tech.
 10. **Feedback** : la réponse de l'user repasse par webhook et sert de feedback.
-11. **Gemma 4 E2B** note l'échange → **embed + index** de la discussion/réponse LLM avec son score → la mémoire grandit.
+11. **Gemma 3 4B** note l'échange → **embed + index** de la discussion/réponse LLM avec son score → la mémoire grandit.
 
 ## 6. Mécanisme de mémoire & pondération — le cœur à innover
 
@@ -79,7 +92,7 @@ Composants techniques pressentis :
 Score multi-facteurs, ex. :
 
 ```
-score = w1·feedback_utilisateur      (note **Gemma 4 E2B** sur la réponse user + utile/pas utile, stockée par paire Q/R)
+score = w1·feedback_utilisateur      (note **Gemma 3 4B** sur la réponse user + utile/pas utile, stockée par paire Q/R)
       + w2·validation_technicien     (hors live : pas de validation avant envoi ; sert en révision différée si le tech corrige)
       + w3·taux_de_réutilisation     (nb de fois réutilisée avec succès)
       + w4·fraîcheur                 (décroissance temporelle — une réponse de 2019 pèse moins)
@@ -115,12 +128,14 @@ score = w1·feedback_utilisateur      (note **Gemma 4 E2B** sur la réponse user
 ## 9. Questions ouvertes / à trancher
 
 - [ ] Critères d'évaluation exacts du prof (rapport / démo / présentation) — à demander.
-- [x] Choix du LLM local et du modèle d'embeddings → **validés le 17/09/2026** : `mistralai/Shieldstral-1.0-3B` (garde-fous), `google/gemma-4-12B-it` (thinking), `google/gemma-4-E2B-it` (notation, ex-« 3B »), `BAAI/bge-m3` (embeddings).
+- [x] Choix des modèles → **imposés par ce que sert l'université** (`Projet M2.pdf`) : `google/gemma3-12b-it`, `google/gemma3-4b-it`, `BAAI/bge-multilingual-gemma2` (embeddings), `BAAI/bge-reranker-v2-gemma` (reranker). Remplace la liste du 17/09 (Gemma 4, BGE-M3), qui ne correspond à aucun modèle servi.
+- [ ] Garde-fous : **ShieldStral 3B** à venir sur le serveur de l'université ; **Gemma 3 4B en attendant** (garder le client du garde-fou interchangeable pour basculer sans toucher à la pipeline).
+- [ ] Annuaire : garder l'OpenLDAP simulé ou utiliser l'AD réel (`idcsrv-01.udcpp.priv`, via VPN) ?
 - [ ] Volume du jeu de données synthétique (ordre de grandeur : centaines ? milliers de tickets ?).
 - [ ] Le feedback utilisateur est-il dans la démo (client simulé) ou hors périmètre du live ?
 - [ ] Moteur de recherche web : simple (DuckDuckGo/SearXNG) vs API structurée.
 - [ ] Envoi SMTP des réponses : réutiliser le runbook Brevo existant (`doc/runbook-smtp-brevo-2026-09-09.md`) ?
-- [ ] Multi-utilisateurs MIG : qui déploie quoi sur le serveur (coordination avec le prof) ?
+- [x] Déploiement des modèles sur le serveur → **fait par l'université**, on consomme les endpoints (VPN requis).
 
 ---
 
