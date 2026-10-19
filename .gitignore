@@ -7,3 +7,10 @@ rien.txt
 doc/*.pdf
 
 opencode.json
+.codegraph/
+
+# Python (api/)
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/

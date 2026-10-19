@@ -64,7 +64,7 @@
                 <mxCell id="p2-get" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;" value="2. GET ticket&#xa;question ou fil (même ticket)" vertex="1">
                     <mxGeometry height="60" width="200" x="60" y="165" as="geometry"/>
                 </mxCell>
-                <mxCell id="p2-gin" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c62828;" value="3. Garde-fou IN&#xa;ShieldStral 3B" vertex="1">
+                <mxCell id="p2-gin" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c62828;" value="3. Garde-fou IN&#xa;ShieldStral 3B&#xa;(Gemma 3 4B en attendant)" vertex="1">
                     <mxGeometry height="60" width="200" x="60" y="255" as="geometry"/>
                 </mxCell>
                 <mxCell id="p2-okd" parent="p2-1" style="rhombus;whiteSpace=wrap;html=1;" value="malveillant /&#xa;inutile ?" vertex="1">
@@ -73,13 +73,13 @@
                 <mxCell id="p2-att" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c62828;" value="Ticket en attente&#xa;→ technicien répond" vertex="1">
                     <mxGeometry height="55" width="220" x="300" y="350" as="geometry"/>
                 </mxCell>
-                <mxCell id="p2-emb" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1e88e5;" value="4. Embeddings BGE-M3" vertex="1">
+                <mxCell id="p2-emb" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1e88e5;" value="4. Embeddings&#xa;bge-multilingual-gemma2" vertex="1">
                     <mxGeometry height="55" width="200" x="60" y="455" as="geometry"/>
                 </mxCell>
-                <mxCell id="p2-topk" parent="p2-1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#f3e5f5;strokeColor=#8e24aa;" value="5. Top-k + scores&#xa;→ prompt initial" vertex="1">
+                <mxCell id="p2-topk" parent="p2-1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#f3e5f5;strokeColor=#8e24aa;" value="5. Top-k + reranker&#xa;→ prompt initial" vertex="1">
                     <mxGeometry height="55" width="200" x="60" y="540" as="geometry"/>
                 </mxCell>
-                <mxCell id="p2-llm" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#ef6c00;" value="6. Gemma 4 12B&#xa;thinking (KV cache)" vertex="1">
+                <mxCell id="p2-llm" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#ef6c00;" value="6. Gemma 3 12B" vertex="1">
                     <mxGeometry height="60" width="200" x="60" y="625" as="geometry"/>
                 </mxCell>
                 <mxCell id="p2-actd" parent="p2-1" style="rhombus;whiteSpace=wrap;html=1;" value="répondre ou&#xa;websearch ?" vertex="1">
@@ -88,7 +88,7 @@
                 <mxCell id="p2-ws" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#43a047;" value="7b. Websearch&#xa;(x recherches)" vertex="1">
                     <mxGeometry height="55" width="220" x="300" y="720" as="geometry"/>
                 </mxCell>
-                <mxCell id="p2-gout" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c62828;" value="8. Garde-fou OUT&#xa;ShieldStral 3B (fuites ?)" vertex="1">
+                <mxCell id="p2-gout" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c62828;" value="8. Garde-fou OUT (fuites ?)&#xa;ShieldStral 3B&#xa;(Gemma 3 4B en attendant)" vertex="1">
                     <mxGeometry height="55" width="200" x="60" y="815" as="geometry"/>
                 </mxCell>
                 <mxCell id="p2-post" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f5fe;strokeColor=#0288d1;" value="9. Post ticket GLPI&#xa;+ mail SMTP" vertex="1">
@@ -97,7 +97,7 @@
                 <mxCell id="p2-fbin" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#43a047;" value="10. Réponse user&#xa;(webhook = feedback)" vertex="1">
                     <mxGeometry height="55" width="220" x="180" y="1020" as="geometry"/>
                 </mxCell>
-                <mxCell id="p2-fbnote" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#ef6c00;" value="Gemma 4 E2B&#xa;note l&#39;échange" vertex="1">
+                <mxCell id="p2-fbnote" parent="p2-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#ef6c00;" value="Gemma 3 4B&#xa;note l&#39;échange" vertex="1">
                     <mxGeometry height="55" width="220" x="180" y="1105" as="geometry"/>
                 </mxCell>
                 <mxCell id="p2-fbidx" parent="p2-1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#f3e5f5;strokeColor=#8e24aa;" value="11. Embed + index&#xa;Q/R + score → mémoire" vertex="1">

@@ -1,10 +1,26 @@
-# Stack PoC — LDAP + GLPI
+# Stack PoC — LDAP + GLPI + API mémoire
 # Usage : docker compose up -d
 # GLPI  : http://localhost:8080  (auto-install au premier démarrage)
 # PLA   : http://localhost:8081  (login DN : cn=admin,dc=example,dc=org)
 # LDAP  : ldap://localhost:389   (bind : cn=admin,dc=example,dc=org / mot de passe dans .env)
+# API   : http://localhost:8000/docs  (FastAPI ; mémoire vectorielle PostgreSQL + pgvector)
 
 name: bisgambiglia-poc
+
+# Environnement commun à l'API et à son job de migration.
+x-api-env: &api-env
+  ENVIRONMENT: "${ENVIRONMENT:-dev}"
+  LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  POSTGRES_USER: "${POSTGRES_USER}"
+  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+  POSTGRES_DB: "${POSTGRES_DB}"
+  API_KEY: "${API_KEY}"
+  GLPI_WEBHOOK_SECRET: "${GLPI_WEBHOOK_SECRET:-}"
+  EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL}"
+  EMBEDDING_API_KEY: "${EMBEDDING_API_KEY:-}"
+  EMBEDDING_MODEL: "${EMBEDDING_MODEL:-BAAI/bge-multilingual-gemma2}"
 
 services:
   # ---------------------------------------------------------------- LDAP
@@ -94,6 +110,64 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ------------------------------------------- Mémoire (PostgreSQL + pgvector)
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg17
+    container_name: poc-postgres
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      # Exposé sur la machine hôte uniquement (dev local, tests, client SQL).
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - poc_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # --------------------------------------- Migrations du schéma (one-shot)
+  migrate:
+    build: ./api
+    image: bisgambiglia-poc/api:latest
+    container_name: poc-migrate
+    command: ["alembic", "upgrade", "head"]
+    environment: *api-env
+    networks:
+      - poc_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # ----------------------------------------------------------- API FastAPI
+  api:
+    build: ./api
+    image: bisgambiglia-poc/api:latest
+    container_name: poc-api
+    environment: *api-env
+    ports:
+      - "${API_PORT:-8000}:8000"
+    networks:
+      - poc_net
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
 volumes:
   ldap_data:
   ldap_config:
@@ -101,6 +175,7 @@ volumes:
   glpi_config:
   glpi_files:
   glpi_marketplace:
+  pg_data:
 
 networks:
   poc_net:

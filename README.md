@@ -1,6 +1,7 @@
-# Stack LDAP + GLPI — PoC Chatbot
+# Stack LDAP + GLPI + API mémoire — PoC Chatbot
 
-Environnement simulé pour le PoC : annuaire **LDAP** (`example.org`, fictif) + **GLPI 11** (tickets) + **MariaDB**.
+Environnement simulé pour le PoC : annuaire **LDAP** (`example.org`, fictif) + **GLPI 11** (tickets) + **MariaDB**,
+et l'**API mémoire** du chatbot (FastAPI + PostgreSQL/pgvector), cf. [§API mémoire](#api-mémoire-fastapi--pgvector).
 
 ## Services
 
@@ -11,6 +12,8 @@ Environnement simulé pour le PoC : annuaire **LDAP** (`example.org`, fictif) + 
 | **phpLDAPadmin** | http://localhost:8081 | Login DN : `cn=admin,dc=example,dc=org` / mot de passe `LDAP_ADMIN_PASSWORD` du `.env` |
 | **LDAP** | `ldap://localhost:389` | Base : `dc=example,dc=org` |
 | **MariaDB** | interne (`db:3306`) | `glpi` / `MARIADB_PASSWORD` du `.env` |
+| **API mémoire** | http://localhost:8000/docs | en-tête `X-API-Key` = `API_KEY` du `.env` |
+| **PostgreSQL + pgvector** | `127.0.0.1:5432` (`postgres:5432` en interne) | `POSTGRES_USER` / `POSTGRES_PASSWORD` du `.env` |
 
 ## Démarrage
 
@@ -112,9 +115,77 @@ curl http://localhost:8080/apirest.php/Ticket \
 Puis activer la source dans `Configuration > Authentification > Configuration > Avancé`
 et tester avec un persona (ex. `camille.dupont` / `camille2026`).
 
+## API mémoire (FastAPI + pgvector)
+
+Code dans [`api/`](api/). Trois services Compose :
+
+| Service | Rôle |
+|---|---|
+| `postgres` | PostgreSQL 17 + pgvector : mémoire (vecteurs **et** relationnel) |
+| `migrate` | job one-shot `alembic upgrade head`, lancé avant chaque démarrage de l'API |
+| `api` | FastAPI (uvicorn), démarre une fois les migrations passées |
+
+Les **embeddings ne tournent pas ici** : l'API appelle le vLLM du serveur GPU de l'université
+(`BAAI/bge-multilingual-gemma2`, vecteurs de **3584** dimensions) via son API compatible OpenAI
+(`POST {EMBEDDING_BASE_URL}/embeddings`). **Le VPN de l'université est requis** ; sans lui, les routes
+qui embeddent répondent `502` (le reste de l'API fonctionne).
+
+Chaque texte (question stockée comme requête) est préfixé de l'instruction du modèle
+(`<instruct>{instruction}\n<query>{texte}`, définie par `embedding_instruction` dans
+`api/app/core/config.py`). Sur un petit jeu de
+questions d'assistance, l'appliquer des deux côtés double l'écart entre la bonne réponse et la
+suivante. Changer de modèle ou d'instruction impose de ré-embedder toute la mémoire.
+
+Modèles servis par l'université (cf. `doc/Projet M2.pdf`, VPN requis) :
+
+| Rôle | Modèle | Endpoint |
+|---|---|---|
+| embeddings | `BAAI/bge-multilingual-gemma2` | `http://193.48.31.6:31550/v1/embeddings` |
+| reranker | `BAAI/bge-reranker-v2-gemma` | `http://193.48.31.6:31127/rerank` |
+| LLM | `google/gemma3-12b-it` | `http://193.48.31.6:32297/v1/chat/completions` |
+| LLM (léger) | `google/gemma3-4b-it` | `http://193.48.31.6:30091/v1/chat/completions` |
+
+### Schéma (migration `0001`)
+
+| Table | Contenu |
+|---|---|
+| `knowledge` | une connaissance = paire Q/R + `embedding halfvec(3584)` de la question (index HNSW cosinus ; `halfvec` car HNSW est limité à 2000 dimensions en `vector`), `source` (`glpi_history`/`llm`/`technician`), `status` (`active`/`to_review`/`archived`), `reuse_count` |
+| `feedback` | historique brut des retours sur une connaissance : `score ∈ [0,1]`, `source` (`user`/`technician`/`implicit`) ; la pondération se calculera dessus |
+| `glpi_event` | boîte de réception des webhooks GLPI (`payload` JSONB, `status` `received → processing → done/failed`, `attempts`) consommée par la future pipeline |
+
+### Routes
+
+| Méthode | Route | Auth | Rôle |
+|---|---|---|---|
+| `GET` | `/health/live` | — | le processus répond |
+| `GET` | `/health/ready` | — | la base est joignable |
+| `POST` | `/api/v1/ingest/ticket` | signature GLPI | met un webhook GLPI en file (`202`) |
+| `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | ajoute une paire Q/R (question embeddée) |
+| `GET` | `/api/v1/memory/knowledge/{id}` | `X-API-Key` | lit une connaissance |
+| `POST` | `/api/v1/memory/search` | `X-API-Key` | top-k par similarité cosinus (connaissances actives) |
+
+Webhook : si `GLPI_WEBHOOK_SECRET` est défini, l'en-tête `X-GLPI-signature` est vérifié
+(`hmac_sha256(body + X-GLPI-timestamp, secret)`, le format de GLPI 11) ; sinon tout est accepté (log d'avertissement).
+
+### Développement local
+
+```bash
+docker compose up -d postgres        # base seule
+cd api
+uv sync                              # venv + dépendances (Python 3.12)
+uv run alembic upgrade head          # lit le .env racine (POSTGRES_*)
+uv run uvicorn app.main:create_app --factory --reload
+uv run pytest                        # Postgres+pgvector jetable via testcontainers (Docker requis)
+uv run ruff check . && uv run ruff format .
+```
+
+Modifier le schéma : éditer `app/models/`, puis `uv run alembic revision --autogenerate -m "..."`,
+**relire** la migration générée, et `uv run alembic check` doit ensuite ne rien détecter.
+Après un changement de code : `docker compose up -d --build api`.
+
 ## Arrêt / reset
 
 ```bash
 docker compose down          # stoppe (garde les données)
-docker compose down -v       # stoppe et efface TOUT (LDAP + BDD + GLPI)
+docker compose down -v       # stoppe et efface TOUT (LDAP + BDD + GLPI + mémoire)
 ```
