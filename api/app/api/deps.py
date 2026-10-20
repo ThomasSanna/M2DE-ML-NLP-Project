@@ -35,4 +35,4 @@ def require_api_key(
 ) -> None:
     expected = settings.api_key.get_secret_value().encode()
     if api_key is None or not secrets.compare_digest(api_key.encode(), expected):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Clé API absente ou invalide")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing or invalid API key")

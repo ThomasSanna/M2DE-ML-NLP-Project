@@ -3,11 +3,11 @@ import hmac
 
 
 def verify_glpi_signature(body: bytes, timestamp: str, signature: str, secret: str) -> bool:
-    """Vérifie l'en-tête `X-GLPI-signature` d'un webhook GLPI 11.
+    """Verify the `X-GLPI-signature` header of a GLPI 11 webhook.
 
-    GLPI signe `hmac_sha256(body + timestamp, secret)` (cf. `Webhook::raise` dans GLPI).
-    Le timestamp n'est pas borné dans le temps : GLPI met les webhooks en file et
-    peut les renvoyer bien après leur création, avec les en-têtes d'origine.
+    GLPI signs `hmac_sha256(body + timestamp, secret)` (see `Webhook::raise` in GLPI).
+    The timestamp is not bounded in time: GLPI queues webhooks and may resend them
+    long after their creation, with the original headers.
     """
     expected = hmac.new(secret.encode(), body + timestamp.encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)

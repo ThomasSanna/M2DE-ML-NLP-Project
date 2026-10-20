@@ -3,7 +3,7 @@ annuaire.ldif
 .playwright-mcp/
 rien.txt
 
-# Documents PDF (trop lourds pour le dépôt)
+# PDF documents (too heavy for the repository)
 doc/*.pdf
 
 opencode.json

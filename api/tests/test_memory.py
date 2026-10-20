@@ -26,7 +26,7 @@ def _add(client: TestClient, auth: dict[str, str], question: str, answer: str) -
 
 def test_routes_require_api_key(client: TestClient) -> None:
     assert client.post("/api/v1/memory/search", json={"query": "wifi"}).status_code == 401
-    bad = {"X-API-Key": "mauvaise-cle"}
+    bad = {"X-API-Key": "wrong-key"}
     response = client.post("/api/v1/memory/search", json={"query": "wifi"}, headers=bad)
     assert response.status_code == 401
 
@@ -82,7 +82,7 @@ def test_search_validates_top_k(client: TestClient, auth: dict[str, str]) -> Non
 def test_embedding_failure_returns_502(client: TestClient, auth: dict[str, str]) -> None:
     class FailingEmbedder:
         async def embed(self, texts: list[str]) -> list[list[float]]:
-            raise EmbeddingError("serveur injoignable")
+            raise EmbeddingError("server unreachable")
 
     client.app.dependency_overrides[get_embedder] = FailingEmbedder  # type: ignore[attr-defined]
     response = client.post("/api/v1/memory/search", json={"query": "wifi"}, headers=auth)

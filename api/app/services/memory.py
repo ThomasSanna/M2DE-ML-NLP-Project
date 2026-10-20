@@ -26,10 +26,10 @@ async def get_knowledge(session: AsyncSession, knowledge_id: uuid.UUID) -> Knowl
 async def search(
     session: AsyncSession, embedder: Embedder, query: str, top_k: int
 ) -> list[tuple[Knowledge, float]]:
-    """Top-k des connaissances actives par similarité cosinus de la question.
+    """Top-k active knowledge entries by cosine similarity of the question.
 
-    Similarité brute uniquement : la pondération (feedback, fraîcheur, réutilisation…)
-    viendra se greffer ici avec la pipeline.
+    Raw similarity only: the weighting (feedback, freshness, reuse...) will be
+    plugged in here with the pipeline.
     """
     [embedding] = await embedder.embed([query])
     distance = Knowledge.embedding.cosine_distance(embedding)

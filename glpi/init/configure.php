@@ -1,14 +1,14 @@
 <?php
 
 /**
- * Configuration reproductible de GLPI pour le PoC.
+ * Reproducible GLPI configuration for the PoC.
  *
- * Exécuté DANS le conteneur GLPI (via scripts/configure-glpi.sh), avec le noyau
- * GLPI chargé : les mots de passe (bind LDAP, SMTP) sont donc chiffrés par GLPI
- * lui-même (GLPIKey), exactement comme via l'interface.
+ * Run INSIDE the GLPI container (via scripts/configure-glpi.sh), with the GLPI
+ * kernel loaded: passwords (LDAP bind, SMTP) are therefore encrypted by GLPI
+ * itself (GLPIKey), exactly as through the interface.
  *
- * Idempotent : peut être relancé autant de fois que voulu. Une variable
- * d'environnement vide = réglage laissé tel quel (on n'écrase jamais avec du vide).
+ * Idempotent: can be rerun as many times as needed. An empty environment
+ * variable = setting left as is (an existing value is never overwritten with an empty one).
  */
 
 require '/var/www/glpi/vendor/autoload.php';
@@ -19,8 +19,8 @@ $kernel->boot();
 global $DB;
 
 $_SESSION['glpi_currenttime'] ??= date('Y-m-d H:i:s');
-// Contexte « cron » CLI : sans utilisateur connecté, Entity::update() filtre
-// sinon tous les champs faute de droits.
+// CLI "cron" context: without a logged-in user, Entity::update() otherwise
+// filters out every field for lack of rights.
 $_SESSION['glpicronuserrunning'] = 'poc-configure';
 
 function env(string $name, ?string $default = null): ?string
@@ -34,23 +34,23 @@ function step(string $message): void
     echo "  - {$message}\n";
 }
 
-/** N'écrit que les valeurs non nulles. */
+/** Only writes non-null values. */
 function setCoreConfig(array $values): void
 {
     Config::setConfigurationValues('core', array_filter($values, static fn($v) => $v !== null));
 }
 
-// ------------------------------------------------------------------ Général
-echo "[1/5] Général\n";
+// ------------------------------------------------------------------ General
+echo "[1/5] General\n";
 setCoreConfig([
-    // URL utilisée dans les liens des mails (http://localhost sans port = liens cassés)
+    // URL used in the links of the mails (http://localhost without a port = broken links)
     'url_base'     => env('GLPI_URL_BASE', 'http://localhost:8080'),
     'url_base_api' => env('GLPI_URL_BASE', 'http://localhost:8080') . '/apirest.php',
 ]);
 step('url_base = ' . env('GLPI_URL_BASE', 'http://localhost:8080'));
 
 // ---------------------------------------------------------------------- API
-echo "[2/5] API REST\n";
+echo "[2/5] REST API\n";
 setCoreConfig([
     'enable_api'                      => 1,
     'enable_api_login_credentials'    => 1,
@@ -61,14 +61,14 @@ $DB->update('glpi_apiclients', [
     'ipv4_range_start' => ip2long(env('GLPI_API_IP_START', '172.16.0.0')),
     'ipv4_range_end'   => ip2long(env('GLPI_API_IP_END', '172.31.255.255')),
 ], ['id' => 1]);
-step('API activée, client #1 : ' . env('GLPI_API_IP_START', '172.16.0.0') . ' → ' . env('GLPI_API_IP_END', '172.31.255.255'));
+step('API enabled, client #1: ' . env('GLPI_API_IP_START', '172.16.0.0') . ' → ' . env('GLPI_API_IP_END', '172.31.255.255'));
 
 // --------------------------------------------------------------------- LDAP
-echo "[3/5] Annuaire LDAP\n";
+echo "[3/5] LDAP directory\n";
 $ldapName  = 'Univ Corse LDAP';
 $ldapInput = [
     'name'            => $ldapName,
-    'host'            => env('LDAP_HOST', 'ldap'),     // nom du service Docker
+    'host'            => env('LDAP_HOST', 'ldap'),     // Docker service name
     'port'            => (int) env('LDAP_PORT', '389'),
     'basedn'          => env('LDAP_BASE_DN', 'dc=example,dc=org'),
     'use_bind'        => 1,
@@ -78,7 +78,7 @@ $ldapInput = [
     'login_field'     => 'uid',
     'sync_field'      => 'entryuuid',
     'realname_field'  => 'sn',
-    'firstname_field' => 'givenname',   // en minuscules, sinon le prénom reste vide
+    'firstname_field' => 'givenname',   // lowercase, otherwise the first name stays empty
     'email1_field'    => 'mail',
     'is_default'      => 1,
     'is_active'       => 1,
@@ -86,20 +86,20 @@ $ldapInput = [
 $authldap = new AuthLDAP();
 if ($authldap->getFromDBByCrit(['name' => $ldapName])) {
     $authldap->update(['id' => $authldap->getID()] + $ldapInput);
-    step("source « {$ldapName} » mise à jour (id {$authldap->getID()})");
+    step("source \"{$ldapName}\" updated (id {$authldap->getID()})");
 } else {
     $authldap->add($ldapInput);
-    step("source « {$ldapName} » créée (id {$authldap->getID()})");
+    step("source \"{$ldapName}\" created (id {$authldap->getID()})");
 }
 setCoreConfig([
-    'is_users_auto_add'     => 1,   // import auto à la 1re connexion LDAP
-    'use_noright_users_add' => 1,   // même sans habilitation préalable
+    'is_users_auto_add'     => 1,   // automatic import on first LDAP login
+    'use_noright_users_add' => 1,   // even without prior authorization
 ]);
 $ok = AuthLDAP::testLDAPConnection($authldap->getID());
-step('test de connexion LDAP : ' . ($ok ? 'OK' : 'ÉCHEC'));
+step('LDAP connection test: ' . ($ok ? 'OK' : 'FAILED'));
 
 // ------------------------------------------------------ Notifications / SMTP
-echo "[4/5] Notifications e-mail\n";
+echo "[4/5] E-mail notifications\n";
 setCoreConfig([
     'use_notifications'     => 1,
     'notifications_mailing' => 1,
@@ -115,48 +115,48 @@ setCoreConfig([
 ]);
 if (env('SMTP_HOST') !== null) {
     setCoreConfig([
-        'smtp_mode'              => 1,   // SMTP (TLS négocié automatiquement sur 587)
+        'smtp_mode'              => 1,   // SMTP (TLS negotiated automatically on 587)
         'smtp_host'              => env('SMTP_HOST'),
         'smtp_port'              => (int) env('SMTP_PORT', '587'),
         'smtp_username'          => env('SMTP_USER'),
-        'smtp_passwd'            => env('SMTP_PASSWORD'),   // null = mot de passe existant conservé
+        'smtp_passwd'            => env('SMTP_PASSWORD'),   // null = existing password kept
         'smtp_check_certificate' => 1,
         'smtp_max_retries'       => 5,
         'smtp_retry_time'        => 5,
     ]);
-    step('SMTP : ' . env('SMTP_HOST') . ':' . env('SMTP_PORT', '587')
-        . (env('SMTP_PASSWORD') === null ? ' (mot de passe inchangé)' : ' (mot de passe mis à jour)'));
+    step('SMTP: ' . env('SMTP_HOST') . ':' . env('SMTP_PORT', '587')
+        . (env('SMTP_PASSWORD') === null ? ' (password unchanged)' : ' (password updated)'));
 } else {
-    step('SMTP_HOST vide : configuration SMTP laissée telle quelle');
+    step('SMTP_HOST empty: SMTP configuration left as is');
 }
 
-// ------------------------------------------- Feedback : enquête de satisfaction
-echo "[5/5] Enquête de satisfaction (source du feedback w1)\n";
+// ------------------------------------------- Feedback: satisfaction survey
+echo "[5/5] Satisfaction survey (source of the w1 feedback)\n";
 $entity = new Entity();
 $entity->update([
     'id'                        => 0,
-    'inquest_config'            => 1,   // enquête interne GLPI
-    'inquest_rate'              => (int) env('SURVEY_RATE', '100'),   // % de tickets clos enquêtés
-    'inquest_delay'             => 0,   // enquête créée dès la clôture
-    'inquest_duration'          => 0,   // pas d'expiration
-    'inquest_max_rate'          => 5,   // note de 0 à 5
+    'inquest_config'            => 1,   // GLPI internal survey
+    'inquest_rate'              => (int) env('SURVEY_RATE', '100'),   // % of closed tickets surveyed
+    'inquest_delay'             => 0,   // survey created as soon as the ticket is closed
+    'inquest_duration'          => 0,   // no expiration
+    'inquest_max_rate'          => 5,   // score from 0 to 5
     'inquest_default_rate'      => 3,
-    // commentaire obligatoire si note <= seuil : alimente la file « à réviser »
+    // comment mandatory if score <= threshold: feeds the "to review" queue
     'inquest_mandatory_comment' => (int) env('SURVEY_COMMENT_THRESHOLD', '2'),
-    // tickets résolus non approuvés clos automatiquement → l'enquête part quand même
+    // solved tickets left unapproved are closed automatically → the survey is still sent
     'autoclose_delay'           => (int) env('TICKET_AUTOCLOSE_DAYS', '7'),
 ]);
-step('enquête : ' . env('SURVEY_RATE', '100') . ' % des tickets clos, note 0–5, commentaire obligatoire si ≤ '
-    . env('SURVEY_COMMENT_THRESHOLD', '2') . ', clôture auto après ' . env('TICKET_AUTOCLOSE_DAYS', '7') . ' j');
+step('survey: ' . env('SURVEY_RATE', '100') . ' % of closed tickets, score 0–5, comment mandatory if ≤ '
+    . env('SURVEY_COMMENT_THRESHOLD', '2') . ', auto-close after ' . env('TICKET_AUTOCLOSE_DAYS', '7') . ' d');
 
 $DB->update('glpi_notifications', ['is_active' => 1], [
     'itemtype' => 'Ticket',
     'event'    => ['new', 'add_followup', 'solved', 'closed', 'satisfaction', 'replysatisfaction'],
 ]);
-step('notifications ticket actives : nouveau, suivi, résolu, clos, enquête, réponse à l\'enquête');
+step('ticket notifications enabled: new, follow-up, solved, closed, survey, survey reply');
 
-// Tâches exécutées par le cron CLI du conteneur (mode 2) au lieu du mode
-// « interne » qui n'avance que lorsqu'un utilisateur navigue dans GLPI.
+// Tasks run by the container's CLI cron (mode 2) instead of the "internal"
+// mode, which only advances when a user browses GLPI.
 $crons = [
     ['QueuedNotification', 'queuednotification', 60],
     ['Ticket', 'closeticket', 3600],
@@ -169,6 +169,6 @@ foreach ($crons as [$itemtype, $name, $frequency]) {
         'frequency' => $frequency,
     ], ['itemtype' => $itemtype, 'name' => $name]);
 }
-step('cron CLI : envoi des mails (1 min), clôture auto et création d\'enquêtes (1 h)');
+step('CLI cron: mail sending (1 min), auto-close and survey creation (1 h)');
 
-echo "Configuration GLPI terminée.\n";
+echo "GLPI configuration done.\n";

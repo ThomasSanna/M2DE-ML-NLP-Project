@@ -1,13 +1,13 @@
-# Stack PoC — LDAP + GLPI + API mémoire
-# Usage : docker compose up -d
-# GLPI  : http://localhost:8080  (auto-install au premier démarrage)
-# PLA   : http://localhost:8081  (login DN : cn=admin,dc=example,dc=org)
-# LDAP  : ldap://localhost:389   (bind : cn=admin,dc=example,dc=org / mot de passe dans .env)
-# API   : http://localhost:8000/docs  (FastAPI ; mémoire vectorielle PostgreSQL + pgvector)
+# PoC stack - LDAP + GLPI + memory API
+# Usage: docker compose up -d
+# GLPI : http://localhost:8080  (auto-installs on first start)
+# PLA  : http://localhost:8081  (login DN: cn=admin,dc=example,dc=org)
+# LDAP : ldap://localhost:389   (bind: cn=admin,dc=example,dc=org / password in .env)
+# API  : http://localhost:8000/docs  (FastAPI; vector memory on PostgreSQL + pgvector)
 
 name: bisgambiglia-poc
 
-# Environnement commun à l'API et à son job de migration.
+# Environment shared by the API and its migration job.
 x-api-env: &api-env
   ENVIRONMENT: "${ENVIRONMENT:-dev}"
   LOG_LEVEL: "${LOG_LEVEL:-INFO}"
@@ -110,7 +110,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # ------------------------------------------- Mémoire (PostgreSQL + pgvector)
+  # ------------------------------------------- Memory (PostgreSQL + pgvector)
   postgres:
     image: pgvector/pgvector:0.8.0-pg17
     container_name: poc-postgres
@@ -121,7 +121,7 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
     ports:
-      # Exposé sur la machine hôte uniquement (dev local, tests, client SQL).
+      # Exposed on the host machine only (local dev, tests, SQL client).
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     networks:
       - poc_net
@@ -133,7 +133,7 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # --------------------------------------- Migrations du schéma (one-shot)
+  # --------------------------------------- Schema migrations (one-shot)
   migrate:
     build: ./api
     image: bisgambiglia-poc/api:latest

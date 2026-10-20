@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Applique la configuration GLPI du PoC (API, LDAP, SMTP, notifications, enquête
-# de satisfaction). Idempotent : à relancer après chaque `docker compose down -v`.
-# Usage : ./scripts/configure-glpi.sh   (stack démarrée, GLPI installé)
+# Apply the PoC GLPI configuration (API, LDAP, SMTP, notifications, satisfaction
+# survey). Idempotent: rerun after every `docker compose down -v`.
+# Usage: ./scripts/configure-glpi.sh   (stack started, GLPI installed)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -22,7 +22,7 @@ for v in "${vars[@]}"; do
   env_args+=(-e "$v=${!v:-}")
 done
 
-echo "Attente de l'installation de GLPI..."
+echo "Waiting for the GLPI installation..."
 until docker compose exec -T glpi test -f /var/glpi/config/config_db.php 2>/dev/null; do
   sleep 5
 done
