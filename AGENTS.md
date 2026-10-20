@@ -144,7 +144,7 @@ Match the neighbors; ruff config in `api/pyproject.toml` is authoritative (line 
 
 When a route, request/response schema, status code, table or setting changes, update in the
 same commit: `doc/api_doc.md` (endpoint section, schema, configuration table), the route table
-in `README.md` § "API mémoire", and `.env.example`. The model table in `README.md` is the
+in `README.md` § "Memory API", and `.env.example`. The model table in `README.md` is the
 source of truth for model names; `doc/note_projet.md` is raw notes and its model names are
 outdated.
 
