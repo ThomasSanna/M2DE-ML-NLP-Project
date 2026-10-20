@@ -1,4 +1,4 @@
-# API mémoire — référence
+# API mémoire - référence
 
 > Branche `feat/api-memoire`. Code dans [`api/`](../api/). Lancer et tester : voir le [README](../README.md), section « Memory API ».
 
@@ -10,8 +10,8 @@ Routes métier sous `/api/v1`.
 
 | Méthode | Chemin | Auth | Succès | Erreurs |
 |---|---|---|---|---|
-| `GET` | `/health/live` | — | `200` | — |
-| `GET` | `/health/ready` | — | `200` | `503` |
+| `GET` | `/health/live` | - | `200` | - |
+| `GET` | `/health/ready` | - | `200` | `503` |
 | `POST` | `/api/v1/ingest/ticket` | signature GLPI (si secret défini) | `202` | `401`, `422` |
 | `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | `201` | `401`, `422`, `502` |
 | `GET` | `/api/v1/memory/knowledge/{knowledge_id}` | `X-API-Key` | `200` | `401`, `404`, `422` |
@@ -55,8 +55,8 @@ Ajoute une paire question/réponse. **Seule la question est embeddée**, avant l
 
 | Champ | Type | Obligatoire | Contraintes | Défaut |
 |---|---|---|---|---|
-| `question` | texte | oui | ≥ 1 caractère | — |
-| `answer` | texte | oui | ≥ 1 caractère | — |
+| `question` | texte | oui | ≥ 1 caractère | - |
+| `answer` | texte | oui | ≥ 1 caractère | - |
 | `category` | texte ou null | non | ≤ 64 caractères | `null` |
 | `source` | `glpi_history`, `llm`, `technician` | non | enum | `glpi_history` |
 | `glpi_ticket_id` | entier ou null | non | | `null` |
@@ -82,7 +82,7 @@ Renvoie les `top_k` connaissances **`active`** les plus proches de `query`.
 
 | Champ | Type | Obligatoire | Contraintes | Défaut |
 |---|---|---|---|---|
-| `query` | texte | oui | ≥ 1 caractère | — |
+| `query` | texte | oui | ≥ 1 caractère | - |
 | `top_k` | entier | non | 1 à 50 | `5` |
 
 **Sortie** : `200`, liste de `SearchHit` (`{"knowledge": KnowledgeRead, "similarity": float}`), du plus au moins similaire. Liste vide si aucune connaissance active.
@@ -116,7 +116,7 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `EMBEDDING_MODEL` | `BAAI/bge-multilingual-gemma2` | modèle demandé au serveur |
 | `EMBEDDING_API_KEY` | vide | si le serveur en exige une |
 | `GLPI_WEBHOOK_SECRET` | vide | secret du webhook GLPI ; vide = signature non vérifiée |
-| `POSTGRES_USER` / `_PASSWORD` / `_DB` | `memoire` / — / `memoire` | base de la mémoire |
+| `POSTGRES_USER` / `_PASSWORD` / `_DB` | `memoire` / - / `memoire` | base de la mémoire |
 | `POSTGRES_HOST` / `_PORT` | `localhost` / `5432` | forcé à `postgres:5432` dans Docker |
 | `ENVIRONMENT`, `LOG_LEVEL` | `dev`, `INFO` | `prod` désactive `/docs` |
 
