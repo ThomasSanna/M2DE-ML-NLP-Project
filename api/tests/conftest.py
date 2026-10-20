@@ -23,8 +23,8 @@ API_ROOT = Path(__file__).resolve().parents[1]
 
 
 class FakeEmbedder:
-    """Embeddings déterministes (sac de mots haché) : des textes proches donnent des vecteurs
-    proches, sans serveur de modèle."""
+    """Deterministic embeddings (hashed bag of words): similar texts give similar vectors,
+    without a model server."""
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         return [self._bag_of_words(text) for text in texts]

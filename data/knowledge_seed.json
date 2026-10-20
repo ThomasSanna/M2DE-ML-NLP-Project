@@ -1,0 +1,357 @@
+[
+  {
+    "category": "mots-de-passe",
+    "question": "J'ai oublié mon mot de passe de l'ENT, comment le réinitialiser ?",
+    "answer": "Depuis la page de connexion de l'ENT, cliquez sur « Mot de passe oublié ». Saisissez votre identifiant, puis choisissez la réinitialisation par SMS ou par mail personnel (celui renseigné lors de votre inscription). Vous recevrez un lien valable 30 minutes. Si aucune adresse ou numéro n'est enregistré, ou si vous ne recevez rien, présentez-vous avec une pièce d'identité à l'accueil de la DSI pour une réinitialisation en présence."
+  },
+  {
+    "category": "mots-de-passe",
+    "question": "Mon compte est bloqué après plusieurs essais de connexion, que faire ?",
+    "answer": "Le compte est verrouillé automatiquement après 5 tentatives erronées consécutives. Le verrouillage se lève seul au bout de 15 minutes : patientez sans réessayer, car chaque nouvel essai relance le délai. Si vous avez changé récemment votre mot de passe, vérifiez qu'un appareil (téléphone, tablette, client mail) n'utilise pas encore l'ancien : c'est la cause la plus fréquente de blocages répétés. Si le blocage persiste après 15 minutes, répondez à ce ticket en précisant l'heure de la dernière tentative."
+  },
+  {
+    "category": "mots-de-passe",
+    "question": "Quelles sont les règles pour choisir un nouveau mot de passe ? Il est toujours refusé.",
+    "answer": "Le mot de passe doit comporter au moins 12 caractères, dont au moins une majuscule, une minuscule, un chiffre et un caractère spécial. Il ne doit contenir ni votre nom, ni votre prénom, ni votre identifiant, et ne doit pas reprendre l'un de vos 5 derniers mots de passe. Une phrase de passe (quatre ou cinq mots sans lien entre eux, séparés par des tirets) est plus sûre et plus facile à retenir qu'une suite de symboles. Évitez les caractères accentués, mal gérés par certains services."
+  },
+  {
+    "category": "mots-de-passe",
+    "question": "Mon mot de passe va expirer, comment le changer avant ?",
+    "answer": "Connectez-vous au portail de gestion du compte depuis l'ENT (menu « Mon compte » puis « Changer mon mot de passe »). Saisissez l'ancien mot de passe, puis le nouveau deux fois. Le changement est répercuté sur l'ENT, la messagerie, le Wi-Fi et le VPN dans un délai de 5 à 10 minutes. Pensez ensuite à mettre à jour le mot de passe enregistré sur vos appareils (smartphone, client mail, Wi-Fi) pour éviter un blocage du compte."
+  },
+  {
+    "category": "mots-de-passe",
+    "question": "Comment activer la double authentification sur mon compte universitaire ?",
+    "answer": "Dans « Mon compte » > « Sécurité », choisissez « Activer la double authentification ». Installez une application d'authentification (FreeOTP, Microsoft Authenticator ou Google Authenticator) sur votre smartphone, scannez le QR code affiché, puis saisissez le code à 6 chiffres pour valider. Conservez précieusement les codes de secours proposés à la fin : ils sont indispensables si vous perdez votre téléphone. En cas de perte, ouvrez un ticket depuis une autre adresse mail et joignez une pièce d'identité pour la réinitialisation."
+  },
+  {
+    "category": "mots-de-passe",
+    "question": "J'ai changé de téléphone et je n'ai plus mes codes de double authentification",
+    "answer": "Si vous disposez encore de vos codes de secours, utilisez-en un pour vous connecter, puis réenregistrez l'application d'authentification sur le nouveau téléphone depuis « Mon compte » > « Sécurité » (désactiver puis réactiver la double authentification). Sans codes de secours, la réinitialisation ne peut être faite que par un technicien après vérification de votre identité : présentez-vous à l'accueil de la DSI avec une pièce d'identité ou joignez-la à ce ticket depuis votre adresse mail personnelle enregistrée."
+  },
+  {
+    "category": "messagerie",
+    "question": "Je ne reçois plus mes mails Outlook depuis ce matin",
+    "answer": "Vérifiez d'abord que vous êtes en ligne (le bandeau en bas d'Outlook ne doit pas indiquer « Déconnecté » ou « Mode hors connexion »), puis consultez le dossier « Courrier indésirable » et l'onglet « Autres » de la boîte de réception. Contrôlez également que votre quota n'est pas plein (Fichier > Informations > Outils de nettoyage). Testez ensuite l'accès via le webmail dans un navigateur : si les mails y sont présents, le problème vient du client, et recréer le profil Outlook (Panneau de configuration > Courrier) le résout dans la plupart des cas. Si le webmail est également vide, indiquez-nous l'heure du dernier mail reçu."
+  },
+  {
+    "category": "messagerie",
+    "question": "Ma boîte mail est pleine, je ne peux plus envoyer ni recevoir",
+    "answer": "Le quota standard d'une boîte est de 50 Go pour le personnel et de 20 Go pour les étudiants. Pour libérer de la place : videz le dossier « Éléments supprimés » et « Courrier indésirable », triez par taille pour repérer les mails volumineux avec pièces jointes, puis déplacez les anciens messages vers une archive locale (fichier .pst) ou supprimez-les. Les pièces jointes lourdes peuvent être remplacées par un lien de partage sur l'espace de stockage de l'université. Le quota est mis à jour dans l'heure suivant le nettoyage. Si vous avez un besoin justifié d'extension, précisez-le dans le ticket."
+  },
+  {
+    "category": "messagerie",
+    "question": "Comment configurer ma messagerie universitaire sur mon smartphone ?",
+    "answer": "Ajoutez un compte de type « Exchange » (ou « Microsoft 365 / Outlook ») dans l'application Mail ou dans l'application Outlook. Saisissez votre adresse mail complète (prenom.nom@...) et votre mot de passe universitaire ; la configuration automatique renseigne le serveur. Si la configuration automatique échoue, indiquez le domaine et le nom d'utilisateur au format identifiant@domaine fourni par la DSI. Si la double authentification est active, utilisez de préférence l'application Outlook officielle, qui la gère nativement."
+  },
+  {
+    "category": "messagerie",
+    "question": "Mes mails partent en spam chez les destinataires",
+    "answer": "Les causes les plus fréquentes sont : un envoi vers de nombreux destinataires en copie visible, un objet ou un corps de message composé presque uniquement d'un lien ou d'images, ou une pièce jointe de type exécutable ou archive protégée. Utilisez un objet explicite, rédigez un vrai texte et évitez les envois en masse depuis votre boîte personnelle (une liste de diffusion existe pour cela). Si le problème touche tous vos destinataires et pas seulement un domaine précis, communiquez-nous l'en-tête complet d'un message refusé ou classé indésirable : il permet de vérifier la signature du domaine et la réputation du serveur d'envoi."
+  },
+  {
+    "category": "messagerie",
+    "question": "Comment configurer une réponse automatique d'absence ?",
+    "answer": "Dans Outlook : Fichier > Réponses automatiques (absence du bureau). Cochez « Envoyer des réponses automatiques », fixez la période, puis rédigez un message pour les contacts internes et, si besoin, un message distinct pour les expéditeurs externes. Dans le webmail : Paramètres (roue dentée) > Courrier > Réponses automatiques. Pensez à indiquer une personne à contacter en votre absence. La réponse automatique fonctionne même si votre ordinateur est éteint, car elle est gérée par le serveur."
+  },
+  {
+    "category": "messagerie",
+    "question": "J'ai reçu un mail suspect me demandant mon mot de passe, que dois-je faire ?",
+    "answer": "Ne cliquez sur aucun lien, n'ouvrez aucune pièce jointe et ne répondez pas : la DSI ne demande jamais votre mot de passe par mail. Signalez le message avec le bouton « Signaler » d'Outlook (ou transférez-le en pièce jointe à l'adresse de sécurité de la DSI), puis supprimez-le. Si vous avez déjà saisi vos identifiants sur la page indiquée, changez immédiatement votre mot de passe depuis un appareil de confiance et ouvrez un ticket urgent : nous vérifierons les connexions récentes sur votre compte."
+  },
+  {
+    "category": "messagerie",
+    "question": "Comment partager mon calendrier avec un collègue ?",
+    "answer": "Dans Outlook, faites un clic droit sur votre calendrier > « Partager » > « Autorisations du calendrier » (ou « Partager le calendrier »), ajoutez la personne et choisissez le niveau d'accès : « Peut voir uniquement la disponibilité », « Peut voir les détails » ou « Peut modifier ». Le collègue reçoit une invitation à accepter. Pour un secrétariat qui gère l'agenda d'un enseignant, utilisez plutôt la délégation (Fichier > Paramètres du compte > Accès délégué)."
+  },
+  {
+    "category": "messagerie",
+    "question": "Comment créer une liste de diffusion pour mon équipe de recherche ?",
+    "answer": "Les listes de diffusion se demandent par ticket (catégorie « Demande de service »). Précisez le nom souhaité de la liste, son propriétaire, la liste initiale des membres (adresses de l'université), et indiquez si elle accepte les messages d'expéditeurs externes. Le délai de création est de 2 jours ouvrés. Le propriétaire pourra ensuite ajouter ou retirer des membres lui-même depuis l'interface de gestion des listes qui lui sera communiquée."
+  },
+  {
+    "category": "wifi-vpn",
+    "question": "eduroam ne fonctionne pas sur mon ordinateur portable",
+    "answer": "Commencez par oublier le réseau eduroam dans les paramètres Wi-Fi, puis reconnectez-vous. L'identifiant doit être saisi sous la forme complète identifiant@domaine-universitaire (et non le simple identifiant), avec le mot de passe de l'ENT. Si le mot de passe a été changé récemment, il faut le mettre à jour sur l'appareil. Si une erreur de certificat apparaît, ne l'acceptez pas sans vérifier : installez le profil de configuration officiel (outil de configuration eduroam de la DSI), qui paramètre automatiquement le certificat du serveur d'authentification."
+  },
+  {
+    "category": "wifi-vpn",
+    "question": "Mon smartphone se connecte à eduroam mais je n'ai pas Internet",
+    "answer": "Un appareil connecté sans accès Internet indique en général un problème d'attribution d'adresse ou de bascule des données mobiles. Désactivez puis réactivez le Wi-Fi, désactivez toute connexion VPN ou proxy personnel, et assurez-vous que l'option « adresse MAC privée / aléatoire » n'est pas bloquée par un ancien profil. Testez l'accès à un site simple en HTTP. Si le problème survient dans un seul bâtiment, notez le nom de la salle et l'heure précise dans le ticket : cela permet de repérer une borne défectueuse."
+  },
+  {
+    "category": "wifi-vpn",
+    "question": "Comment connecter mon appareil sans navigateur (console, TV connectée, imprimante personnelle) au Wi-Fi ?",
+    "answer": "Ces appareils ne gèrent pas l'authentification d'eduroam. Ils ne sont pas autorisés sur le réseau eduroam du campus. Pour un besoin pédagogique ou de recherche, ouvrez un ticket en précisant le type d'appareil, son adresse MAC et la raison d'usage : la DSI peut, selon le cas, l'enregistrer sur un réseau dédié aux objets connectés. Les usages purement personnels (console de jeux, TV) ne sont pas pris en charge."
+  },
+  {
+    "category": "wifi-vpn",
+    "question": "Je n'arrive pas à me connecter au VPN depuis chez moi",
+    "answer": "Vérifiez d'abord que vous utilisez la dernière version du client VPN recommandé par la DSI et que votre identifiant est saisi au format attendu (identifiant@domaine). Si la double authentification est activée, saisissez le code à usage unique lorsque le client le demande. Si la connexion est refusée avec « authentification échouée », testez le mot de passe sur l'ENT : s'il y est refusé également, le compte est peut-être verrouillé. En cas d'échec de la connexion elle-même (délai dépassé), essayez avec un autre réseau, par exemple le partage de connexion de votre téléphone : certaines box filtrent le protocole du VPN. Transmettez-nous le message d'erreur exact et l'heure de la tentative."
+  },
+  {
+    "category": "wifi-vpn",
+    "question": "Le VPN est connecté mais je n'accède pas aux ressources internes (serveurs, intranet)",
+    "answer": "Vérifiez que le tunnel est bien établi (icône du client en état « connecté ») et que vous utilisez le profil complet et non le profil « navigation seule ». Essayez d'accéder à la ressource par son nom complet (nom.domaine-universitaire). Si seul le nom ne fonctionne pas mais que l'adresse IP répond, il s'agit d'un problème de résolution DNS : déconnectez-vous, videz le cache DNS (ipconfig /flushdns sous Windows) et reconnectez-vous. Précisez dans le ticket quelle ressource est inaccessible : certains serveurs ne sont ouverts qu'à des groupes d'utilisateurs précis."
+  },
+  {
+    "category": "wifi-vpn",
+    "question": "Je suis invité sur le campus, comment obtenir un accès Wi-Fi temporaire ?",
+    "answer": "Un invité (conférencier, visiteur, partenaire) obtient un accès temporaire via le réseau « invités » du campus, après création d'un compte par un membre de l'université. Celui-ci en fait la demande par ticket au moins 2 jours ouvrés avant la venue, en indiquant le nom, l'adresse mail de l'invité, les dates de présence et le motif. Les identifiants sont envoyés à l'invité par mail et expirent à la date de fin. L'accès est limité à la navigation Web."
+  },
+  {
+    "category": "reseau-filaire",
+    "question": "La prise réseau de mon bureau ne fonctionne plus",
+    "answer": "Vérifiez que le câble est bien enfiché des deux côtés et testez avec un autre câble ou un autre poste si possible. Notez le numéro d'étiquette de la prise (inscrit sur la plaque murale, de type B2-045). Un voyant éteint sur la carte réseau indique en général un problème de câble ou de brassage ; un voyant actif sans accès indique plutôt une adresse non attribuée (dans ce cas, redémarrez la carte réseau). Transmettez-nous l'étiquette de la prise et le bâtiment : un technicien vérifiera le brassage au local technique, intervention généralement faite sous 48 heures."
+  },
+  {
+    "category": "reseau-filaire",
+    "question": "Comment obtenir une adresse IP fixe pour un serveur ou un équipement de laboratoire ?",
+    "answer": "Les adresses fixes sont attribuées sur demande justifiée par ticket (catégorie « Réseau »). Précisez : le nom de la machine ou de l'équipement, son adresse MAC, la prise réseau utilisée, le service hébergé et la durée prévue, ainsi que le nom du responsable scientifique. Les services accessibles depuis l'extérieur du campus nécessitent une validation de sécurité par le RSSI. Délai de traitement de 3 à 5 jours ouvrés."
+  },
+  {
+    "category": "impression",
+    "question": "Comment imprimer depuis mon ordinateur portable personnel sur les imprimantes de l'université ?",
+    "answer": "Connectez-vous au portail d'impression de l'université depuis un navigateur (accessible depuis l'ENT, menu « Impression ») avec vos identifiants, puis déposez votre document PDF dans « Soumettre un travail ». Choisissez la file d'attente (noir et blanc ou couleur), puis rendez-vous à n'importe quelle imprimante du campus : badgez votre carte étudiante ou personnel pour libérer l'impression. Vos travaux restent disponibles 24 heures. Le coût est décompté de votre crédit d'impression."
+  },
+  {
+    "category": "impression",
+    "question": "L'imprimante du couloir est bloquée et affiche « bourrage papier »",
+    "answer": "Éteignez l'imprimante, ouvrez successivement les capots signalés par les pictogrammes sur l'écran et retirez délicatement le papier coincé en suivant le sens du trajet, sans tirer brutalement. Vérifiez qu'aucun fragment ne reste à l'intérieur, remettez les capots, puis rallumez. Si le message persiste, ou en cas de bourrages répétés, ouvrez un ticket en indiquant l'emplacement et le numéro d'inventaire (étiquette sur le dessus de l'appareil) : un technicien interviendra. Évitez de charger du papier humide, plié ou de grammage inadapté."
+  },
+  {
+    "category": "impression",
+    "question": "Mon travail d'impression reste en file d'attente et ne sort jamais",
+    "answer": "Vérifiez d'abord que vous avez bien libéré le travail en badgeant sur l'imprimante, car l'impression sécurisée est retenue tant que vous n'êtes pas physiquement présent. Si le travail n'apparaît pas à l'écran de l'imprimante, ouvrez le portail d'impression et contrôlez son statut : un travail en erreur doit être supprimé puis renvoyé. Un document d'un format particulier (très lourd ou avec polices exotiques) échoue souvent : exportez-le en PDF avant l'impression. Vérifiez également que votre crédit d'impression n'est pas épuisé."
+  },
+  {
+    "category": "impression",
+    "question": "Comment recharger mon crédit d'impression étudiant ?",
+    "answer": "Le crédit d'impression se recharge depuis le portail d'impression (rubrique « Mon crédit »), par paiement en ligne par carte bancaire, ou aux bornes de paiement installées dans les bibliothèques. Le crédit est disponible quelques minutes après le paiement. Un crédit initial est offert chaque année universitaire. Le crédit non utilisé reste valable d'une année sur l'autre mais n'est pas remboursable."
+  },
+  {
+    "category": "impression",
+    "question": "Comment installer l'imprimante de mon service sur mon poste ?",
+    "answer": "Sur un poste géré par la DSI, ouvrez Paramètres > Imprimantes et scanners > Ajouter, puis choisissez l'imprimante de votre service dans la liste (elle porte le nom du bâtiment et de l'étage). Le pilote s'installe automatiquement. Si l'imprimante n'apparaît pas, vous n'êtes probablement pas dans le groupe autorisé : demandez par ticket l'ajout de l'imprimante en précisant son nom (étiqueté sur l'appareil) et le nom de votre poste. Sur un poste personnel, utilisez le portail d'impression Web."
+  },
+  {
+    "category": "logiciels",
+    "question": "Comment installer Microsoft Office sur mon ordinateur personnel ?",
+    "answer": "Les étudiants et les personnels ont droit à Microsoft 365 via la licence de l'université. Connectez-vous sur le portail Microsoft 365 avec votre adresse mail universitaire, ouvrez « Installer les applications » puis suivez l'assistant. Cette licence est valable tant que votre compte est actif ; elle prend fin quelques semaines après la fin de la scolarité ou du contrat. Pour un poste professionnel géré par la DSI, utilisez plutôt le Centre logiciel qui déploie la version validée."
+  },
+  {
+    "category": "logiciels",
+    "question": "Je veux installer un logiciel sur mon poste de travail mais je n'ai pas les droits administrateur",
+    "answer": "Sur un poste géré, l'installation de logiciels est restreinte pour des raisons de sécurité. Consultez d'abord le Centre logiciel (menu Démarrer) : de nombreux logiciels courants (navigateurs, lecteurs PDF, 7-Zip, VS Code, Python, R) y sont installables sans droits spécifiques. Pour un logiciel absent du catalogue, ouvrez un ticket en précisant son nom, la version, l'éditeur, le site de téléchargement, l'usage pédagogique ou de recherche et le type de licence. La DSI vérifie la compatibilité et la sécurité avant déploiement ; compter 5 jours ouvrés."
+  },
+  {
+    "category": "logiciels",
+    "question": "Comment installer Python et les bibliothèques pour mon TP de machine learning ?",
+    "answer": "Installez Python 3.12 depuis le site officiel ou depuis le Centre logiciel, puis créez un environnement virtuel dans le dossier du TP : « python -m venv .venv », puis activez-le (« .venv\\Scripts\\activate » sous Windows, « source .venv/bin/activate » sous Linux ou macOS). Installez ensuite les bibliothèques avec « pip install numpy pandas scikit-learn matplotlib jupyter ». Sur les postes de salles informatiques, un environnement conda préconfiguré est disponible : il suffit d'ouvrir « Anaconda Prompt » et d'exécuter « conda activate ml-m2 »."
+  },
+  {
+    "category": "logiciels",
+    "question": "Le logiciel Matlab demande une licence et ne démarre plus",
+    "answer": "Matlab utilise une licence réseau : le poste doit pouvoir joindre le serveur de licences de l'université, ce qui impose d'être sur le réseau du campus ou connecté au VPN. Vérifiez la connexion au VPN, puis relancez Matlab. Si le message mentionne « licence expirée » ou « Error -9 », l'activation est liée à votre compte MathWorks universitaire : reconnectez-vous depuis la fenêtre d'activation avec votre adresse mail universitaire. Si le problème persiste, joignez la capture d'écran de l'erreur complète à ce ticket."
+  },
+  {
+    "category": "logiciels",
+    "question": "Mon navigateur affiche une erreur de certificat sur un site de l'université",
+    "answer": "Vérifiez que la date et l'heure de votre ordinateur sont correctes : un décalage d'horloge provoque des erreurs de certificat sur tous les sites. Si l'erreur ne concerne que certains sites internes, le certificat racine de l'université n'est probablement pas installé sur votre appareil personnel : installez-le depuis la page d'aide de la DSI. N'acceptez jamais l'exception de sécurité pour un site demandant des identifiants si vous ne comprenez pas l'origine de l'erreur, et signalez l'adresse exacte dans le ticket."
+  },
+  {
+    "category": "logiciels",
+    "question": "Comment accéder aux logiciels de la salle informatique depuis chez moi ?",
+    "answer": "Les logiciels spécialisés (logiciels de calcul, de CAO, de statistique) sont accessibles à distance via le bureau virtuel de l'université. Connectez-vous au VPN, puis ouvrez le portail de bureau virtuel depuis l'ENT et lancez l'environnement correspondant à votre formation. Vos fichiers personnels sont ceux du lecteur réseau de l'université. Le nombre de sessions simultanées est limité : en période de TP, déconnectez-vous explicitement à la fin de votre session pour libérer la place."
+  },
+  {
+    "category": "licences",
+    "question": "Comment obtenir une licence pour un logiciel nécessaire à mon projet de recherche ?",
+    "answer": "Vérifiez d'abord le catalogue des licences de l'université (accessible depuis l'ENT) : plusieurs éditeurs disposent d'accords cadres (Microsoft, Adobe pour les enseignants, MathWorks, ANSYS, Zotero Storage, etc.). Si le logiciel n'y figure pas, ouvrez un ticket avec : nom et version, éditeur, nombre d'utilisateurs, usage prévu, devis éventuel et nom du responsable budgétaire. Les achats de licences sont validés par le service des achats et le RSSI ; le délai dépend de la procédure d'achat public applicable et peut atteindre plusieurs semaines."
+  },
+  {
+    "category": "licences",
+    "question": "Ma licence Adobe affiche « abonnement expiré » alors que je suis toujours en poste",
+    "answer": "Les licences Adobe sont rattachées à votre compte et renouvelées chaque année par la DSI. Déconnectez-vous puis reconnectez-vous à l'application Creative Cloud en choisissant « Compte professionnel ou scolaire » et non « Compte personnel », avec votre adresse mail universitaire. Si le message persiste après reconnexion, c'est que votre affectation n'a pas été reconduite : ouvrez un ticket avec votre composante et le nom de votre responsable pour qu'on réattribue la licence."
+  },
+  {
+    "category": "licences",
+    "question": "Les étudiants ont-ils accès gratuitement à Windows ou à des logiciels de développement ?",
+    "answer": "Selon les accords en vigueur, les étudiants des filières concernées ont accès à un portail logiciel qui propose gratuitement des outils de développement, des systèmes d'exploitation pour usage pédagogique et des licences éducatives (JetBrains, GitHub Education, etc.). Connectez-vous avec votre adresse mail universitaire et inscrivez-vous sur les portails des éditeurs concernés. Les licences sont personnelles et réservées à un usage non commercial, et prennent fin avec la fin de la scolarité."
+  },
+  {
+    "category": "materiel",
+    "question": "Mon ordinateur portable professionnel ne démarre plus",
+    "answer": "Débranchez le chargeur et tous les périphériques, retirez la batterie si elle est amovible, maintenez le bouton d'alimentation 30 secondes, puis rebranchez uniquement le chargeur et rallumez. Si l'écran reste noir, observez les voyants (clignotement ou bips éventuels) et notez leur nombre : ils indiquent la nature de la panne. Ne tentez pas de réinstaller le système vous-même, car vos données risquent d'être perdues. Ouvrez un ticket avec le numéro d'inventaire (étiquette sous l'ordinateur) et décrivez les symptômes ; un prêt temporaire d'un portable peut être prévu en attendant la réparation."
+  },
+  {
+    "category": "materiel",
+    "question": "Comment demander un nouvel ordinateur ou le renouvellement de mon poste ?",
+    "answer": "Le renouvellement du parc suit un cycle d'environ 5 ans. Pour un nouveau poste ou un remplacement anticipé, ouvrez un ticket « Demande de matériel » en précisant le besoin (usage, logiciels spécifiques, mobilité) et faites valider la demande par le responsable de votre service ou de votre équipe de recherche, qui assure le financement. La DSI propose un catalogue de configurations standard (bureautique, calcul, mobile) afin de simplifier la commande. Le délai de livraison est de 4 à 8 semaines selon le marché public en cours."
+  },
+  {
+    "category": "materiel",
+    "question": "L'écran de mon poste fixe affiche « pas de signal »",
+    "answer": "Vérifiez que le câble vidéo (HDMI, DisplayPort ou VGA) est correctement branché des deux côtés et que l'écran est réglé sur la bonne source d'entrée (touche « Input » ou « Source »). Testez avec un autre câble si vous en disposez. Si le poste est allumé (voyants et ventilateur actifs) mais qu'aucune image n'apparaît sur plusieurs écrans, le problème vient de l'unité centrale. Notez le numéro d'inventaire du poste et ouvrez un ticket ; ne démontez jamais le boîtier."
+  },
+  {
+    "category": "materiel",
+    "question": "Je souhaite emprunter un vidéoprojecteur ou un ordinateur pour un événement",
+    "answer": "Le prêt de matériel est géré par la DSI via le service de prêt. Faites la demande par ticket au moins 5 jours ouvrés avant la date, en précisant le matériel, les dates et lieu d'utilisation et un référent responsable. Le matériel est retiré au bureau de prêt contre signature d'un bon de prêt et doit être restitué en bon état à la date convenue. Pour les amphithéâtres, le matériel fixe est déjà installé : consultez d'abord la fiche de la salle."
+  },
+  {
+    "category": "materiel",
+    "question": "Mon casque ou mon micro n'est pas reconnu pendant les visioconférences",
+    "answer": "Vérifiez dans les paramètres audio de l'application (Teams, Zoom, BigBlueButton) que le bon périphérique est sélectionné pour le micro et pour la sortie, et que le micro n'est pas coupé (physiquement ou dans le système). Sous Windows, ouvrez Paramètres > Confidentialité > Microphone et autorisez les applications à y accéder. Essayez un autre port USB ou un autre appareil pour déterminer si le casque est en cause. Si le problème n'existe que sur un navigateur, vérifiez l'autorisation du site pour le micro dans les paramètres du navigateur."
+  },
+  {
+    "category": "acces-salles",
+    "question": "Ma carte étudiante n'ouvre plus la porte de la salle de TP",
+    "answer": "Les droits d'accès sont synchronisés chaque nuit depuis la base d'inscription. Vérifiez que votre inscription administrative pour l'année en cours est bien validée et que vous êtes inscrit au groupe de TP concerné. Un droit récemment ajouté est actif le lendemain matin. Si le badge échoue partout, la carte est peut-être démagnétisée : faites-la remplacer à l'accueil de la scolarité. Pour une salle précise, indiquez dans le ticket le nom de la salle, le jour et l'heure."
+  },
+  {
+    "category": "acces-salles",
+    "question": "Comment obtenir l'accès à un laboratoire ou à une salle serveur ?",
+    "answer": "L'accès aux laboratoires et aux locaux techniques est soumis à l'autorisation du directeur de l'unité ou du responsable du local. Votre responsable doit adresser un ticket (catégorie « Accès bâtiments ») indiquant votre nom, la période d'accès et le local concerné. Pour une salle serveur, la validation du RSSI et une formation à la sécurité sont requises. Les droits sont limités dans le temps et revus chaque année. Aucun accès ne peut être donné sur simple demande orale."
+  },
+  {
+    "category": "acces-salles",
+    "question": "J'ai perdu ma carte multiservices (badge), que dois-je faire ?",
+    "answer": "Faites opposer immédiatement la carte en la signalant via le ticket ou à l'accueil de la scolarité pour éviter une utilisation frauduleuse (accès, paiement, impression). Une nouvelle carte est éditée à l'accueil sur présentation d'une pièce d'identité ; une participation aux frais de remplacement peut être demandée. La carte désactivée ne peut pas être réactivée si elle est retrouvée. Entre-temps, la DSI peut vous délivrer un badge provisoire pour la journée."
+  },
+  {
+    "category": "acces-salles",
+    "question": "Comment réserver une salle informatique ou une salle de réunion équipée ?",
+    "answer": "Les réservations se font via l'outil de réservation de salles accessible depuis l'ENT (rubrique « Réservation de ressources »). Choisissez la salle, le créneau et le motif ; les salles de réunion sont réservables par le personnel, les salles informatiques par les enseignants pour leurs TP. Pour une demande d'équipement particulier (logiciel spécifique, configuration d'enseignement), ouvrez un ticket au moins une semaine avant l'utilisation afin que la DSI prépare la salle."
+  },
+  {
+    "category": "ent-moodle",
+    "question": "Je ne vois pas mon cours dans Moodle alors que je suis inscrit",
+    "answer": "L'inscription aux cours Moodle est synchronisée avec votre inscription pédagogique : si vous venez de vous inscrire à une UE, la synchronisation peut prendre jusqu'à 24 heures. Vérifiez que la bonne année universitaire est sélectionnée (menu « Mes cours » > filtre) et que le cours n'est pas masqué dans votre tableau de bord. Si votre inscription pédagogique est validée depuis plus d'un jour sans que le cours apparaisse, contactez le secrétariat pédagogique : l'enseignant peut aussi vous inscrire manuellement. Joignez à votre ticket le nom exact de l'UE."
+  },
+  {
+    "category": "ent-moodle",
+    "question": "Je n'arrive pas à déposer mon devoir sur Moodle, le fichier est refusé",
+    "answer": "Vérifiez la taille du fichier (la limite par défaut est de 100 Mo) et le format accepté par l'activité, indiqués sur la page du devoir. Un nom de fichier comportant des caractères spéciaux ou accentués est parfois refusé : renommez-le simplement (par exemple « nom_prenom_tp1.pdf »). Essayez avec un autre navigateur et désactivez les extensions de blocage. Si la date limite est dépassée, seul l'enseignant peut rouvrir le dépôt ; en cas de panne avérée, conservez une capture d'écran de l'erreur avec la date et l'heure et envoyez-la lui."
+  },
+  {
+    "category": "ent-moodle",
+    "question": "Comment créer un espace de cours sur Moodle pour mon enseignement ?",
+    "answer": "Les espaces de cours sont créés automatiquement pour chaque UE à partir du catalogue pédagogique. Si votre UE n'a pas d'espace, adressez une demande par ticket (catégorie « Pédagogie numérique ») avec le code de l'UE, la formation et l'année. Vous pouvez ensuite y inscrire des étudiants (par cohorte synchronisée ou manuellement), importer le contenu d'un cours de l'année précédente (Réglages > Importer) et paramétrer les activités. Une documentation et des formations d'accompagnement sont proposées par la cellule de pédagogie numérique."
+  },
+  {
+    "category": "ent-moodle",
+    "question": "Mes notes ne s'affichent pas sur l'ENT",
+    "answer": "Les notes ne sont visibles qu'après publication par le secrétariat pédagogique, souvent à l'issue du jury ; avant cela, elles ne peuvent pas apparaître, quelle que soit la saisie de l'enseignant. Si le jury a eu lieu et que les résultats sont annoncés mais absents de l'ENT, contactez le secrétariat de votre formation, car la publication est effectuée à ce niveau. Un problème d'affichage (page vide) peut aussi se résoudre en vidant le cache du navigateur ou en essayant en navigation privée."
+  },
+  {
+    "category": "ent-moodle",
+    "question": "Comment télécharger mon certificat de scolarité ?",
+    "answer": "Le certificat de scolarité se télécharge directement depuis l'ENT : menu « Scolarité » > « Mes documents » > « Certificat de scolarité ». Il n'est disponible qu'une fois l'inscription administrative terminée et la cotisation vie étudiante réglée. Le document est signé électroniquement et possède un code de vérification : il n'a pas besoin d'être tamponné. Si le document n'est pas proposé alors que vous êtes inscrit, contactez le service de la scolarité."
+  },
+  {
+    "category": "stockage",
+    "question": "Comment accéder à mon espace de stockage personnel de l'université depuis chez moi ?",
+    "answer": "Connectez-vous d'abord au VPN de l'université. Sous Windows, ouvrez l'Explorateur > Ce PC > Connecter un lecteur réseau, puis saisissez l'adresse du serveur de fichiers fournie dans l'aide de la DSI et cochez « Se reconnecter à l'ouverture de session ». Utilisez votre identifiant au format domaine\\identifiant. Sans VPN, vous pouvez accéder à vos fichiers via l'interface Web du cloud de l'université (stockage et partage de fichiers) depuis n'importe quel navigateur."
+  },
+  {
+    "category": "stockage",
+    "question": "J'ai supprimé un fichier par erreur sur le lecteur réseau, peut-on le récupérer ?",
+    "answer": "Les lecteurs réseau sont sauvegardés chaque nuit et conservent des versions précédentes pendant 30 jours. Sous Windows, faites un clic droit sur le dossier qui contenait le fichier > « Propriétés » > onglet « Versions précédentes » et ouvrez la version datée d'avant la suppression. Copiez le fichier retrouvé à un autre endroit. Si l'onglet est vide, ou si le fichier a été supprimé depuis plus de 30 jours, ouvrez un ticket en précisant le chemin complet et la date approximative de la suppression."
+  },
+  {
+    "category": "stockage",
+    "question": "Mon quota de stockage est atteint, comment obtenir plus d'espace ?",
+    "answer": "Commencez par identifier les dossiers volumineux (l'outil « Analyse de l'espace disque » du portail de stockage les liste) et supprimez ou archivez les données inutiles. Le quota par défaut est de 20 Go pour un étudiant, 100 Go pour un personnel. Pour des volumes de recherche plus importants, une demande d'extension ou d'espace projet se fait par ticket avec la justification scientifique, le volume estimé et le responsable de l'équipe. Les données volumineuses ne doivent pas être conservées sur le stockage personnel."
+  },
+  {
+    "category": "stockage",
+    "question": "Comment partager un fichier volumineux avec un partenaire extérieur ?",
+    "answer": "N'utilisez pas la messagerie pour des fichiers de plus de 20 Mo. Déposez le fichier sur le service de stockage de l'université (cloud universitaire), puis créez un lien de partage : protégez-le par un mot de passe et fixez une date d'expiration. Transmettez le mot de passe par un autre canal que le mail contenant le lien. Pour les données sensibles (personnelles, de santé, confidentielles), contactez le RSSI pour connaître la solution de chiffrement à utiliser."
+  },
+  {
+    "category": "visio",
+    "question": "Comment organiser une visioconférence avec des participants extérieurs ?",
+    "answer": "Créez une réunion Teams (ou le service de visioconférence de l'université) depuis votre calendrier Outlook en ajoutant les participants extérieurs par leur adresse mail : ils recevront un lien et pourront rejoindre sans compte depuis leur navigateur. Pour une visioconférence de plus de 100 participants ou un webinaire, ouvrez un ticket au moins 5 jours avant pour qu'une licence adaptée soit activée. Pensez à activer la salle d'attente pour contrôler les accès."
+  },
+  {
+    "category": "visio",
+    "question": "L'image ou le son est de mauvaise qualité pendant les cours en visio",
+    "answer": "Fermez les applications qui consomment de la bande passante, préférez une connexion filaire ou rapprochez-vous de la borne Wi-Fi. Désactivez la caméra si vous êtes simple auditeur et fermez les onglets inutiles du navigateur. Utilisez un casque avec micro pour éviter l'écho. Si plusieurs participants rencontrent le même problème, le défaut vient plus probablement du service que de vos connexions : signalez l'heure précise et le nom de la réunion à la DSI."
+  },
+  {
+    "category": "visio",
+    "question": "Comment enregistrer un cours et le mettre à disposition des étudiants ?",
+    "answer": "Lancez l'enregistrement depuis les « ... » de la réunion Teams ou depuis la plateforme de capture de l'université. Une fois la réunion terminée, l'enregistrement est traité et déposé dans le stockage associé, puis il peut être publié dans l'espace Moodle du cours via l'activité « Vidéo ». Prévenez les participants avant d'enregistrer et vérifiez la conformité au droit à l'image : une information claire est obligatoire. Les enregistrements sont automatiquement supprimés au bout d'un an."
+  },
+  {
+    "category": "securite",
+    "question": "Mon ordinateur est lent et affiche des fenêtres publicitaires, je pense avoir un virus",
+    "answer": "Déconnectez l'ordinateur du réseau (Wi-Fi et câble) pour éviter toute propagation, ne saisissez aucun mot de passe dessus et n'essayez pas de le nettoyer vous-même avec des outils inconnus. Ouvrez immédiatement un ticket urgent en indiquant les symptômes observés et les dernières actions (fichier téléchargé, lien ouvert). Un technicien analysera la machine. Depuis un autre appareil sain, changez dès que possible votre mot de passe universitaire, car il a pu être capturé."
+  },
+  {
+    "category": "securite",
+    "question": "J'ai perdu ou on m'a volé mon ordinateur portable professionnel",
+    "answer": "Prévenez immédiatement la DSI par ticket urgent ou par téléphone, et déposez plainte en cas de vol ; le récépissé est demandé pour le suivi administratif. Le compte sera protégé : les sessions ouvertes seront révoquées et le mot de passe réinitialisé. Les disques des portables de l'université étant chiffrés, les données sont protégées si la machine est éteinte. Indiquez la nature des données stockées localement (personnelles, recherche, étudiants) afin que le RSSI évalue si une déclaration de violation de données est nécessaire."
+  },
+  {
+    "category": "securite",
+    "question": "Quelle est la politique de sauvegarde pour mes données de recherche ?",
+    "answer": "Seuls les espaces de stockage de l'université (lecteurs réseau, cloud universitaire) sont sauvegardés automatiquement. Les données conservées sur le disque local d'un poste ou sur une clé USB ne le sont pas. Appliquez la règle 3-2-1 : trois copies des données, sur deux supports différents, dont une hors site. Pour les jeux de données volumineux, un espace projet avec sauvegarde est disponible sur demande. Un plan de gestion de données est exigé pour de nombreux projets financés : le service de documentation peut vous aider à le rédiger."
+  },
+  {
+    "category": "securite",
+    "question": "Puis-je utiliser un service cloud grand public (Google Drive, Dropbox) pour les données de l'université ?",
+    "answer": "Pour les données de travail courantes non sensibles, un usage ponctuel est toléré, mais le stockage institutionnel reste à privilégier : l'université maîtrise l'hébergement et la sauvegarde. Les données à caractère personnel (étudiants, santé), les données soumises à confidentialité contractuelle et les données de recherche sensibles ne doivent pas être déposées sur des services dont l'hébergement hors Union européenne est possible. En cas de doute, demandez l'avis du RSSI ou du délégué à la protection des données avant de déposer les données."
+  },
+  {
+    "category": "comptes",
+    "question": "Je suis nouvel arrivant, comment obtenir mes identifiants ?",
+    "answer": "Les identifiants sont créés automatiquement lors de l'inscription administrative pour les étudiants et à la prise de fonction pour les personnels, à partir de la base de gestion des ressources humaines. Les étudiants reçoivent leurs identifiants par mail personnel après leur inscription ; les personnels les obtiennent auprès de leur service des ressources humaines ou de leur responsable. À la première connexion, il faut activer le compte et choisir un mot de passe sur le portail d'activation. Si vous n'avez rien reçu 48 heures après votre inscription, ouvrez un ticket depuis votre adresse mail personnelle."
+  },
+  {
+    "category": "comptes",
+    "question": "Mon adresse mail universitaire est mal orthographiée (nom ou prénom incorrect)",
+    "answer": "Les noms sont repris de l'état civil saisi lors de l'inscription ou du recrutement. Si l'orthographe est erronée, faites corriger l'information à la source : la scolarité pour les étudiants, les ressources humaines pour les personnels. Une fois la base corrigée, la DSI met à jour l'annuaire et crée la nouvelle adresse ; l'ancienne reste en alias pendant plusieurs mois pour ne perdre aucun message. Il n'est pas possible de modifier l'adresse sans justificatif de l'état civil."
+  },
+  {
+    "category": "comptes",
+    "question": "Mon contrat se termine bientôt, que deviennent mon compte et mes données ?",
+    "answer": "Le compte d'un personnel reste actif jusqu'à la date de fin du contrat, puis passe en lecture seule pendant 30 jours avant suppression. Avant votre départ, transférez les données professionnelles à votre responsable, copiez vos documents personnels, configurez une redirection de la messagerie si nécessaire et retournez le matériel prêté. Les mails professionnels restent la propriété de l'université. Une prolongation d'accès temporaire (collaborateur extérieur, doctorant en fin de thèse) peut être demandée par votre responsable via un ticket."
+  },
+  {
+    "category": "comptes",
+    "question": "Comment obtenir un compte pour un stagiaire ou un doctorant invité ?",
+    "answer": "Le responsable d'accueil (directeur d'unité ou encadrant) fait la demande par ticket (catégorie « Création de compte ») au moins 5 jours ouvrés avant l'arrivée. Il joint la convention de stage ou d'accueil, avec les dates de début et de fin et la liste des services nécessaires (messagerie, Wi-Fi, accès à des serveurs ou logiciels). Le compte est créé pour la durée de la convention uniquement et ne peut pas être prolongé sans nouvelle demande du responsable."
+  },
+  {
+    "category": "telephonie",
+    "question": "Mon téléphone de bureau n'a plus de tonalité",
+    "answer": "Vérifiez que le câble réseau reliant le téléphone à la prise murale est bien branché : la téléphonie fonctionne sur le réseau informatique (téléphone IP). Débranchez le téléphone quelques secondes pour le redémarrer. Si l'écran reste éteint, essayez une autre prise ou un autre téléphone. Notez le numéro de poste et l'étiquette de la prise murale, puis ouvrez un ticket : si le téléphone est alimenté mais ne se connecte pas, la ligne doit être reconfigurée côté serveur."
+  },
+  {
+    "category": "telephonie",
+    "question": "Comment configurer le renvoi d'appel de mon poste vers mon mobile ?",
+    "answer": "Sur un téléphone IP de l'université, appuyez sur la touche « Renvoi » (ou « Forward »), saisissez le numéro de destination, puis validez. Pour un renvoi vers un numéro extérieur, il faut composer le préfixe « 0 » avant le numéro. Le renvoi vers un mobile est soumis à autorisation du responsable de service pour des raisons de coût : en cas de refus de la ligne, demandez l'activation de l'option par ticket. Désactivez le renvoi en rappuyant sur la même touche."
+  },
+  {
+    "category": "demande-service",
+    "question": "Comment ouvrir un ticket pour un problème informatique ?",
+    "answer": "Connectez-vous au portail d'assistance GLPI avec vos identifiants universitaires et cliquez sur « Créer un ticket ». Choisissez le type (incident ou demande), la catégorie la plus proche de votre besoin, puis décrivez précisément le problème : ce que vous essayez de faire, ce qui se passe, le message d'erreur exact, et depuis quand. Ajoutez une capture d'écran si possible, ainsi que votre numéro de bureau et le numéro d'inventaire du poste concerné. Vous recevez des notifications par mail à chaque réponse. Un ticket bien décrit est traité nettement plus vite."
+  },
+  {
+    "category": "demande-service",
+    "question": "Quels sont les délais de traitement d'un ticket à la DSI ?",
+    "answer": "Les délais dépendent de l'urgence : un incident bloquant pour plusieurs utilisateurs (panne de messagerie, de réseau) est pris en charge dans les 2 heures ouvrées ; un incident individuel est traité sous 1 jour ouvré ; une demande de service courante (compte, logiciel, droit d'accès) sous 3 à 5 jours ouvrés ; une demande de matériel dépend du circuit d'achat. Le support est ouvert du lundi au vendredi, de 8 h à 17 h. Les tickets sont priorisés selon l'impact : indiquez clairement combien de personnes sont touchées."
+  },
+  {
+    "category": "demande-service",
+    "question": "Mon ticket est resté sans réponse depuis plusieurs jours, comment le relancer ?",
+    "answer": "Répondez directement à la notification reçue par mail ou ajoutez un suivi dans le ticket depuis le portail : cela le fait remonter dans la file des techniciens. Si la situation est devenue urgente (échéance, blocage de travail), précisez la nouvelle date butoir et l'impact. Les relances par mails multiples ou l'ouverture de plusieurs tickets sur le même sujet ralentissent le traitement. Pour une urgence réelle, appelez le support au numéro indiqué sur le portail en rappelant le numéro du ticket."
+  },
+  {
+    "category": "demande-service",
+    "question": "J'ai besoin d'une aide pour utiliser un outil mais je ne sais pas à qui m'adresser",
+    "answer": "Ouvrez un ticket dans la catégorie « Demande d'assistance » en décrivant l'outil et votre objectif : le support vous orientera vers la bonne personne ou le bon service. Pour les outils pédagogiques (Moodle, visioconférence, capture de cours), la cellule de pédagogie numérique propose des permanences et des formations. Pour les logiciels de recherche, le référent informatique de votre laboratoire est souvent le premier interlocuteur. Une base de connaissances d'aides pas-à-pas est également consultable sur le portail."
+  }
+]

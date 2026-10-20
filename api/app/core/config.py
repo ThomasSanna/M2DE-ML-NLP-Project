@@ -7,10 +7,10 @@ from sqlalchemy import URL
 
 
 class Settings(BaseSettings):
-    """Configuration lue depuis l'environnement.
+    """Configuration read from the environment.
 
-    En local (hors Docker), le `.env` racine du dépôt est aussi lu : lancer les
-    commandes depuis `api/`.
+    Locally (outside Docker), the repository root `.env` is also read: run
+    commands from `api/`.
     """
 
     model_config = SettingsConfigDict(env_file=("../.env", ".env"), extra="ignore")
@@ -24,17 +24,17 @@ class Settings(BaseSettings):
     postgres_password: SecretStr
     postgres_db: str = "memoire"
 
-    # Clé exigée (en-tête X-API-Key) sur les routes de la mémoire.
+    # Key required (X-API-Key header) on the memory routes.
     api_key: SecretStr
-    # Secret partagé avec le webhook GLPI ; vide = signature non vérifiée.
+    # Secret shared with the GLPI webhook; empty = signature not verified.
     glpi_webhook_secret: SecretStr | None = None
 
-    # Serveur d'embeddings compatible OpenAI (vLLM de l'université), URL incluant `/v1`.
+    # OpenAI-compatible embeddings server (university vLLM), URL including `/v1`.
     embedding_base_url: AnyHttpUrl
     embedding_api_key: SecretStr | None = None
     embedding_model: str = "BAAI/bge-multilingual-gemma2"
-    # Instruction préfixée à tous les textes (mémoire et requêtes : la tâche est symétrique,
-    # question contre questions). La changer impose de ré-embedder toute la mémoire.
+    # Instruction prefixed to every text (memory and queries: the task is symmetric,
+    # question against questions). Changing it requires re-embedding the whole memory.
     embedding_instruction: str | None = (
         "Étant donné une demande d'assistance informatique, "
         "retrouver les demandes similaires déjà posées"
@@ -62,4 +62,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()  # type: ignore[call-arg]  # champs requis fournis par l'environnement
+    return Settings()  # type: ignore[call-arg]  # required fields provided by the environment

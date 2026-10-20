@@ -13,7 +13,7 @@ router = APIRouter(prefix="/memory", tags=["memory"], dependencies=[Depends(requ
 async def create_knowledge(
     data: KnowledgeCreate, session: SessionDep, embedder: EmbedderDep
 ) -> KnowledgeRead:
-    """Ajoute une paire question/réponse à la mémoire (la question est embeddée)."""
+    """Add a question/answer pair to the memory (the question is embedded)."""
     knowledge = await memory.add_knowledge(session, embedder, data)
     return KnowledgeRead.model_validate(knowledge)
 
@@ -22,7 +22,7 @@ async def create_knowledge(
 async def read_knowledge(knowledge_id: uuid.UUID, session: SessionDep) -> KnowledgeRead:
     knowledge = await memory.get_knowledge(session, knowledge_id)
     if knowledge is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Connaissance introuvable")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Knowledge not found")
     return KnowledgeRead.model_validate(knowledge)
 
 
@@ -30,7 +30,7 @@ async def read_knowledge(knowledge_id: uuid.UUID, session: SessionDep) -> Knowle
 async def search_knowledge(
     request: SearchRequest, session: SessionDep, embedder: EmbedderDep
 ) -> list[SearchHit]:
-    """Top-k des connaissances actives les plus proches de la question."""
+    """Top-k active knowledge entries closest to the question."""
     results = await memory.search(session, embedder, request.query, request.top_k)
     return [
         SearchHit(knowledge=KnowledgeRead.model_validate(knowledge), similarity=similarity)

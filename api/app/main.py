@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     if settings.glpi_webhook_secret is None:
-        logger.warning("GLPI_WEBHOOK_SECRET vide : signature des webhooks GLPI non vérifiée")
+        logger.warning("GLPI_WEBHOOK_SECRET is empty: GLPI webhook signatures are not verified")
 
     engine = create_engine(settings.database_url)
     app.state.sessionmaker = create_sessionmaker(engine)
@@ -44,7 +44,7 @@ async def _embedding_error_handler(_: Request, exc: Exception) -> JSONResponse:
     logger.error("%s", exc)
     return JSONResponse(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        content={"detail": "Serveur d'embeddings indisponible"},
+        content={"detail": "Embeddings server unavailable"},
     )
 
 
@@ -53,7 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     configure_logging(settings.log_level)
 
     app = FastAPI(
-        title="API mémoire — PoC chatbot GLPI",
+        title="Memory API - GLPI chatbot PoC",
         version="0.1.0",
         lifespan=lifespan,
         docs_url=None if settings.environment == "prod" else "/docs",

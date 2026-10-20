@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exporte le feedback des enquêtes de satisfaction GLPI en TSV (stdout).
+# Export the GLPI satisfaction survey feedback as TSV (stdout).
 # Usage : ./scripts/export-feedback.sh > feedback.tsv
 set -euo pipefail
 cd "$(dirname "$0")/.."

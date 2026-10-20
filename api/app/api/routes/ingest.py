@@ -23,9 +23,9 @@ async def ingest_ticket(
     x_glpi_signature: Annotated[str | None, Header()] = None,
     x_glpi_timestamp: Annotated[str | None, Header()] = None,
 ) -> IngestAccepted:
-    """Reçoit un webhook GLPI et le met en file pour la pipeline.
+    """Receive a GLPI webhook and queue it for the pipeline.
 
-    Le corps est stocké tel quel : la pipeline relira le ticket via l'API GLPI.
+    The body is stored as is: the pipeline will re-read the ticket through the GLPI API.
     """
     body = await request.body()
 
@@ -39,14 +39,14 @@ async def ingest_ticket(
             settings.glpi_webhook_secret.get_secret_value(),
         )
     ):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Signature GLPI invalide")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid GLPI signature")
 
     try:
         payload = json.loads(body)
     except ValueError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Corps JSON invalide") from exc
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid JSON body") from exc
     if not isinstance(payload, dict):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Objet JSON attendu")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "JSON object expected")
 
     event = payload.get("event")
     glpi_event = GlpiEvent(event=event if isinstance(event, str) else None, payload=payload)

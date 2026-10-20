@@ -4,7 +4,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy.engine import Connection
 
-from app import models  # noqa: F401  (enregistre les tables dans Base.metadata)
+from app import models  # noqa: F401  (registers the tables in Base.metadata)
 from app.core.config import get_settings
 from app.db.base import Base
 from app.db.session import create_engine
@@ -14,7 +14,7 @@ if config.config_file_name is not None and config.attributes.get("configure_logg
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
-# Les tests injectent leurs propres Settings via `config.attributes["settings"]`.
+# Tests inject their own Settings via `config.attributes["settings"]`.
 settings = config.attributes.get("settings") or get_settings()
 
 

@@ -10,13 +10,13 @@ from app.models.knowledge import Knowledge, str_enum
 
 
 class FeedbackSource(StrEnum):
-    USER = "user"  # réponse de l'utilisateur, notée par le modèle de notation
-    TECHNICIAN = "technician"  # révision différée par un technicien
-    IMPLICIT = "implicit"  # signal implicite (ticket rouvert, pas de relance…)
+    USER = "user"  # user reply, scored by the scoring model
+    TECHNICIAN = "technician"  # deferred review by a technician
+    IMPLICIT = "implicit"  # implicit signal (ticket reopened, no follow-up...)
 
 
 class Feedback(Base):
-    """Un retour sur une connaissance. Historique brut : la pondération se calcule dessus."""
+    """A feedback on a knowledge entry. Raw history: the weighting is computed on it."""
 
     __tablename__ = "feedback"
 
@@ -25,7 +25,7 @@ class Feedback(Base):
         ForeignKey("knowledge.id", ondelete="CASCADE"), index=True
     )
     source: Mapped[FeedbackSource] = mapped_column(str_enum(FeedbackSource))
-    # Note normalisée dans [0, 1].
+    # Score normalized to [0, 1].
     score: Mapped[float] = mapped_column(Float)
     comment: Mapped[str | None] = mapped_column(Text)
     glpi_ticket_id: Mapped[int | None] = mapped_column(Integer)

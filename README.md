@@ -1,191 +1,196 @@
-# Stack LDAP + GLPI + API mémoire — PoC Chatbot
+# GLPI Support Chatbot - PoC
 
-Environnement simulé pour le PoC : annuaire **LDAP** (`example.org`, fictif) + **GLPI 11** (tickets) + **MariaDB**,
-et l'**API mémoire** du chatbot (FastAPI + PostgreSQL/pgvector), cf. [§API mémoire](#api-mémoire-fastapi--pgvector).
+Proof of concept for a GLPI support chatbot backed by a vector memory of past question/answer pairs.
+
+The repository ships a fully simulated environment:
+
+- **OpenLDAP** with a fictitious directory (`example.org`) and phpLDAPadmin
+- **GLPI 11** on **MariaDB**, preconfigured for LDAP, REST API, SMTP and satisfaction surveys
+- **Memory API** (FastAPI + PostgreSQL/pgvector) storing Q/A pairs and serving similarity search
+
+## Prerequisites
+
+- Docker with Docker Compose v2
+- A bash shell for `scripts/*.sh` (Git Bash or WSL on Windows)
+- Access to the university VPN, for the embeddings server (see [Embeddings](#embeddings))
+- For local API development only: [uv](https://docs.astral.sh/uv/) (Python 3.12 is installed by uv)
+
+## Quick start
+
+```bash
+# 1. Create the environment file, then replace every ChangeMe* value
+cp .env.example .env
+
+# 2. Start the stack (GLPI installs itself on first boot)
+docker compose up -d
+
+# 3. Apply the GLPI configuration (waits for the GLPI install to finish)
+./scripts/configure-glpi.sh
+
+# 4. Check that the memory API is up and reaches its database
+curl http://localhost:8000/health/ready
+
+# 5. Optional: seed the memory with sample Q/A pairs (VPN required)
+API_KEY=<your API_KEY> python scripts/load_knowledge.py
+```
+
+`configure-glpi.sh` is idempotent. Rerun it after any `docker compose down -v`. `load_knowledge.py` is not: running it twice inserts every pair twice.
 
 ## Services
 
-| Service | URL / Accès | Identifiants |
+| Service | Access | Credentials |
 |---|---|---|
-| **GLPI** | http://localhost:8080 | `glpi` / `glpi` (admin par défaut — à changer) |
-| **API REST GLPI** | http://localhost:8080/apirest.php/ | voir §API |
-| **phpLDAPadmin** | http://localhost:8081 | Login DN : `cn=admin,dc=example,dc=org` / mot de passe `LDAP_ADMIN_PASSWORD` du `.env` |
-| **LDAP** | `ldap://localhost:389` | Base : `dc=example,dc=org` |
-| **MariaDB** | interne (`db:3306`) | `glpi` / `MARIADB_PASSWORD` du `.env` |
-| **API mémoire** | http://localhost:8000/docs | en-tête `X-API-Key` = `API_KEY` du `.env` |
-| **PostgreSQL + pgvector** | `127.0.0.1:5432` (`postgres:5432` en interne) | `POSTGRES_USER` / `POSTGRES_PASSWORD` du `.env` |
+| GLPI | http://localhost:8080 | `glpi` / `glpi` (default, change it) |
+| Memory API (Swagger UI) | http://localhost:8000/docs | `X-API-Key` header = `API_KEY` |
+| phpLDAPadmin | http://localhost:8081 | DN `cn=admin,dc=example,dc=org` / `LDAP_ADMIN_PASSWORD` |
+| LDAP | `ldap://localhost:389` | base `dc=example,dc=org` |
+| PostgreSQL + pgvector | `127.0.0.1:5432` | `POSTGRES_USER` / `POSTGRES_PASSWORD` |
+| MariaDB | internal only (`db:3306`) | `glpi` / `MARIADB_PASSWORD` |
 
-## Démarrage
+Uppercase names refer to variables in `.env`.
 
-```bash
-docker compose up -d
-```
+## Memory API
 
-- GLPI s'auto-installe au premier démarrage (schéma BDD + cron).
-- L'annuaire LDAP est peuplé automatiquement au premier démarrage via `ldap/bootstrap.ldif`.
+Source in [`api/`](api/). Full reference (endpoints, schema, configuration, invariants): [`doc/api_doc.md`](doc/api_doc.md).
 
-> ⚠️ Si les volumes sont recréés (`docker compose down -v`), GLPI réinstalle tout seul,
-> mais les permissions des volumes GLPI peuvent devoir être corrigées une fois :
-> ```bash
-> docker run --rm -v bisgambiglia-poc_glpi_files:/var/glpi/files alpine chown -R 33:33 /var/glpi/files
-> docker run --rm -v bisgambiglia-poc_glpi_config:/var/glpi/config alpine chown -R 33:33 /var/glpi/config
-> docker run --rm -v bisgambiglia-poc_glpi_marketplace:/var/glpi/marketplace alpine chown -R 33:33 /var/glpi/marketplace
-> docker compose restart glpi
-> ```
+Compose runs it as three services: `postgres` (PostgreSQL 17 + pgvector), `migrate` (one-shot `alembic upgrade head`) and `api` (started once migrations succeed).
 
-## Annuaire LDAP (personas)
-
-7 personnes + 4 groupes, conformes au plan de génération de données (§7 du note-projet-complet) :
-
-| UID | Rôle | Groupe | Mot de passe |
+| Method | Route | Auth | Purpose |
 |---|---|---|---|
-| `camille.dupont` | Étudiante M2 DE | etudiants | `camille2026` |
-| `lucas.moreau` | Étudiant M2 DE | etudiants | `lucas2026` |
-| `lea.petit` | Étudiante L3 Info | etudiants | `lea2026` |
-| `thomas.girard` | Enseignant-chercheur | enseignants | `thomas2026` |
-| `emma.lambert` | Maître de conférences | enseignants | `emma2026` |
-| `hugo.mercier` | Technicien DSI | techniciens | `hugo2026` |
-| `chloe.renard` | Gestionnaire scolarité | administratifs | `chloe2026` |
+| `GET` | `/health/live` | none | process is up |
+| `GET` | `/health/ready` | none | database is reachable |
+| `POST` | `/api/v1/ingest/ticket` | GLPI signature | queue a GLPI webhook (`202`) |
+| `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | add a Q/A pair (the question is embedded) |
+| `GET` | `/api/v1/memory/knowledge/{id}` | `X-API-Key` | read a knowledge entry |
+| `POST` | `/api/v1/memory/search` | `X-API-Key` | top-k cosine similarity search over `active` entries |
 
-(Annuaire **fictif**, simulé : le LDAP réel de l'université n'est pas interrogeable publiquement — voir §1 de `doc/note-projet-complet.md`.)
+When `GLPI_WEBHOOK_SECRET` is set, the `X-GLPI-signature` header is verified (`HMAC-SHA256(body + X-GLPI-timestamp, secret)`, GLPI 11 format). When it is empty, every request is accepted and a warning is logged at startup.
 
-Test rapide :
+### Embeddings
+
+Embeddings are computed by the university GPU server (vLLM, OpenAI-compatible), not inside this project. Model: `BAAI/bge-multilingual-gemma2` (3584 dimensions), endpoint set by `EMBEDDING_BASE_URL`.
+
+**The university VPN is required.** Without it, routes that embed text return `502`; everything else keeps working.
+
+Changing `EMBEDDING_MODEL` or `embedding_instruction` (`api/app/core/config.py`) requires re-embedding the whole memory.
+
+Models available on the university server (VPN required):
+
+| Role | Model | Endpoint |
+|---|---|---|
+| Embeddings | `BAAI/bge-multilingual-gemma2` | `http://193.48.31.6:31550/v1/embeddings` |
+| Reranker | `BAAI/bge-reranker-v2-gemma` | `http://193.48.31.6:31127/rerank` |
+| LLM | `google/gemma3-12b-it` | `http://193.48.31.6:32297/v1/chat/completions` |
+| LLM (light) | `google/gemma3-4b-it` | `http://193.48.31.6:30091/v1/chat/completions` |
+
+### Local development
 
 ```bash
-docker exec poc-ldap ldapsearch -x -H ldap://localhost \
-  -D "cn=admin,dc=example,dc=org" -w "ChangeMeAdmin2026!" \
-  -LLL -b "dc=example,dc=org" "(uid=camille.dupont)"
+docker compose up -d postgres        # database only
+cd api
+uv sync
+uv run alembic upgrade head          # reads the root .env
+uv run uvicorn app.main:create_app --factory --reload
+uv run pytest                        # requires Docker (testcontainers)
+uv run ruff check . && uv run ruff format .
 ```
 
-> ⚠️ L'image osixia n'importe `ldap/bootstrap.ldif` que si la base LDAP est vide au démarrage.
-> Si le conteneur a été recréé après une première initialisation, l'import est sauté
-> (le test ci-dessus ne renvoie rien). Dans ce cas, charger le LDIF à la main :
-> ```bash
-> docker exec poc-ldap sh -c 'ldapadd -x -c -H ldap://localhost \
->   -D "cn=admin,dc=example,dc=org" -w "$LDAP_ADMIN_PASSWORD" \
->   -f /container/service/slapd/assets/config/bootstrap/ldif/custom/50-bootstrap.ldif'
-> ```
+Tests run against a real pgvector container and never call the embeddings server.
 
-## API REST GLPI (activée)
+To change the schema: edit `app/models/`, run `uv run alembic revision --autogenerate -m "..."`, review the generated migration, then run `uv run alembic check` (it must report no changes). Never edit a migration that has already been shared.
 
-L'API est activée avec login par identifiants, et le client API "full access from localhost"
-couvre le réseau Docker `172.16.0.0/12`.
+After changing API code, rebuild the container: `docker compose up -d --build api`.
+
+## LDAP directory
+
+Seven fictitious users in four groups, loaded from `ldap/bootstrap.ldif` on first boot (data plan: `doc/note-projet-complet.md` §7).
+
+| UID | Role | Group | Password |
+|---|---|---|---|
+| `camille.dupont` | M2 DE student | etudiants | `camille2026` |
+| `lucas.moreau` | M2 DE student | etudiants | `lucas2026` |
+| `lea.petit` | L3 CS student | etudiants | `lea2026` |
+| `thomas.girard` | Research lecturer | enseignants | `thomas2026` |
+| `emma.lambert` | Associate professor | enseignants | `emma2026` |
+| `hugo.mercier` | IT technician | techniciens | `hugo2026` |
+| `chloe.renard` | Student records officer | administratifs | `chloe2026` |
+
+Quick check:
 
 ```bash
-# 1. Ouvrir une session (identifiants par défaut glpi/glpi)
+docker exec poc-ldap sh -c 'ldapsearch -x -H ldap://localhost \
+  -D "cn=admin,dc=example,dc=org" -w "$LDAP_ADMIN_PASSWORD" \
+  -LLL -b "dc=example,dc=org" "(uid=camille.dupont)"'
+```
+
+## GLPI configuration
+
+`scripts/configure-glpi.sh` runs `glpi/init/configure.php` inside the GLPI container and sets:
+
+- the base URL (`GLPI_URL_BASE`, used in email links);
+- the REST API: enabled, credential login, client restricted to `GLPI_API_IP_START`–`GLPI_API_IP_END` (default `172.16.0.0`–`172.31.255.255`, the Docker network);
+- the "Univ Corse LDAP" directory: server `ldap`, base `dc=example,dc=org`, login field `uid`, bind `cn=admin,dc=example,dc=org`;
+- SMTP relay, notifications, ticket auto-close and the satisfaction survey (`MAIL_*`, `SMTP_*`, `SURVEY_*`, `TICKET_AUTOCLOSE_DAYS`).
+
+An empty variable leaves the corresponding setting unchanged.
+
+Open a REST API session:
+
+```bash
 curl -X POST http://localhost:8080/apirest.php/initSession \
   -H "Content-Type: application/json" \
   -H "Authorization: Basic $(echo -n 'glpi:glpi' | base64)" \
   -d '{"init":"true"}'
 # → {"session_token": "..."}
-
-# 2. Lister les tickets
-curl http://localhost:8080/apirest.php/Ticket \
-  -H "Session-Token: <session_token>" \
-  -H "App-Token: <app_token si configuré>"
 ```
 
-> Ces réglages (activés directement en BDD au setup) sont persistés dans le volume `glpi_config`/`db_data`.
-> En cas de recréation complète, il faudra les refaire :
-> ```sql
-> UPDATE glpi_configs SET value='1' WHERE name IN ('enable_api','enable_api_login_credentials');
-> UPDATE glpi_apiclients SET is_active=1,
->   ipv4_range_start=INET_ATON('172.16.0.0'), ipv4_range_end=INET_ATON('172.31.255.255')
->   WHERE id=1;
-> ```
-
-## Configuration LDAP dans GLPI (à faire via l'UI)
-
-`Configuration > Authentification > Annuaire LDAP` :
-
-| Champ | Valeur |
-|---|---|
-| Nom | Univ Corse LDAP |
-| Serveur | `ldap` (nom du service Docker) |
-| Port | 389 |
-| Base DN | `dc=example,dc=org` |
-| Filtre de connexion (login) | `(&(objectClass=inetOrgPerson)(uid=*))` |
-| Champ login | `uid` |
-| Champ nom | `sn` |
-| Champ prénom | `givenname` (en minuscules, sinon le prénom reste vide) |
-| Champ email | `mail` |
-| Bind DN (compte de lecture) | `cn=admin,dc=example,dc=org` |
-| Mot de passe bind | valeur de `LDAP_ADMIN_PASSWORD` |
-
-Puis activer la source dans `Configuration > Authentification > Configuration > Avancé`
-et tester avec un persona (ex. `camille.dupont` / `camille2026`).
-
-## API mémoire (FastAPI + pgvector)
-
-Code dans [`api/`](api/). Trois services Compose :
-
-| Service | Rôle |
-|---|---|
-| `postgres` | PostgreSQL 17 + pgvector : mémoire (vecteurs **et** relationnel) |
-| `migrate` | job one-shot `alembic upgrade head`, lancé avant chaque démarrage de l'API |
-| `api` | FastAPI (uvicorn), démarre une fois les migrations passées |
-
-Les **embeddings ne tournent pas ici** : l'API appelle le vLLM du serveur GPU de l'université
-(`BAAI/bge-multilingual-gemma2`, vecteurs de **3584** dimensions) via son API compatible OpenAI
-(`POST {EMBEDDING_BASE_URL}/embeddings`). **Le VPN de l'université est requis** ; sans lui, les routes
-qui embeddent répondent `502` (le reste de l'API fonctionne).
-
-Chaque texte (question stockée comme requête) est préfixé de l'instruction du modèle
-(`<instruct>{instruction}\n<query>{texte}`, définie par `embedding_instruction` dans
-`api/app/core/config.py`). Sur un petit jeu de
-questions d'assistance, l'appliquer des deux côtés double l'écart entre la bonne réponse et la
-suivante. Changer de modèle ou d'instruction impose de ré-embedder toute la mémoire.
-
-Modèles servis par l'université (cf. `doc/Projet M2.pdf`, VPN requis) :
-
-| Rôle | Modèle | Endpoint |
-|---|---|---|
-| embeddings | `BAAI/bge-multilingual-gemma2` | `http://193.48.31.6:31550/v1/embeddings` |
-| reranker | `BAAI/bge-reranker-v2-gemma` | `http://193.48.31.6:31127/rerank` |
-| LLM | `google/gemma3-12b-it` | `http://193.48.31.6:32297/v1/chat/completions` |
-| LLM (léger) | `google/gemma3-4b-it` | `http://193.48.31.6:30091/v1/chat/completions` |
-
-### Schéma (migration `0001`)
-
-| Table | Contenu |
-|---|---|
-| `knowledge` | une connaissance = paire Q/R + `embedding halfvec(3584)` de la question (index HNSW cosinus ; `halfvec` car HNSW est limité à 2000 dimensions en `vector`), `source` (`glpi_history`/`llm`/`technician`), `status` (`active`/`to_review`/`archived`), `reuse_count` |
-| `feedback` | historique brut des retours sur une connaissance : `score ∈ [0,1]`, `source` (`user`/`technician`/`implicit`) ; la pondération se calculera dessus |
-| `glpi_event` | boîte de réception des webhooks GLPI (`payload` JSONB, `status` `received → processing → done/failed`, `attempts`) consommée par la future pipeline |
-
-### Routes
-
-| Méthode | Route | Auth | Rôle |
-|---|---|---|---|
-| `GET` | `/health/live` | — | le processus répond |
-| `GET` | `/health/ready` | — | la base est joignable |
-| `POST` | `/api/v1/ingest/ticket` | signature GLPI | met un webhook GLPI en file (`202`) |
-| `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | ajoute une paire Q/R (question embeddée) |
-| `GET` | `/api/v1/memory/knowledge/{id}` | `X-API-Key` | lit une connaissance |
-| `POST` | `/api/v1/memory/search` | `X-API-Key` | top-k par similarité cosinus (connaissances actives) |
-
-Webhook : si `GLPI_WEBHOOK_SECRET` est défini, l'en-tête `X-GLPI-signature` est vérifié
-(`hmac_sha256(body + X-GLPI-timestamp, secret)`, le format de GLPI 11) ; sinon tout est accepté (log d'avertissement).
-
-### Développement local
+### Satisfaction survey export
 
 ```bash
-docker compose up -d postgres        # base seule
-cd api
-uv sync                              # venv + dépendances (Python 3.12)
-uv run alembic upgrade head          # lit le .env racine (POSTGRES_*)
-uv run uvicorn app.main:create_app --factory --reload
-uv run pytest                        # Postgres+pgvector jetable via testcontainers (Docker requis)
-uv run ruff check . && uv run ruff format .
+./scripts/export-feedback.sh > feedback.tsv
 ```
 
-Modifier le schéma : éditer `app/models/`, puis `uv run alembic revision --autogenerate -m "..."`,
-**relire** la migration générée, et `uv run alembic check` doit ensuite ne rien détecter.
-Après un changement de code : `docker compose up -d --build api`.
+Writes the GLPI satisfaction survey answers to stdout as TSV (query: `glpi/sql/feedback.sql`).
 
-## Arrêt / reset
+## Stop and reset
 
 ```bash
-docker compose down          # stoppe (garde les données)
-docker compose down -v       # stoppe et efface TOUT (LDAP + BDD + GLPI + mémoire)
+docker compose down          # stop, keep data
+docker compose down -v       # stop and DELETE ALL DATA (LDAP, GLPI, databases, memory)
 ```
+
+After `down -v`, rerun `./scripts/configure-glpi.sh`.
+
+## Troubleshooting
+
+**GLPI volume permissions after volumes were recreated.** They may need to be fixed once:
+
+```bash
+for v in files config marketplace; do
+  docker run --rm -v bisgambiglia-poc_glpi_$v:/var/glpi/$v alpine chown -R 33:33 /var/glpi/$v
+done
+docker compose restart glpi
+```
+
+**LDAP users are missing.** The LDIF is only imported into an empty directory. If the LDAP container was recreated after a first initialization, load it manually:
+
+```bash
+docker exec poc-ldap sh -c 'ldapadd -x -c -H ldap://localhost \
+  -D "cn=admin,dc=example,dc=org" -w "$LDAP_ADMIN_PASSWORD" \
+  -f /container/service/slapd/assets/config/bootstrap/ldif/custom/50-bootstrap.ldif'
+```
+
+**Configuring LDAP in GLPI by hand.** Without the script, use `Setup > Authentication > LDAP directories`, then enable the source in `Setup > Authentication > Configuration > Advanced`. The first name field must be `givenname` (lowercase), otherwise it stays empty.
+
+**Embedding routes return `502`.** The university VPN is not connected, or `EMBEDDING_BASE_URL` is wrong.
+
+## Repository layout
+
+| Path | Content |
+|---|---|
+| `api/` | Memory API (FastAPI, SQLAlchemy, Alembic, tests) |
+| `glpi/` | GLPI configuration script and SQL queries |
+| `ldap/` | LDAP seed (`bootstrap.ldif`) |
+| `scripts/` | GLPI setup, feedback export, memory seeding |
+| `data/` | Sample knowledge base (`knowledge_seed.json`) |
+| `doc/` | Project notes and API reference |

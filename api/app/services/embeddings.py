@@ -6,7 +6,7 @@ from app.models import EMBEDDING_DIM
 
 
 class EmbeddingError(RuntimeError):
-    """Le serveur d'embeddings est injoignable ou a renvoyé une réponse inattendue."""
+    """The embeddings server is unreachable or returned an unexpected response."""
 
 
 class Embedder(Protocol):
@@ -14,10 +14,10 @@ class Embedder(Protocol):
 
 
 class OpenAIEmbeddingClient:
-    """Client d'un serveur d'embeddings exposant `POST /v1/embeddings` (format OpenAI).
+    """Client for an embeddings server exposing `POST /v1/embeddings` (OpenAI format).
 
-    C'est l'API du vLLM de l'université (BAAI/bge-multilingual-gemma2) : le modèle tourne
-    sur leur serveur GPU, pas dans ce conteneur.
+    This is the university vLLM API (BAAI/bge-multilingual-gemma2): the model runs
+    on their GPU server, not in this container.
     """
 
     def __init__(self, http: httpx.AsyncClient, model: str, instruction: str | None = None) -> None:
@@ -26,7 +26,7 @@ class OpenAIEmbeddingClient:
         self._instruction = instruction
 
     def _format(self, text: str) -> str:
-        # Format d'instruction de bge-multilingual-gemma2 (cf. fiche du modèle).
+        # Instruction format of bge-multilingual-gemma2 (see the model card).
         if self._instruction is None:
             return text
         return f"<instruct>{self._instruction}\n<query>{text}"
@@ -40,13 +40,13 @@ class OpenAIEmbeddingClient:
             response.raise_for_status()
             data = response.json()["data"]
         except (httpx.HTTPError, ValueError, KeyError) as exc:
-            raise EmbeddingError(f"Échec de l'appel au serveur d'embeddings : {exc!r}") from exc
+            raise EmbeddingError(f"Embeddings server call failed: {exc!r}") from exc
 
         vectors = [item["embedding"] for item in sorted(data, key=lambda item: item["index"])]
         if len(vectors) != len(texts):
-            raise EmbeddingError(f"{len(vectors)} embeddings reçus pour {len(texts)} textes")
+            raise EmbeddingError(f"Received {len(vectors)} embeddings for {len(texts)} texts")
         if any(len(vector) != EMBEDDING_DIM for vector in vectors):
             raise EmbeddingError(
-                f"Dimension inattendue (attendu {EMBEDDING_DIM}) : vérifier EMBEDDING_MODEL"
+                f"Unexpected dimension (expected {EMBEDDING_DIM}): check EMBEDDING_MODEL"
             )
         return vectors

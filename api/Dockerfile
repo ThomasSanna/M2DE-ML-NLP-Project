@@ -9,7 +9,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never
 
 WORKDIR /app
-# Dépendances seules d'abord : couche mise en cache tant que uv.lock ne change pas.
+# Dependencies only first: layer stays cached as long as uv.lock does not change.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \

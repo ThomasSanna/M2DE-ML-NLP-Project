@@ -1,8 +1,8 @@
-# Annuaire LDAP fictif — organisation de test (exemple)
-# Chargé automatiquement au premier démarrage du conteneur (bootstrap osixia/openldap).
-# Base : dc=example,dc=org — Admin : cn=admin,dc=example,dc=org
-# NB : l'entrée de base dc=example,dc=org est déjà créée par l'image (LDAP_DOMAIN).
-# Tous les noms, UID et adresses mail sont fictifs (domaine réservé example.org).
+# Fictitious LDAP directory - test organization (example)
+# Loaded automatically on the container's first start (osixia/openldap bootstrap).
+# Base: dc=example,dc=org - Admin: cn=admin,dc=example,dc=org
+# NB: the dc=example,dc=org base entry is already created by the image (LDAP_DOMAIN).
+# All names, UIDs and mail addresses are fictitious (reserved domain example.org).
 
 dn: ou=people,dc=example,dc=org
 objectClass: top
@@ -14,7 +14,7 @@ objectClass: top
 objectClass: organizationalUnit
 ou: groups
 
-# ------------------------------------------------------------------ étudiants
+# ------------------------------------------------------------------ students
 dn: uid=camille.dupont,ou=people,dc=example,dc=org
 objectClass: top
 objectClass: person

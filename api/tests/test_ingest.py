@@ -10,7 +10,7 @@ PAYLOAD = {"event": "new", "item": {"id": 42, "name": "Problème wifi"}}
 
 
 def _glpi_headers(body: bytes, timestamp: str = "1760000000") -> dict[str, str]:
-    """En-têtes tels que GLPI 11 les calcule : hmac_sha256(body . timestamp, secret)."""
+    """Headers as GLPI 11 computes them: hmac_sha256(body . timestamp, secret)."""
     signature = hmac.new(WEBHOOK_SECRET.encode(), body + timestamp.encode(), hashlib.sha256)
     return {
         "Content-Type": "application/json",

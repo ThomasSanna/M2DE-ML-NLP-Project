@@ -26,7 +26,7 @@ def test_calls_openai_endpoint_and_orders_by_index() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url == f"{BASE_URL}/embeddings"
         assert json.loads(request.content) == {"model": MODEL, "input": ["a", "b"]}
-        # Réponse volontairement dans le désordre.
+        # Response deliberately out of order.
         return httpx.Response(
             200,
             json={
@@ -61,5 +61,5 @@ def test_wrong_dimension_raises_embedding_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": [{"index": 0, "embedding": [0.1] * 768}]})
 
-    with pytest.raises(EmbeddingError, match="Dimension"):
+    with pytest.raises(EmbeddingError, match="Unexpected dimension"):
         _embed(handler, ["a"])

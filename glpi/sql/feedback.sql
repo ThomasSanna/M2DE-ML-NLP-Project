@@ -1,20 +1,20 @@
--- Feedback utilisateur par ticket, issu des enquêtes de satisfaction GLPI.
--- Source du facteur w1 (feedback_utilisateur) du score de la mémoire.
--- Une ligne par ticket clos ayant une enquête (répondue ou non).
+-- User feedback per ticket, from the GLPI satisfaction surveys.
+-- Source of the w1 factor (user_feedback) of the memory score.
+-- One row per closed ticket that has a survey (answered or not).
 SELECT
     t.id                                   AS ticket_id,
-    t.name                                 AS titre,
-    c.completename                         AS categorie,
+    t.name                                 AS title,
+    c.completename                         AS category,
     t.content                              AS question,
     sol.content                            AS solution,
-    sol.status                             AS solution_statut,   -- 2 = en attente, 3 = acceptée, 4 = refusée
-    t.solvedate                            AS date_resolution,
-    t.closedate                            AS date_cloture,
-    s.date_begin                           AS enquete_envoyee_le,
-    s.date_answered                        AS enquete_repondue_le,
-    s.satisfaction                         AS note,               -- 0..5, NULL = pas de réponse
-    s.satisfaction_scaled_to_5 / 5         AS feedback_normalise, -- 0..1, valeur de w1
-    s.comment                              AS commentaire
+    sol.status                             AS solution_status,   -- 2 = pending, 3 = accepted, 4 = refused
+    t.solvedate                            AS solved_at,
+    t.closedate                            AS closed_at,
+    s.date_begin                           AS survey_sent_at,
+    s.date_answered                        AS survey_answered_at,
+    s.satisfaction                         AS score,             -- 0..5, NULL = no answer
+    s.satisfaction_scaled_to_5 / 5         AS normalized_feedback, -- 0..1, value of w1
+    s.comment                              AS comment
 FROM glpi_tickets t
 JOIN glpi_ticketsatisfactions s  ON s.tickets_id = t.id
 LEFT JOIN glpi_itilcategories c  ON c.id = t.itilcategories_id
