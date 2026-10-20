@@ -117,8 +117,10 @@ Match the neighbors; ruff config in `api/pyproject.toml` is authoritative (line 
 - Every function is fully typed. A `# type: ignore[code]` carries a reason comment.
 - Errors: `raise HTTPException(status.HTTP_404_NOT_FOUND, "Connaissance introuvable")`.
   Use Starlette 1.x names (`HTTP_422_UNPROCESSABLE_CONTENT`, not `_ENTITY`).
-- Identifiers, file names, commit messages: English. Comments, docstrings, error messages,
-  log messages, docs: French, with correct accents.
+- English: identifiers, file names, commit messages, PRs, and docs (`README.md`, `doc/api_doc.md`,
+  `AGENTS.md`). French, with correct accents: comments, docstrings, HTTP error messages and log
+  messages in `api/`. `doc/note*.md` and the runbook are the group's French notes: do not
+  translate them.
 - Comments explain a non-obvious why (see `core/security.py`, `models/knowledge.py`), never
   restate the code.
 
