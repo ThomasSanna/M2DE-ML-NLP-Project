@@ -38,6 +38,13 @@ class FakeEmbedder:
         return [x / norm for x in vector]
 
 
+class FakeReranker:
+    """Accepts every candidate (sigmoid(5.0) ~ 0.993), without a model server."""
+
+    async def rerank(self, query: str, documents: list[str]) -> list[float]:
+        return [5.0] * len(documents)
+
+
 def run_sql(settings: Settings, statement: str) -> None:
     async def _run() -> None:
         engine = create_engine(settings.database_url)

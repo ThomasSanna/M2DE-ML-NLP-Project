@@ -1,3 +1,4 @@
+import math
 import uuid
 
 from sqlalchemy import select
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Knowledge, KnowledgeStatus
 from app.schemas.knowledge import KnowledgeCreate
 from app.services.embeddings import Embedder
+from app.services.reranker import Reranker
 
 
 async def add_knowledge(
@@ -40,3 +42,36 @@ async def search(
         .limit(top_k)
     )
     return [(knowledge, similarity) for knowledge, similarity in rows.all()]
+
+
+async def retrieve(
+    session: AsyncSession,
+    embedder: Embedder,
+    reranker: Reranker,
+    text: str,
+    candidates: int,
+    top_k: int,
+    threshold: float,
+) -> list[tuple[Knowledge, float]]:
+    """Vector candidates reranked by the cross-encoder, best first, scores in [0, 1].
+
+    The reranker sees the question and the answer: a cross-encoder judges a passage
+    against the query, and the answer often holds the words the user typed. The
+    embedding still covers the question only (see `search`).
+    """
+    hits = await search(session, embedder, text, candidates)
+    if not hits:
+        return []
+    logits = await reranker.rerank(
+        text, [f"{knowledge.question}\n{knowledge.answer}" for knowledge, _ in hits]
+    )
+    scored = [
+        (knowledge, 1 / (1 + math.exp(-logit)))
+        for (knowledge, _), logit in zip(hits, logits, strict=True)
+    ]
+    kept = sorted(
+        ((knowledge, score) for knowledge, score in scored if score >= threshold),
+        key=lambda hit: hit[1],
+        reverse=True,
+    )
+    return kept[:top_k]
