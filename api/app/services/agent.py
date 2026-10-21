@@ -5,6 +5,7 @@ with its result, so the server can reuse the cached prompt prefix.
 """
 
 import logging
+import re
 from dataclasses import dataclass
 
 from pydantic import ValidationError
@@ -24,6 +25,8 @@ from app.services.llm import ChatMessage, ChatModel, Completion, LLMError
 from app.services.websearch import WebResult, WebSearch, WebSearchError
 
 logger = logging.getLogger(__name__)
+
+_REF = re.compile(r"\b[KW]\d+\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -93,8 +96,9 @@ async def run_agent(
                 completion.completion_tokens,
             )
             known = memory_refs | web_results.keys()
-            # The prompt shows refs in brackets; small models copy them into `sources`.
-            refs = [ref.strip("[] ").upper() for ref in action.sources]
+            # Small models cite inline and leave `sources` empty, or put brackets and
+            # commas in its items: refs are read from both, explicit sources first.
+            refs = [ref.upper() for ref in _REF.findall(" ".join([*action.sources, action.answer]))]
             if unknown := set(refs) - known:
                 logger.info("agent dropped unknown refs %s", sorted(unknown))
             return AgentRun(

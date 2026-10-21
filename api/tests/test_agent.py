@@ -197,3 +197,23 @@ def test_citations_tolerate_brackets_and_case() -> None:
     run = _run(model, FakeWebSearch(RESULTS))
 
     assert run.cited_refs == ["K1"]
+
+
+# Outputs observed on the 4B server: inline refs with `sources` left empty, and a
+# comma-separated list split into odd items.
+@pytest.mark.parametrize(
+    ("answer", "sources", "cited"),
+    [
+        ("Faites ceci [K2], puis cela [K1].", [], ["K2", "K1"]),
+        ("Voir la procédure.", ["K1", ", K2"], ["K1", "K2"]),
+        ("Voir [K2].", ["K1"], ["K1", "K2"]),
+    ],
+)
+def test_citations_are_read_from_answer_and_sources(
+    answer: str, sources: list[str], cited: list[str]
+) -> None:
+    model = ScriptedChatModel([_answer(answer, sources)])
+
+    run = _run(model, None, memory_refs={"K1", "K2"})
+
+    assert run.cited_refs == cited
