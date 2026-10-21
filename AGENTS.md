@@ -131,7 +131,6 @@ Match the neighbors; ruff config in `api/pyproject.toml` is authoritative (line 
   Use Starlette 1.x names (`HTTP_422_UNPROCESSABLE_CONTENT`, not `_ENTITY`).
 - English: identifiers, file names, commit messages, PRs, and docs (`README.md`, `doc/api_doc.md`,
   `AGENTS.md`).
-  translate them.
 - Comments explain a non-obvious why (see `core/security.py`, `models/knowledge.py`), never
   restate the code.
 
