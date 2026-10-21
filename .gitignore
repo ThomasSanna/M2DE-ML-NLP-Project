@@ -2,6 +2,8 @@
 annuaire.ldif
 .playwright-mcp/
 rien.txt
+docs/superpowers/
+.superpowers/
 
 # PDF documents (too heavy for the repository)
 doc/*.pdf
