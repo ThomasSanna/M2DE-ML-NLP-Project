@@ -22,8 +22,8 @@ def _schema(actions: list[str]) -> dict[str, object]:
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": actions},
-            "query": {"type": "string"},
-            "answer": {"type": "string"},
+            "query": {"type": "string", "minLength": 1},
+            "answer": {"type": "string", "minLength": 1},
             "sources": {"type": "array", "items": {"type": "string"}},
         },
         "required": ["action"],

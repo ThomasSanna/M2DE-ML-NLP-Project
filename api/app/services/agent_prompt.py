@@ -57,7 +57,9 @@ _ACTION = TypeAdapter(Annotated[SearchAction | AnswerAction, Field(discriminator
 
 def decision_schema(allow_search: bool) -> dict[str, object]:
     """JSON grammar for one step. Flat on purpose: TGI rejects a root `oneOf`, so the
-    per-action requirements are checked by `parse_action` instead."""
+    per-action requirements are checked by `parse_action` instead. `minLength` is
+    enforced by the grammar: without it the 4B emits empty strings and repeats them
+    despite the feedback."""
     return {
         "type": "object",
         "properties": {
@@ -65,8 +67,8 @@ def decision_schema(allow_search: bool) -> dict[str, object]:
                 "type": "string",
                 "enum": ["search", "answer"] if allow_search else ["answer"],
             },
-            "query": {"type": "string"},
-            "answer": {"type": "string"},
+            "query": {"type": "string", "minLength": 1},
+            "answer": {"type": "string", "minLength": 1},
             "sources": {"type": "array", "items": {"type": "string"}},
         },
         "required": ["action"],
