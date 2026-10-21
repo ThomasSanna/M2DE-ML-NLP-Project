@@ -20,7 +20,7 @@ Routes métier sous `/api/v1`.
 
 ### Conventions
 
-- **Authentification** : en-tête `X-API-Key: <API_KEY>` sur toutes les routes `/api/v1/memory/*`. Absente ou fausse → `401` `{"detail": "Clé API absente ou invalide"}`.
+- **Authentification** : en-tête `X-API-Key: <API_KEY>` sur toutes les routes `/api/v1/memory/*` et sur `/api/v1/answer`. Absente ou fausse → `401` `{"detail": "Clé API absente ou invalide"}`.
 - **Validation** : champ invalide → `422` au format FastAPI standard.
 - **Embeddings indisponibles** : toute route qui embedde répond `502` `{"detail": "Serveur d'embeddings indisponible"}`. La cause n'est que dans les logs.
 
@@ -114,7 +114,9 @@ the number of searches.
 | `messages[].content` | text | yes | ≥ 1 non-blank character |
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/answer   -H "X-API-Key: $API_KEY" -H "Content-Type: application/json"   -d '{"messages": [
+curl -X POST http://localhost:8000/api/v1/answer \
+  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+  -d '{"messages": [
         {"role": "user", "content": "Le wifi eduroam ne marche pas sur mon Mac"},
         {"role": "assistant", "content": "Quel message voyez-vous ?"},
         {"role": "user", "content": "Il demande le mot de passe en boucle"}

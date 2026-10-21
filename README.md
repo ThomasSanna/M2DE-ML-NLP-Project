@@ -6,13 +6,13 @@ The repository ships a fully simulated environment:
 
 - **OpenLDAP** with a fictitious directory (`example.org`) and phpLDAPadmin
 - **GLPI 11** on **MariaDB**, preconfigured for LDAP, REST API, SMTP and satisfaction surveys
-- **Memory API** (FastAPI + PostgreSQL/pgvector) storing Q/A pairs and serving similarity search
+- **Memory API** (FastAPI + PostgreSQL/pgvector) storing Q/A pairs, serving similarity search, and answering ticket threads from that memory and a web search
 
 ## Prerequisites
 
 - Docker with Docker Compose v2
 - A bash shell for `scripts/*.sh` (Git Bash or WSL on Windows)
-- Access to the university VPN, for the embeddings server (see [Embeddings](#embeddings))
+- Access to the university VPN, for the embeddings, reranker and LLM servers (see [Embeddings](#embeddings)). `LLM_BASE_URL` and `RERANKER_BASE_URL` are required: an existing `.env` without them stops the API from starting
 - For local API development only: [uv](https://docs.astral.sh/uv/) (Python 3.12 is installed by uv)
 
 ## Quick start
