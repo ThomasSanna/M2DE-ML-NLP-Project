@@ -116,6 +116,20 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `EMBEDDING_MODEL` | `BAAI/bge-multilingual-gemma2` | modèle demandé au serveur |
 | `EMBEDDING_API_KEY` | vide | si le serveur en exige une |
 | `GLPI_WEBHOOK_SECRET` | vide | secret du webhook GLPI ; vide = signature non vérifiée |
+| `LLM_BASE_URL` | **required** | university LLM URL (TGI, OpenAI-compatible), with `/v1` (VPN required) |
+| `LLM_MODEL` | `google/gemma3-12b-it` | model name sent to the server (TGI ignores it) |
+| `LLM_MAX_TOKENS` | `512` | max tokens generated per model call |
+| `LLM_TIMEOUT_SECONDS` | `60.0` | timeout of one model call |
+| `RERANKER_BASE_URL` | **required** | university reranker URL, without `/v1` (VPN required) |
+| `RERANKER_TIMEOUT_SECONDS` | `30.0` | timeout of one rerank call |
+| `RETRIEVAL_CANDIDATES` | `20` | vector-search candidates sent to the reranker |
+| `RETRIEVAL_TOP_K` | `3` | max memory entries given to the model |
+| `RERANK_THRESHOLD` | `0.5` | min reranker score (sigmoid of the logit, 0 to 1) to keep an entry |
+| `EXA_API_KEY` | empty | Exa key; empty = web search disabled |
+| `EXA_INCLUDE_DOMAINS` | empty | comma-separated domains web search is restricted to |
+| `EXA_NUM_RESULTS` | `3` | results per web search |
+| `EXA_TIMEOUT_SECONDS` | `15.0` | timeout of one web search |
+| `AGENT_MAX_STEPS` | `3` | model calls per answer; the last one must answer |
 | `POSTGRES_USER` / `_PASSWORD` / `_DB` | `memoire` / - / `memoire` | base de la mémoire |
 | `POSTGRES_HOST` / `_PORT` | `localhost` / `5432` | forcé à `postgres:5432` dans Docker |
 | `ENVIRONMENT`, `LOG_LEVEL` | `dev`, `INFO` | `prod` désactive `/docs` |

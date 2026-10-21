@@ -62,6 +62,8 @@ def settings() -> Iterator[Settings]:
             api_key=API_KEY,
             glpi_webhook_secret=WEBHOOK_SECRET,
             embedding_base_url="http://embeddings.invalid/v1",
+            llm_base_url="http://llm.invalid/v1",
+            reranker_base_url="http://reranker.invalid",
         )
         alembic_config = Config(API_ROOT / "alembic.ini")
         alembic_config.attributes["settings"] = test_settings
