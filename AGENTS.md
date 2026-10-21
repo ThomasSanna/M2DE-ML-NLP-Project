@@ -3,11 +3,12 @@
 Rules for AI agents in this repo. Every line here exists because getting it wrong
 breaks something specific. User-facing docs live in `README.md` and `doc/api_doc.md`.
 
-PoC of a GLPI support chatbot. The part under active development is the memory API
-in `api/`: FastAPI 0.147 / Starlette 1.9, SQLAlchemy 2.1 async + asyncpg, Alembic 1.20,
-pgvector 0.8 (PG 17), Python 3.12, `uv`. Embeddings come from a remote vLLM server on
-the university network (VPN). The LLM pipeline (guardrails, generation, reranker,
-websearch) is **not implemented**; do not build it unless asked.
+PoC of a GLPI support chatbot. The part under active development is the API in `api/`:
+the memory and the answer engine (`POST /api/v1/answer`). FastAPI 0.147 / Starlette 1.9,
+SQLAlchemy 2.1 async + asyncpg, Alembic 1.20, pgvector 0.8 (PG 17), Python 3.12, `uv`.
+Embeddings, reranker and LLM (TGI) are remote servers on the university network (VPN); web
+search is Exa. Guardrails (input and output filtering) are **not implemented**; do not
+build them unless asked.
 
 ## Commands
 
@@ -41,10 +42,11 @@ If Docker or the VPN is unavailable, say which step was not run. Never claim it 
 ## Boundaries
 
 **Always**
-- Read settings through `SettingsDep`, the embedder through `EmbedderDep`, the DB through
-  `SessionDep` (`app/api/deps.py`). Never call `app.core.config.get_settings()` or build an
-  `OpenAIEmbeddingClient` inside a route or service: it bypasses the test `Settings` and the
-  `FakeEmbedder`, and opens an HTTP client outside the lifespan.
+- Read settings through `SettingsDep`, the DB through `SessionDep`, and remote clients
+  through `EmbedderDep`, `RerankerDep`, `ChatModelDep`, `WebSearchDep` (`app/api/deps.py`).
+  Never call `app.core.config.get_settings()` or build a client inside a route or service:
+  it bypasses the test `Settings` and the fakes, and opens an HTTP client outside the
+  lifespan.
 - Put business logic in `app/services/`; routes validate, call one service, map to a schema.
   `routes/ingest.py` is the only route that writes to the DB itself.
 - Give new settings a home in four places: `app/core/config.py`, `.env.example` (placeholder),
@@ -68,10 +70,11 @@ If Docker or the VPN is unavailable, say which step was not run. Never claim it 
 - Read, print or copy values from `.env`, or put any real credential in code, tests, docs or
   commits.
 - Edit an applied migration (`0001` included). Schema changes go in a new revision.
-- Weaken auth: `require_api_key` on `/api/v1/memory/*` (constant-time compare), the GLPI HMAC
+- Weaken auth: `require_api_key` on `/api/v1/memory/*` and `/api/v1/answer` (constant-time
+  compare), the GLPI HMAC
   on `/api/v1/ingest/*`. Do not add a timestamp window to the HMAC check: GLPI queues webhooks
   and replays them later with their original headers.
-- Call the real embeddings server from tests, or add a local model container / torch.
+- Call the real model servers or Exa from tests, or add a local model container / torch.
 - Add AI attribution (`Co-Authored-By: Claude`, "Generated with Claude Code") to commits or PRs.
 
 ## Invariants that are easy to break
@@ -88,13 +91,22 @@ the HNSW index. Filter on `status == ACTIVE`; `GET /knowledge/{id}` deliberately
 **Webhook** (`routes/ingest.py`). Verify the signature on the raw `await request.body()` bytes
 before parsing. Never let FastAPI parse the body into a model first: re-serialized JSON does
 not match GLPI's HMAC. The handler only stores the event and returns `202`; no GLPI call, no
-embedding there (the future pipeline consumes `glpi_event` rows).
+embedding there (a future worker consumes `glpi_event` rows; `/answer` does not).
 
-**Remote model errors.** `OpenAIEmbeddingClient` turns every transport, format or dimension
-failure into `EmbeddingError`; `main.py` maps it to `502` with a generic message and logs the
-cause. Do not return the cause to the client, and do not catch `EmbeddingError` in routes.
-A future remote client (reranker, LLM) follows the same shape: a `Protocol`, an
-`httpx.AsyncClient` created in `lifespan`, stored on `app.state`, exposed by a dependency.
+**Remote clients.** Each client turns every transport, format or dimension failure into its
+domain error (`EmbeddingError`, `RerankerError`, `LLMError`, `WebSearchError`); `main.py`
+maps the first three to `502` with a generic message and logs the cause. Do not return the
+cause to the client, and do not catch these errors in routes. `WebSearchError` is the
+exception: the agent feeds it back to the model and answers from the memory. A new remote
+client follows the same shape: a `Protocol`, an `httpx.AsyncClient` created in `lifespan`,
+stored on `app.state`, exposed by a dependency.
+
+**Answer engine** (`services/answer.py`, `services/agent.py`). Commit the session right after
+retrieval: the agent loop takes seconds and must not hold a pooled connection. Agent
+messages are append-only so the server reuses the cached prompt prefix; the last step adds
+the notice to the unsent message and narrows the grammar to `answer`. Only refs shown to
+the model (`K<n>`, `W<n>`) may become citations. The search query is logged at INFO and sent
+to Exa; the thread itself is logged at DEBUG only.
 
 **Enums.** Use `str_enum()` (VARCHAR + CHECK), never a native Postgres `ENUM`. Autogenerate
 does **not** detect CHECK changes: adding or removing a member requires a hand-written
@@ -127,7 +139,10 @@ Match the neighbors; ruff config in `api/pyproject.toml` is authoritative (line 
 
 - The DB is a real throwaway `pgvector/pgvector:0.8.0-pg17` container (session-scoped)
   migrated with the real Alembic revisions. No SQLite, no DB mocks.
-- Use the fixtures: `client` (app + `FakeEmbedder`), `auth` (API key header), `settings`.
+- Use the fixtures: `client` (app + `FakeEmbedder`, `FakeReranker`, a `ScriptedChatModel`
+  that answers, no web search), `auth` (API key header), `settings`. Override
+  `get_chat_model` / `get_web_search` with `ScriptedChatModel` / `FakeWebSearch` to script a
+  run.
   Tests build `Settings(_env_file=None, ...)` and must never read the real `.env`.
 - Tests are **synchronous** (`TestClient`). Wrap async code in `asyncio.run` like `run_sql`
   and `_embed` do. Do not add pytest-asyncio or `@pytest.mark.anyio` tests.
@@ -138,8 +153,8 @@ Match the neighbors; ruff config in `api/pyproject.toml` is authoritative (line 
 - To simulate the embeddings server, use `httpx.MockTransport` (`test_embeddings.py`). To make
   embedding fail in a route test, override `get_embedder` with a failing class
   (`test_embedding_failure_returns_502`).
-- New route: test the success path, `401` without key, `422` on invalid input, and `502` if it
-  embeds.
+- New route: test the success path, `401` without key, `422` on invalid input, and `502` for
+  each remote model it calls.
 
 ## Docs
 
