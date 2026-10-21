@@ -16,6 +16,7 @@ Routes métier sous `/api/v1`.
 | `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | `201` | `401`, `422`, `502` |
 | `GET` | `/api/v1/memory/knowledge/{knowledge_id}` | `X-API-Key` | `200` | `401`, `404`, `422` |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | `200` | `401`, `422`, `502` |
+| `POST` | `/api/v1/answer` | `X-API-Key` | `200` | `401`, `422`, `502` |
 
 ### Conventions
 
@@ -96,6 +97,59 @@ curl -X POST http://localhost:8000/api/v1/memory/search \
 - `similarity` = similarité cosinus brute, dans [−1, 1] (1 = identique). Aucune pondération (feedback, fraîcheur, réutilisation) pour l'instant.
 - **Aucun seuil** : le top-k renvoie toujours `k` résultats s'il en existe, même peu pertinents.
 - Lecture seule : `reuse_count` n'est pas incrémenté.
+
+### `POST /api/v1/answer`
+
+Answers a ticket thread. The last user message is searched in the memory (vector
+candidates, then the reranker), and the model either answers from it or runs a web search
+(Exa) first, for at most `AGENT_MAX_STEPS` steps. Synchronous: about 1 to 15 s depending on
+the number of searches.
+
+**Body** (`AnswerRequest`)
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `messages` | list of `{"role", "content"}` | yes | 1 to 50 items, the last one from `user` |
+| `messages[].role` | `user` / `assistant` | yes | `assistant` is the support side (technician or bot) |
+| `messages[].content` | text | yes | ≥ 1 non-blank character |
+
+```bash
+curl -X POST http://localhost:8000/api/v1/answer   -H "X-API-Key: $API_KEY" -H "Content-Type: application/json"   -d '{"messages": [
+        {"role": "user", "content": "Le wifi eduroam ne marche pas sur mon Mac"},
+        {"role": "assistant", "content": "Quel message voyez-vous ?"},
+        {"role": "user", "content": "Il demande le mot de passe en boucle"}
+      ]}'
+```
+
+**Output**: `200`, `AnswerResult`:
+
+```json
+{
+  "kind": "answer",
+  "answer": "Supprimez le profil eduroam dans Réglages > Wi-Fi, puis ... [K1] [W2]",
+  "sources": [
+    {"ref": "K1", "type": "knowledge", "knowledge_id": "3f2a...", "question": "Eduroam refuse mon mot de passe"},
+    {"ref": "W2", "type": "web", "url": "https://...", "title": "Configurer eduroam sous macOS"}
+  ],
+  "memory": [{"knowledge_id": "3f2a...", "score": 0.94}],
+  "searches": ["eduroam macOS mot de passe en boucle"],
+  "steps": 2,
+  "usage": {"prompt_tokens": 3120, "completion_tokens": 210}
+}
+```
+
+- `sources`: the refs the answer cites that exist, in citation order. `K<n>` is a memory
+  entry, `W<n>` a web result; refs the model made up are dropped.
+- `memory`: every retrieved entry with its reranker score in [0, 1], cited or not. Entries
+  under `RERANK_THRESHOLD` are not retrieved.
+- `searches`: the queries actually sent to Exa (duplicates are not resent).
+- `502` with a generic `detail` when the embeddings server (`Embeddings server unavailable`),
+  the reranker (`Reranker unavailable`) or the language model (`Language model unavailable`)
+  fails, including a model that still returns invalid JSON at the last step. The cause is
+  only logged.
+- A failed web search does not fail the request: the model is told to answer from the
+  memory. Without `EXA_API_KEY`, web search is disabled and the model can only answer.
+- Read-only: `reuse_count` is not incremented.
 
 ## Schéma (résumé)
 

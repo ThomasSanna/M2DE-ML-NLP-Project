@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import hashlib
+import json
 import math
 from collections.abc import Iterator
 from pathlib import Path
@@ -12,7 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from testcontainers.community.postgres import PostgresContainer
 
-from app.api.deps import get_embedder
+from app.api.deps import get_chat_model, get_embedder, get_reranker, get_web_search
 from app.core.config import Settings
 from app.db.session import create_engine
 from app.main import create_app
@@ -113,6 +114,11 @@ def settings() -> Iterator[Settings]:
 def client(settings: Settings) -> Iterator[TestClient]:
     app = create_app(settings)
     app.dependency_overrides[get_embedder] = FakeEmbedder
+    app.dependency_overrides[get_reranker] = FakeReranker
+    app.dependency_overrides[get_chat_model] = lambda: ScriptedChatModel(
+        [json.dumps({"action": "answer", "answer": "Réponse", "sources": []})] * 3
+    )
+    app.dependency_overrides[get_web_search] = lambda: None
     with TestClient(app) as test_client:
         yield test_client
     run_sql(settings, "TRUNCATE knowledge, feedback, glpi_event RESTART IDENTITY CASCADE")
