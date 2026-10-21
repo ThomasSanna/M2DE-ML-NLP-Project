@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import hashlib
 import math
 from collections.abc import Iterator
@@ -16,6 +17,8 @@ from app.core.config import Settings
 from app.db.session import create_engine
 from app.main import create_app
 from app.models import EMBEDDING_DIM
+from app.services.llm import ChatMessage, Completion
+from app.services.websearch import WebResult, WebSearchError
 
 API_KEY = "test-api-key"
 WEBHOOK_SECRET = "test-webhook-secret"
@@ -43,6 +46,33 @@ class FakeReranker:
 
     async def rerank(self, query: str, documents: list[str]) -> list[float]:
         return [5.0] * len(documents)
+
+
+class ScriptedChatModel:
+    """Returns scripted outputs in order (100 prompt and 10 completion tokens each) and
+    records a deep copy of every call, so later appends cannot rewrite history."""
+
+    def __init__(self, outputs: list[str | Completion]) -> None:
+        self._outputs = list(outputs)
+        self.calls: list[tuple[list[ChatMessage], dict[str, object]]] = []
+
+    async def complete(self, messages: list[ChatMessage], schema: dict[str, object]) -> Completion:
+        self.calls.append((copy.deepcopy(messages), copy.deepcopy(schema)))
+        output = self._outputs.pop(0)
+        return output if isinstance(output, Completion) else Completion(output, "stop", 100, 10)
+
+
+class FakeWebSearch:
+    def __init__(self, results: list[WebResult] | None = None, fail: bool = False) -> None:
+        self._results = results or []
+        self._fail = fail
+        self.queries: list[str] = []
+
+    async def search(self, query: str) -> list[WebResult]:
+        self.queries.append(query)
+        if self._fail:
+            raise WebSearchError("Exa unreachable")
+        return self._results
 
 
 def run_sql(settings: Settings, statement: str) -> None:
