@@ -54,15 +54,23 @@ class ExaClient:
             body = response.json()
             results = [
                 WebResult(
-                    title=item.get("title") or item["url"],
-                    url=item["url"],
+                    title=item.get("title") or _url(item),
+                    url=_url(item),
                     published=item.get("publishedDate"),
                     excerpt=" … ".join(item.get("highlights") or [])[:EXCERPT_MAX_CHARS],
                 )
                 for item in body["results"]
             ]
+            cost = (body.get("costDollars") or {}).get("total")
         except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
             raise WebSearchError(f"Web search call failed: {exc!r}") from exc
 
-        logger.info("Exa search cost %s USD", (body.get("costDollars") or {}).get("total"))
+        logger.info("Exa search cost %s USD", cost)
         return results
+
+
+def _url(item: dict[str, object]) -> str:
+    url = item["url"]
+    if not isinstance(url, str):
+        raise TypeError(f"Exa result url is {type(url).__name__}, not str")
+    return url

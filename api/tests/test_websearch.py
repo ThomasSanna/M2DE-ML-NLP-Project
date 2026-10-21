@@ -78,3 +78,15 @@ def test_missing_title_falls_back_to_url_and_excerpt_is_capped() -> None:
 def test_errors_raise_web_search_error(response: httpx.Response) -> None:
     with pytest.raises(WebSearchError):
         _search(lambda request: response)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"results": [{"title": "t", "url": None}]},
+        {"results": [], "costDollars": 0.005},
+    ],
+)
+def test_unexpected_exa_fields_raise_web_search_error(body: dict[str, object]) -> None:
+    with pytest.raises(WebSearchError):
+        _search(lambda _: httpx.Response(200, json=body))

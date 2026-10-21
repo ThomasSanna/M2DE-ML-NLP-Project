@@ -2,8 +2,11 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from app.api.deps import get_chat_model, get_embedder, get_reranker, get_web_search
+from app.core.config import Settings
+from app.db.session import create_engine
 from app.services.agent_prompt import NO_MEMORY
 from app.services.embeddings import EmbeddingError
 from app.services.llm import ChatMessage, Completion, LLMError
@@ -180,3 +183,32 @@ def test_answer_survives_web_search_failure(client: TestClient, auth: dict[str, 
 
     assert response.status_code == 200, response.text
     assert response.json()["answer"] == "Avec la mémoire"
+
+
+def test_answer_releases_db_transaction_before_the_model(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    class ProbingChatModel:
+        idle_in_transaction = -1
+
+        async def complete(
+            self, messages: list[ChatMessage], schema: dict[str, object]
+        ) -> Completion:
+            engine = create_engine(settings.database_url)
+            async with engine.connect() as connection:
+                self.idle_in_transaction = await connection.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity WHERE state = 'idle in transaction'"
+                    )
+                )
+            await engine.dispose()
+            return Completion(json.dumps({"action": "answer", "answer": "ok"}), "stop", 1, 1)
+
+    model = ProbingChatModel()
+    _add_knowledge(client, auth)
+    _override(client, get_chat_model, model)
+
+    response = client.post("/api/v1/answer", json={"messages": THREAD}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert model.idle_in_transaction == 0

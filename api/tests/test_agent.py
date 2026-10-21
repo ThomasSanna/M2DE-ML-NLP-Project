@@ -189,3 +189,11 @@ def test_search_disabled_allows_only_answer() -> None:
 def test_invalid_last_step_raises_llm_error() -> None:
     with pytest.raises(LLMError):
         _run(ScriptedChatModel(["{"]), FakeWebSearch(RESULTS), max_steps=1)
+
+
+def test_citations_tolerate_brackets_and_case() -> None:
+    model = ScriptedChatModel([_answer("Voir [K1]", ["[K1]", " k1 "])])
+
+    run = _run(model, FakeWebSearch(RESULTS))
+
+    assert run.cited_refs == ["K1"]

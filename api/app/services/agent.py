@@ -93,11 +93,13 @@ async def run_agent(
                 completion.completion_tokens,
             )
             known = memory_refs | web_results.keys()
-            if unknown := set(action.sources) - known:
+            # The prompt shows refs in brackets; small models copy them into `sources`.
+            refs = [ref.strip("[] ").upper() for ref in action.sources]
+            if unknown := set(refs) - known:
                 logger.info("agent dropped unknown refs %s", sorted(unknown))
             return AgentRun(
                 answer=action.answer,
-                cited_refs=list(dict.fromkeys(ref for ref in action.sources if ref in known)),
+                cited_refs=list(dict.fromkeys(ref for ref in refs if ref in known)),
                 searches=searches,
                 web_results=web_results,
                 steps=step,

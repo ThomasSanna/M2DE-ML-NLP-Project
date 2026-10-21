@@ -45,6 +45,9 @@ async def answer_thread(
         settings.retrieval_top_k,
         settings.rerank_threshold,
     )
+    # Ends the read-only transaction so the pooled connection is not held through the
+    # model and web calls. Not rollback(): it would expire the loaded entries.
+    await session.commit()
     knowledge = {f"K{index}": entry for index, (entry, _) in enumerate(hits, start=1)}
     thread = [(message.role, message.content) for message in request.messages]
     logger.debug("answering thread %r", thread)
