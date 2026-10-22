@@ -184,7 +184,7 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `RERANKER_TIMEOUT_SECONDS` | `30.0` | timeout of one rerank call |
 | `RETRIEVAL_CANDIDATES` | `20` | vector-search candidates sent to the reranker |
 | `RETRIEVAL_TOP_K` | `3` | max memory entries given to the model |
-| `RERANK_THRESHOLD` | `0.5` | min reranker score (sigmoid of the logit, 0 to 1) to keep an entry |
+| `RERANK_THRESHOLD` | `0.95` | min reranker score (sigmoid of the logit, 0 to 1) to keep an entry; 0.95 is logit 2.9 |
 | `EXA_API_KEY` | empty | Exa key; empty = web search disabled |
 | `EXA_INCLUDE_DOMAINS` | empty | comma-separated domains web search is restricted to |
 | `EXA_NUM_RESULTS` | `3` | results per web search |

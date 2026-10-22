@@ -69,10 +69,11 @@ class Settings(DatabaseSettings):
     reranker_timeout_seconds: float = 30.0
 
     # Vector candidates sent to the reranker, then entries kept above the threshold
-    # (sigmoid of the reranker logit).
+    # (sigmoid of the reranker logit). 0.95 is logit 2.9: on the seed memory, expected
+    # entries score 4.3 or more, off-topic queries under 3.2.
     retrieval_candidates: int = Field(default=20, ge=1)
     retrieval_top_k: int = Field(default=3, ge=1)
-    rerank_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    rerank_threshold: float = Field(default=0.95, ge=0.0, le=1.0)
 
     # Exa web search; empty key = web search disabled.
     exa_api_key: SecretStr | None = None
