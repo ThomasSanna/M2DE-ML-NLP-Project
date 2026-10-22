@@ -38,8 +38,9 @@ et liste-les dans "sources".
 
 _ROLE_LABELS = {"user": "Utilisateur", "assistant": "Support"}
 
-# Refs cited the way the prompt asks, in brackets: "[K1]", "[K1, W2]".
-REF_GROUP = re.compile(r"\[\s*[KW]\d+(?:\s*[,;]\s*[KW]\d+)*\s*\]", re.IGNORECASE)
+# Refs cited the way the prompt asks, in brackets: "[K1]", "[K1, W2]". The 4B sometimes
+# escapes them as Markdown: "\[K1\]".
+REF_GROUP = re.compile(r"\\?\[\s*[KW]\d+(?:\s*[,;]\s*[KW]\d+)*\s*\\?\]", re.IGNORECASE)
 _STALE_REFS = re.compile(rf"\s*{REF_GROUP.pattern}", re.IGNORECASE)
 
 

@@ -217,8 +217,8 @@ def test_citations_tolerate_brackets_and_case() -> None:
     assert run.cited_refs == ["K1"]
 
 
-# Outputs observed on the 4B server: inline refs with `sources` left empty, and a
-# comma-separated list split into odd items.
+# Outputs observed on the 4B server: inline refs with `sources` left empty, a
+# comma-separated list split into odd items, and Markdown-escaped brackets.
 @pytest.mark.parametrize(
     ("answer", "sources", "cited"),
     [
@@ -227,6 +227,7 @@ def test_citations_tolerate_brackets_and_case() -> None:
         ("Voir [K2].", ["K1"], ["K1", "K2"]),
         ("Voir [K2, k1].", [], ["K2", "K1"]),
         ("K1 ne s'applique pas ici, voir [K2].", [], ["K2"]),
+        (r"Voir \[K2, K1\]\[K2\].", [], ["K2", "K1"]),
     ],
 )
 def test_citations_are_read_from_answer_and_sources(

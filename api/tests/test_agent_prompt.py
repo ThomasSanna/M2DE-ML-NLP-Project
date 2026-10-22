@@ -91,7 +91,7 @@ def test_render_thread_strips_refs_from_earlier_answers() -> None:
     thread = render_thread(
         [
             ("user", "Le wifi eduroam ne marche pas"),
-            ("assistant", "Supprimez le profil [K1] [W2], puis reconnectez-vous [k1, W3]."),
+            ("assistant", r"Supprimez le profil [K1] \[W2\], puis reconnectez-vous [k1, W3]."),
             ("user", "Sous W10 ça ne marche pas"),
         ]
     )
