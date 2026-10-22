@@ -3,13 +3,16 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+# Bounds the request body (50 messages); the model reads only 2000 characters anyway.
+THREAD_MESSAGE_MAX_CHARS = 20_000
+
 
 class ThreadMessage(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     # `assistant` is the support side: technician or bot.
     role: Literal["user", "assistant"]
-    content: str = Field(min_length=1)
+    content: str = Field(min_length=1, max_length=THREAD_MESSAGE_MAX_CHARS)
 
 
 class AnswerRequest(BaseModel):

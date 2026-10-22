@@ -7,12 +7,14 @@ from sqlalchemy import text
 from app.api.deps import get_chat_model, get_embedder, get_reranker, get_web_search
 from app.core.config import Settings
 from app.db.session import create_engine
+from app.schemas.answer import THREAD_MESSAGE_MAX_CHARS
 from app.services.agent_prompt import NO_MEMORY
+from app.services.answer import RETRIEVAL_QUERY_MAX_CHARS
 from app.services.embeddings import EmbeddingError
 from app.services.llm import ChatMessage, Completion, LLMError
 from app.services.reranker import RerankerError
 from app.services.websearch import WebResult
-from tests.conftest import FakeWebSearch, ScriptedChatModel
+from tests.conftest import FakeEmbedder, FakeWebSearch, ScriptedChatModel
 
 QUESTION = "Je n'arrive plus à me connecter au wifi eduroam"
 ANSWER = "Réinstallez le profil eduroam via CAT."
@@ -93,28 +95,78 @@ def test_answer_without_memory_says_so(client: TestClient, auth: dict[str, str])
     assert NO_MEMORY in model.calls[0][0][1]["content"]
 
 
-def test_answer_retrieves_on_last_user_message(client: TestClient, auth: dict[str, str]) -> None:
-    class RecordingReranker:
-        def __init__(self) -> None:
-            self.queries: list[str] = []
+class RecordingReranker:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
 
-        async def rerank(self, query: str, documents: list[str]) -> list[float]:
-            self.queries.append(query)
-            return [5.0] * len(documents)
+    async def rerank(self, query: str, documents: list[str]) -> list[float]:
+        self.queries.append(query)
+        return [5.0] * len(documents)
 
+
+def test_answer_retrieves_on_first_and_last_user_messages(
+    client: TestClient, auth: dict[str, str]
+) -> None:
     reranker = RecordingReranker()
     _add_knowledge(client, auth)
     _override(client, get_reranker, reranker)
     thread = [
-        {"role": "user", "content": "imprimante"},
-        {"role": "assistant", "content": "Laquelle ?"},
-        {"role": "user", "content": "wifi eduroam"},
+        {"role": "user", "content": "Le wifi eduroam ne marche pas"},
+        {"role": "assistant", "content": "Sur quel appareil ?"},
+        {"role": "user", "content": "Un Mac"},
+        {"role": "assistant", "content": "Avez-vous redémarré ?"},
+        {"role": "user", "content": "Oui, toujours pareil"},
     ]
 
     response = client.post("/api/v1/answer", json={"messages": thread}, headers=auth)
 
     assert response.status_code == 200, response.text
-    assert reranker.queries == ["wifi eduroam"]
+    assert reranker.queries == ["Le wifi eduroam ne marche pas\nOui, toujours pareil"]
+
+
+def test_answer_splits_the_query_cap_between_first_and_last(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    reranker = RecordingReranker()
+    _add_knowledge(client, auth)
+    _override(client, get_reranker, reranker)
+    thread = [
+        {"role": "user", "content": "wifi " + "a" * 5000},
+        {"role": "assistant", "content": "Lequel ?"},
+        {"role": "user", "content": "eduroam " + "b" * 5000},
+    ]
+
+    response = client.post("/api/v1/answer", json={"messages": thread}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    half = RETRIEVAL_QUERY_MAX_CHARS // 2
+    [query] = reranker.queries
+    assert query == f"{thread[0]['content'][:half]}\n{thread[2]['content'][:half]}"
+
+
+def test_answer_caps_the_retrieval_query(client: TestClient, auth: dict[str, str]) -> None:
+    class RecordingEmbedder(FakeEmbedder):
+        def __init__(self) -> None:
+            self.texts: list[str] = []
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            self.texts.extend(texts)
+            return await super().embed(texts)
+
+    _add_knowledge(client, auth)
+    embedder = RecordingEmbedder()
+    reranker = RecordingReranker()
+    _override(client, get_embedder, embedder)
+    _override(client, get_reranker, reranker)
+    pasted_log = "wifi eduroam " + "x" * 10_000
+
+    response = client.post(
+        "/api/v1/answer", json={"messages": [{"role": "user", "content": pasted_log}]}, headers=auth
+    )
+
+    assert response.status_code == 200, response.text
+    assert embedder.texts == [pasted_log[:RETRIEVAL_QUERY_MAX_CHARS]]
+    assert reranker.queries == [pasted_log[:RETRIEVAL_QUERY_MAX_CHARS]]
 
 
 @pytest.mark.parametrize(
@@ -125,6 +177,7 @@ def test_answer_retrieves_on_last_user_message(client: TestClient, auth: dict[st
         [{"role": "system", "content": "wifi"}],
         [{"role": "user", "content": "   "}],
         [{"role": "user", "content": "wifi"}] * 51,
+        [{"role": "user", "content": "x" * (THREAD_MESSAGE_MAX_CHARS + 1)}],
     ],
 )
 def test_answer_validates_thread(

@@ -1,6 +1,7 @@
 """Everything the model reads: system prompt, rendered context, feedback messages and the
 JSON action protocol. Model-facing text is French; the rest of the code is English."""
 
+import re
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
@@ -12,6 +13,7 @@ from app.services.websearch import WebResult
 # 4000-token input limit of the 4B server.
 MEMORY_ANSWER_MAX_CHARS = 800
 THREAD_MAX_CHARS = 2000
+THREAD_HEAD_MAX_CHARS = 600
 
 NO_MEMORY = "Aucune connaissance pertinente en mémoire."
 DUPLICATE_SEARCH = "Déjà cherché, résultats ci-dessus. Réponds ou cherche autre chose."
@@ -36,6 +38,11 @@ et liste-les dans "sources".
 
 _ROLE_LABELS = {"user": "Utilisateur", "assistant": "Support"}
 
+# Refs cited the way the prompt asks, in brackets: "[K1]", "[K1, W2]". The 4B sometimes
+# escapes them as Markdown: "\[K1\]".
+REF_GROUP = re.compile(r"\\?\[\s*[KW]\d+(?:\s*[,;]\s*[KW]\d+)*\s*\\?\]", re.IGNORECASE)
+_STALE_REFS = re.compile(rf"\s*{REF_GROUP.pattern}", re.IGNORECASE)
+
 
 class SearchAction(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -55,23 +62,29 @@ class AnswerAction(BaseModel):
 _ACTION = TypeAdapter(Annotated[SearchAction | AnswerAction, Field(discriminator="action")])
 
 
-def decision_schema(allow_search: bool) -> dict[str, object]:
+def decision_schema(allow_search: bool, refs: list[str]) -> dict[str, object]:
     """JSON grammar for one step. Flat on purpose: TGI rejects a root `oneOf`, so the
     per-action requirements are checked by `parse_action` instead. `minLength` is
     enforced by the grammar: without it the 4B emits empty strings and repeats them
-    despite the feedback."""
+    despite the feedback.
+
+    Without search (last step, or web search disabled) there is a single action, so the
+    grammar itself requires `answer`: an output missing it would fail the request.
+
+    `sources` only takes refs shown so far: with free strings the 4B stopped inside an
+    item (`["W2","]`)."""
+    properties: dict[str, object] = {
+        "action": {"type": "string", "enum": ["search", "answer"] if allow_search else ["answer"]}
+    }
+    if allow_search:
+        properties["query"] = {"type": "string", "minLength": 1}
+    properties["answer"] = {"type": "string", "minLength": 1}
+    if refs:
+        properties["sources"] = {"type": "array", "items": {"type": "string", "enum": refs}}
     return {
         "type": "object",
-        "properties": {
-            "action": {
-                "type": "string",
-                "enum": ["search", "answer"] if allow_search else ["answer"],
-            },
-            "query": {"type": "string", "minLength": 1},
-            "answer": {"type": "string", "minLength": 1},
-            "sources": {"type": "array", "items": {"type": "string"}},
-        },
-        "required": ["action"],
+        "properties": properties,
+        "required": ["action"] if allow_search else ["action", "answer"],
     }
 
 
@@ -95,10 +108,15 @@ def render_memory(entries: list[tuple[str, str]]) -> str:
 
 def render_thread(messages: list[tuple[str, str]]) -> str:
     # The thread is text, not chat roles: GLPI threads can hold two consecutive user
-    # messages, which the Gemma template rejects. The tail is kept: it holds the request.
-    text = "\n".join(f"{_ROLE_LABELS[role]} : {content}" for role, content in messages)
+    # messages, which the Gemma template rejects. Refs in earlier bot answers pointed to
+    # that run's sources: left in, the model copies them onto this run's entries.
+    lines = [f"{_ROLE_LABELS[role]} : {_STALE_REFS.sub('', content)}" for role, content in messages]
+    text = "\n".join(lines)
     if len(text) > THREAD_MAX_CHARS:
-        text = "…" + text[-(THREAD_MAX_CHARS - 1) :]
+        # The first message states the problem and the tail holds the current request:
+        # the middle is cut.
+        head = _truncate(lines[0], THREAD_HEAD_MAX_CHARS)
+        text = f"{head}\n…" + text[-(THREAD_MAX_CHARS - len(head) - 2) :]
     return f"Fil :\n{text}"
 
 

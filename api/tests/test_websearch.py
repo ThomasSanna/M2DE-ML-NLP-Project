@@ -84,9 +84,21 @@ def test_errors_raise_web_search_error(response: httpx.Response) -> None:
     "body",
     [
         {"results": [{"title": "t", "url": None}]},
-        {"results": [], "costDollars": 0.005},
+        {"results": [{"title": 123, "url": "https://a.fr"}]},
+        {"results": [{"title": "t", "url": "https://a.fr", "publishedDate": 2025}]},
+        {"results": [{"title": "t", "url": "https://a.fr", "highlights": "abc"}]},
+        {"results": [{"title": "t", "url": "https://a.fr", "highlights": [1, 2]}]},
     ],
 )
 def test_unexpected_exa_fields_raise_web_search_error(body: dict[str, object]) -> None:
     with pytest.raises(WebSearchError):
         _search(lambda _: httpx.Response(200, json=body))
+
+
+@pytest.mark.parametrize("cost", [0.005, "0.005", [1], None])
+def test_unexpected_cost_keeps_the_results(cost: object) -> None:
+    body = {"results": [{"title": "t", "url": "https://a.fr"}], "costDollars": cost}
+
+    assert _search(lambda _: httpx.Response(200, json=body)) == [
+        WebResult("t", "https://a.fr", None, "")
+    ]

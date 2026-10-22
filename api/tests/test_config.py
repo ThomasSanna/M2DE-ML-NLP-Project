@@ -1,7 +1,13 @@
+import io
+from pathlib import Path
+
 import pytest
+from alembic import command
+from alembic.config import Config
 from pydantic import ValidationError
 
-from app.core.config import Settings
+from app.core.config import Settings, get_database_settings
+from tests.conftest import API_ROOT
 
 
 def _settings(**overrides: object) -> Settings:
@@ -38,3 +44,24 @@ def test_empty_exa_api_key_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_invalid_agent_settings_are_rejected(overrides: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         _settings(**overrides)
+
+
+def test_migrations_need_only_database_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Outside api/, the relative env files (the real `.env`) are not found.
+    monkeypatch.chdir(tmp_path)
+    for name in ("API_KEY", "EMBEDDING_BASE_URL", "LLM_BASE_URL", "RERANKER_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("POSTGRES_PASSWORD", "test")
+    get_database_settings.cache_clear()
+    output = io.StringIO()
+    config = Config(API_ROOT / "alembic.ini", output_buffer=output)
+    config.attributes["configure_logger"] = False
+
+    try:
+        command.upgrade(config, "head", sql=True)
+    finally:
+        get_database_settings.cache_clear()
+
+    assert "CREATE TABLE knowledge" in output.getvalue()

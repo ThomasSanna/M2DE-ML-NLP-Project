@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from app.services.agent_prompt import (
     DUPLICATE_SEARCH,
     MAX_STEPS_NOTICE,
+    REF_GROUP,
     SEARCH_UNAVAILABLE,
     AnswerAction,
     SearchAction,
@@ -34,7 +35,7 @@ class AgentRun:
     answer: str
     # Existing refs only, deduplicated, in citation order.
     cited_refs: list[str]
-    # Queries actually sent to the web search.
+    # Queries the web search answered; failed calls are left out.
     searches: list[str]
     web_results: dict[str, WebResult]
     steps: int
@@ -75,8 +76,9 @@ async def run_agent(
                 "role": final["role"],
                 "content": f"{final['content']}\n\n{MAX_STEPS_NOTICE}",
             }
+        known = memory_refs | web_results.keys()
         completion = await model.complete(
-            messages, decision_schema(web_search is not None and not last)
+            messages, decision_schema(web_search is not None and not last, sorted(known))
         )
         prompt_tokens += completion.prompt_tokens
         completion_tokens += completion.completion_tokens
@@ -95,10 +97,11 @@ async def run_agent(
                 completion.prompt_tokens,
                 completion.completion_tokens,
             )
-            known = memory_refs | web_results.keys()
-            # Small models cite inline and leave `sources` empty, or put brackets and
-            # commas in its items: refs are read from both, explicit sources first.
-            refs = [ref.upper() for ref in _REF.findall(" ".join([*action.sources, action.answer]))]
+            # Small models cite inline and leave `sources` empty: refs are read from both,
+            # explicit sources first. In the answer only bracketed refs count: "W10" there
+            # is Windows, not a source.
+            inline = " ".join(REF_GROUP.findall(action.answer))
+            refs = [ref.upper() for ref in _REF.findall(" ".join([*action.sources, inline]))]
             if unknown := set(refs) - known:
                 logger.info("agent dropped unknown refs %s", sorted(unknown))
             return AgentRun(
@@ -126,14 +129,15 @@ async def run_agent(
             elif key in searched:
                 feedback = DUPLICATE_SEARCH
             else:
-                searched.add(key)
-                searches.append(action.query)
                 try:
                     results = await web_search.search(action.query)
                 except WebSearchError as exc:
+                    # Not recorded: the model may retry the query, nothing was shown.
                     logger.warning("Web search failed: %s", exc)
                     feedback = SEARCH_UNAVAILABLE
                 else:
+                    searched.add(key)
+                    searches.append(action.query)
                     first_ref = len(web_results) + 1
                     for ref, result in enumerate(results, start=first_ref):
                         web_results[f"W{ref}"] = result

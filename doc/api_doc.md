@@ -100,8 +100,9 @@ curl -X POST http://localhost:8000/api/v1/memory/search \
 
 ### `POST /api/v1/answer`
 
-Answers a ticket thread. The last user message is searched in the memory (vector
-candidates, then the reranker), and the model either answers from it or runs a web search
+Answers a ticket thread. The first and last user messages (the problem and the current
+request, 1000 characters at most) are searched in the memory (vector candidates, then the
+reranker), and the model either answers from it or runs a web search
 (Exa) first, for at most `AGENT_MAX_STEPS` steps. Synchronous: about 1 to 15 s depending on
 the number of searches.
 
@@ -111,7 +112,7 @@ the number of searches.
 |---|---|---|---|
 | `messages` | list of `{"role", "content"}` | yes | 1 to 50 items, the last one from `user` |
 | `messages[].role` | `user` / `assistant` | yes | `assistant` is the support side (technician or bot) |
-| `messages[].content` | text | yes | ≥ 1 non-blank character |
+| `messages[].content` | text | yes | 1 to 20,000 characters, not blank |
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/answer \
@@ -141,10 +142,13 @@ curl -X POST http://localhost:8000/api/v1/answer \
 ```
 
 - `sources`: the refs the answer cites that exist, in citation order. `K<n>` is a memory
-  entry, `W<n>` a web result; refs the model made up are dropped.
+  entry, `W<n>` a web result; refs the model made up are dropped. In the answer text only
+  bracketed refs (`[K1]`, `[K1, W2]`) count, and refs left in earlier answers of the thread
+  are hidden from the model.
 - `memory`: every retrieved entry with its reranker score in [0, 1], cited or not. Entries
   under `RERANK_THRESHOLD` are not retrieved.
-- `searches`: the queries actually sent to Exa (duplicates are not resent).
+- `searches`: the queries Exa answered (duplicates are not resent; a failed call is not
+  listed and the model may retry it).
 - `502` with a generic `detail` when the embeddings server (`Embeddings server unavailable`),
   the reranker (`Reranker unavailable`) or the language model (`Language model unavailable`)
   fails, including a model that still returns invalid JSON at the last step. The cause is
@@ -180,7 +184,7 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `RERANKER_TIMEOUT_SECONDS` | `30.0` | timeout of one rerank call |
 | `RETRIEVAL_CANDIDATES` | `20` | vector-search candidates sent to the reranker |
 | `RETRIEVAL_TOP_K` | `3` | max memory entries given to the model |
-| `RERANK_THRESHOLD` | `0.5` | min reranker score (sigmoid of the logit, 0 to 1) to keep an entry |
+| `RERANK_THRESHOLD` | `0.95` | min reranker score (sigmoid of the logit, 0 to 1) to keep an entry; 0.95 is logit 2.9 |
 | `EXA_API_KEY` | empty | Exa key; empty = web search disabled |
 | `EXA_INCLUDE_DOMAINS` | empty | comma-separated domains web search is restricted to |
 | `EXA_NUM_RESULTS` | `3` | results per web search |

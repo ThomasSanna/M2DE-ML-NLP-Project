@@ -16,23 +16,37 @@ from app.services.agent_prompt import (
 from app.services.websearch import WebResult
 
 
-def _schema(actions: list[str]) -> dict[str, object]:
+def test_decision_schema() -> None:
     # Flat object on purpose: TGI rejects a root `oneOf`.
-    return {
+    assert decision_schema(True, ["K1", "W1"]) == {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": actions},
+            "action": {"type": "string", "enum": ["search", "answer"]},
             "query": {"type": "string", "minLength": 1},
             "answer": {"type": "string", "minLength": 1},
-            "sources": {"type": "array", "items": {"type": "string"}},
+            "sources": {"type": "array", "items": {"type": "string", "enum": ["K1", "W1"]}},
         },
         "required": ["action"],
     }
 
 
-def test_decision_schema() -> None:
-    assert decision_schema(True) == _schema(["search", "answer"])
-    assert decision_schema(False) == _schema(["answer"])
+def test_answer_only_schema_requires_answer() -> None:
+    # `{"action": "answer"}` matched the flat grammar and failed `parse_action`.
+    assert decision_schema(False, ["K1"]) == {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["answer"]},
+            "answer": {"type": "string", "minLength": 1},
+            "sources": {"type": "array", "items": {"type": "string", "enum": ["K1"]}},
+        },
+        "required": ["action", "answer"],
+    }
+
+
+def test_schema_without_refs_has_no_sources() -> None:
+    # An empty `enum` matches nothing: the field is left out instead.
+    assert "sources" not in decision_schema(True, [])["properties"]
+    assert "sources" not in decision_schema(False, [])["properties"]
 
 
 def test_parse_action() -> None:
@@ -75,7 +89,38 @@ def test_render_thread() -> None:
 
     long_thread = render_thread([("user", "y" * 5000), ("assistant", "dernier message")])
     assert len(long_thread) <= len("Fil :\n") + THREAD_MAX_CHARS
+    assert long_thread.startswith("Fil :\nUtilisateur : yyy")
     assert long_thread.endswith("Support : dernier message")
+
+
+def test_render_thread_strips_refs_from_earlier_answers() -> None:
+    thread = render_thread(
+        [
+            ("user", "Le wifi eduroam ne marche pas"),
+            ("assistant", r"Supprimez le profil [K1] \[W2\], puis reconnectez-vous [k1, W3]."),
+            ("user", "Sous W10 ça ne marche pas"),
+        ]
+    )
+
+    assert thread == (
+        "Fil :\nUtilisateur : Le wifi eduroam ne marche pas\n"
+        "Support : Supprimez le profil, puis reconnectez-vous.\n"
+        "Utilisateur : Sous W10 ça ne marche pas"
+    )
+
+
+def test_render_thread_keeps_the_opening_message() -> None:
+    thread = render_thread(
+        [
+            ("user", "L'imprimante du bâtiment B n'imprime plus"),
+            ("assistant", "z" * 5000),
+            ("user", "Toujours pareil"),
+        ]
+    )
+
+    assert len(thread) <= len("Fil :\n") + THREAD_MAX_CHARS
+    assert thread.startswith("Fil :\nUtilisateur : L'imprimante du bâtiment B n'imprime plus\n…")
+    assert thread.endswith("\nUtilisateur : Toujours pareil")
 
 
 def test_render_web_results() -> None:

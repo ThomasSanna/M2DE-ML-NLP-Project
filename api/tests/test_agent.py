@@ -176,6 +176,33 @@ def test_web_search_error_is_fed_back() -> None:
     assert SEARCH_UNAVAILABLE in _last_content(model, 1)
     assert run.answer == "Avec la mémoire"
     assert run.web_results == {}
+    assert run.searches == []
+
+
+def test_failed_search_can_be_retried() -> None:
+    class FlakyWebSearch(FakeWebSearch):
+        async def search(self, query: str) -> list[WebResult]:
+            self._fail = not self.queries
+            return await super().search(query)
+
+    model = ScriptedChatModel([_search("eduroam"), _search("eduroam"), _answer("Voir [W1]")])
+    web = FlakyWebSearch(RESULTS)
+
+    run = _run(model, web)
+
+    assert web.queries == ["eduroam", "eduroam"]
+    assert DUPLICATE_SEARCH not in _last_content(model, 2)
+    assert run.searches == ["eduroam"]
+    assert run.cited_refs == ["W1"]
+
+
+def test_sources_grammar_lists_the_refs_shown_so_far() -> None:
+    model = ScriptedChatModel([_search("eduroam"), _answer()])
+
+    _run(model, FakeWebSearch(RESULTS), memory_refs={"K2", "K1"})
+
+    sources = [json.loads(json.dumps(schema))["properties"]["sources"] for _, schema in model.calls]
+    assert [items["items"]["enum"] for items in sources] == [["K1", "K2"], ["K1", "K2", "W1", "W2"]]
 
 
 def test_search_disabled_allows_only_answer() -> None:
@@ -199,14 +226,17 @@ def test_citations_tolerate_brackets_and_case() -> None:
     assert run.cited_refs == ["K1"]
 
 
-# Outputs observed on the 4B server: inline refs with `sources` left empty, and a
-# comma-separated list split into odd items.
+# Outputs observed on the 4B server: inline refs with `sources` left empty, a
+# comma-separated list split into odd items, and Markdown-escaped brackets.
 @pytest.mark.parametrize(
     ("answer", "sources", "cited"),
     [
         ("Faites ceci [K2], puis cela [K1].", [], ["K2", "K1"]),
         ("Voir la procédure.", ["K1", ", K2"], ["K1", "K2"]),
         ("Voir [K2].", ["K1"], ["K1", "K2"]),
+        ("Voir [K2, k1].", [], ["K2", "K1"]),
+        ("K1 ne s'applique pas ici, voir [K2].", [], ["K2"]),
+        (r"Voir \[K2, K1\]\[K2\].", [], ["K2", "K1"]),
     ],
 )
 def test_citations_are_read_from_answer_and_sources(
@@ -217,3 +247,13 @@ def test_citations_are_read_from_answer_and_sources(
     run = _run(model, None, memory_refs={"K1", "K2"})
 
     assert run.cited_refs == cited
+
+
+def test_unbracketed_refs_in_answer_are_not_citations() -> None:
+    results = [WebResult(f"t{index}", f"https://{index}.fr", None, "e") for index in range(11)]
+    model = ScriptedChatModel([_search("wifi"), _answer("Sous W10 ou W11, voir [W1].")])
+
+    run = _run(model, FakeWebSearch(results))
+
+    assert {"W1", "W10", "W11"} <= set(run.web_results)
+    assert run.cited_refs == ["W1"]
