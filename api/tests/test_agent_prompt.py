@@ -83,7 +83,22 @@ def test_render_thread() -> None:
 
     long_thread = render_thread([("user", "y" * 5000), ("assistant", "dernier message")])
     assert len(long_thread) <= len("Fil :\n") + THREAD_MAX_CHARS
+    assert long_thread.startswith("Fil :\nUtilisateur : yyy")
     assert long_thread.endswith("Support : dernier message")
+
+
+def test_render_thread_keeps_the_opening_message() -> None:
+    thread = render_thread(
+        [
+            ("user", "L'imprimante du bâtiment B n'imprime plus"),
+            ("assistant", "z" * 5000),
+            ("user", "Toujours pareil"),
+        ]
+    )
+
+    assert len(thread) <= len("Fil :\n") + THREAD_MAX_CHARS
+    assert thread.startswith("Fil :\nUtilisateur : L'imprimante du bâtiment B n'imprime plus\n…")
+    assert thread.endswith("\nUtilisateur : Toujours pareil")
 
 
 def test_render_web_results() -> None:

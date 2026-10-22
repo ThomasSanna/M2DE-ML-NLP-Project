@@ -12,6 +12,7 @@ from app.services.websearch import WebResult
 # 4000-token input limit of the 4B server.
 MEMORY_ANSWER_MAX_CHARS = 800
 THREAD_MAX_CHARS = 2000
+THREAD_HEAD_MAX_CHARS = 600
 
 NO_MEMORY = "Aucune connaissance pertinente en mémoire."
 DUPLICATE_SEARCH = "Déjà cherché, résultats ci-dessus. Réponds ou cherche autre chose."
@@ -107,10 +108,14 @@ def render_memory(entries: list[tuple[str, str]]) -> str:
 
 def render_thread(messages: list[tuple[str, str]]) -> str:
     # The thread is text, not chat roles: GLPI threads can hold two consecutive user
-    # messages, which the Gemma template rejects. The tail is kept: it holds the request.
-    text = "\n".join(f"{_ROLE_LABELS[role]} : {content}" for role, content in messages)
+    # messages, which the Gemma template rejects.
+    lines = [f"{_ROLE_LABELS[role]} : {content}" for role, content in messages]
+    text = "\n".join(lines)
     if len(text) > THREAD_MAX_CHARS:
-        text = "…" + text[-(THREAD_MAX_CHARS - 1) :]
+        # The first message states the problem and the tail holds the current request:
+        # the middle is cut.
+        head = _truncate(lines[0], THREAD_HEAD_MAX_CHARS)
+        text = f"{head}\n…" + text[-(THREAD_MAX_CHARS - len(head) - 2) :]
     return f"Fil :\n{text}"
 
 
