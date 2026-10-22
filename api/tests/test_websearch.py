@@ -84,6 +84,10 @@ def test_errors_raise_web_search_error(response: httpx.Response) -> None:
     "body",
     [
         {"results": [{"title": "t", "url": None}]},
+        {"results": [{"title": 123, "url": "https://a.fr"}]},
+        {"results": [{"title": "t", "url": "https://a.fr", "publishedDate": 2025}]},
+        {"results": [{"title": "t", "url": "https://a.fr", "highlights": "abc"}]},
+        {"results": [{"title": "t", "url": "https://a.fr", "highlights": [1, 2]}]},
         {"results": [], "costDollars": 0.005},
     ],
 )

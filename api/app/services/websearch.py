@@ -54,10 +54,10 @@ class ExaClient:
             body = response.json()
             results = [
                 WebResult(
-                    title=item.get("title") or _url(item),
+                    title=_optional_str(item, "title") or _url(item),
                     url=_url(item),
-                    published=item.get("publishedDate"),
-                    excerpt=" … ".join(item.get("highlights") or [])[:EXCERPT_MAX_CHARS],
+                    published=_optional_str(item, "publishedDate"),
+                    excerpt=" … ".join(_highlights(item))[:EXCERPT_MAX_CHARS],
                 )
                 for item in body["results"]
             ]
@@ -74,3 +74,17 @@ def _url(item: dict[str, object]) -> str:
     if not isinstance(url, str):
         raise TypeError(f"Exa result url is {type(url).__name__}, not str")
     return url
+
+
+def _optional_str(item: dict[str, object], key: str) -> str | None:
+    value = item.get(key)
+    if value is not None and not isinstance(value, str):
+        raise TypeError(f"Exa result {key} is {type(value).__name__}, not str")
+    return value
+
+
+def _highlights(item: dict[str, object]) -> list[str]:
+    highlights = item.get("highlights") or []
+    if not isinstance(highlights, list) or not all(isinstance(part, str) for part in highlights):
+        raise TypeError("Exa result highlights is not a list of str")
+    return highlights
