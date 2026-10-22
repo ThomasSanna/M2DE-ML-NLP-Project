@@ -66,8 +66,7 @@ async def retrieve(
         text, [f"{knowledge.question}\n{knowledge.answer}" for knowledge, _ in hits]
     )
     scored = [
-        (knowledge, 1 / (1 + math.exp(-logit)))
-        for (knowledge, _), logit in zip(hits, logits, strict=True)
+        (knowledge, _sigmoid(logit)) for (knowledge, _), logit in zip(hits, logits, strict=True)
     ]
     kept = sorted(
         ((knowledge, score) for knowledge, score in scored if score >= threshold),
@@ -75,3 +74,12 @@ async def retrieve(
         reverse=True,
     )
     return kept[:top_k]
+
+
+def _sigmoid(logit: float) -> float:
+    # Logits are unbounded and math.exp overflows past ~709: only ever exponentiate a
+    # non-positive number.
+    if logit >= 0:
+        return 1 / (1 + math.exp(-logit))
+    exp = math.exp(logit)
+    return exp / (1 + exp)

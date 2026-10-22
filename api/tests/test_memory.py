@@ -1,4 +1,5 @@
 import asyncio
+import math
 import uuid
 
 import pytest
@@ -133,6 +134,18 @@ def test_retrieve_keeps_entries_above_threshold_sorted_by_score(
     assert [question for question, _ in hits] == [KNOWLEDGE[0][0], KNOWLEDGE[1][0]]
     assert hits[0][1] == pytest.approx(0.9526, abs=1e-4)
     assert hits[1][1] == pytest.approx(0.6225, abs=1e-4)
+
+
+def test_retrieve_handles_extreme_logits(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    for question, answer in KNOWLEDGE:
+        _add(client, auth, question, answer)
+    logits = {KNOWLEDGE[0][0]: 800.0, KNOWLEDGE[1][0]: -800.0, KNOWLEDGE[2][0]: -math.inf}
+
+    hits = _retrieve(settings, FixedReranker(logits), "wifi eduroam")
+
+    assert hits == [(KNOWLEDGE[0][0], 1.0)]
 
 
 def test_retrieve_caps_at_top_k(
