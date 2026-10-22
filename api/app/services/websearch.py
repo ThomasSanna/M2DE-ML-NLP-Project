@@ -61,11 +61,12 @@ class ExaClient:
                 )
                 for item in body["results"]
             ]
-            cost = (body.get("costDollars") or {}).get("total")
         except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
             raise WebSearchError(f"Web search call failed: {exc!r}") from exc
 
-        logger.info("Exa search cost %s USD", cost)
+        # Only logged: an unexpected shape must not discard valid results.
+        cost = body.get("costDollars")
+        logger.info("Exa search cost %s USD", cost.get("total") if isinstance(cost, dict) else cost)
         return results
 
 
