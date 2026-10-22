@@ -21,6 +21,14 @@ x-api-env: &api-env
   EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL}"
   EMBEDDING_API_KEY: "${EMBEDDING_API_KEY:-}"
   EMBEDDING_MODEL: "${EMBEDDING_MODEL:-BAAI/bge-multilingual-gemma2}"
+  LLM_BASE_URL: "${LLM_BASE_URL:-http://193.48.31.6:32297/v1}"
+  LLM_API_KEY: "${LLM_API_KEY:-}"
+  LLM_MODEL: "${LLM_MODEL:-google/gemma3-12b-it}"
+  SSE_CHUNK_TOKENS: "${SSE_CHUNK_TOKENS:-6}"
+  GLPI_API_URL: "http://glpi/apirest.php/"
+  GLPI_USER_TOKEN: "${GLPI_USER_TOKEN:-}"
+  GLPI_APP_TOKEN: "${GLPI_APP_TOKEN:-}"
+  GLPI_FOLLOWUP_PRIVATE: "${GLPI_FOLLOWUP_PRIVATE:-false}"
 
 services:
   # ---------------------------------------------------------------- LDAP
@@ -101,6 +109,8 @@ services:
       - glpi_config:/var/glpi/config
       - glpi_files:/var/glpi/files
       - glpi_marketplace:/var/glpi/marketplace
+      # Allowlist des URL appelées par GLPI (webhook vers l'API mémoire)
+      - ./glpi/config/local_define.php:/var/www/glpi/config/local_define.php:ro
     ports:
       - "8080:80"
     networks:

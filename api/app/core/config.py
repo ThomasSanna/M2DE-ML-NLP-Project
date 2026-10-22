@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AnyHttpUrl, SecretStr, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -41,8 +41,32 @@ class Settings(BaseSettings):
     )
     embedding_timeout_seconds: float = 30.0
 
+    # LLM de génération (vLLM de l'université, compatible OpenAI), URL incluant `/v1`.
+    llm_base_url: AnyHttpUrl = AnyHttpUrl("http://193.48.31.6:32297/v1")
+    llm_api_key: SecretStr | None = None
+    llm_model: str = "google/gemma3-12b-it"
+    llm_timeout_seconds: float = 120.0
+    # Nombre de tokens regroupés par événement SSE.
+    sse_chunk_tokens: int = Field(default=6, ge=1)
+    # Connaissances de la mémoire injectées dans le prompt.
+    answer_top_k: int = Field(default=3, ge=1, le=20)
+
+    # API REST de GLPI (nom du service Docker). Sans User-Token, les routes qui écrivent
+    # dans GLPI répondent 503.
+    glpi_api_url: AnyHttpUrl = AnyHttpUrl("http://glpi/apirest.php/")
+    glpi_user_token: SecretStr | None = None
+    glpi_app_token: SecretStr | None = None
+    # Suivi privé = proposition à valider par un technicien ; public = envoi direct (mail).
+    glpi_followup_private: bool = False
+
     @field_validator(
-        "glpi_webhook_secret", "embedding_api_key", "embedding_instruction", mode="before"
+        "glpi_webhook_secret",
+        "embedding_api_key",
+        "embedding_instruction",
+        "llm_api_key",
+        "glpi_user_token",
+        "glpi_app_token",
+        mode="before",
     )
     @classmethod
     def _empty_as_none(cls, value: object) -> object:

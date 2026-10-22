@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.services.embeddings import Embedder
+from app.services.glpi import Glpi
+from app.services.llm import ChatModel
 
 
 def get_settings(request: Request) -> Settings:
@@ -23,9 +25,22 @@ def get_embedder(request: Request) -> Embedder:
     return request.app.state.embedder
 
 
+def get_chat_model(request: Request) -> ChatModel:
+    return request.app.state.chat_model
+
+
+def get_glpi(request: Request) -> Glpi:
+    glpi = request.app.state.glpi
+    if glpi is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "GLPI_USER_TOKEN non configuré")
+    return glpi
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 EmbedderDep = Annotated[Embedder, Depends(get_embedder)]
+ChatModelDep = Annotated[ChatModel, Depends(get_chat_model)]
+GlpiDep = Annotated[Glpi, Depends(get_glpi)]
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 

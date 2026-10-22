@@ -5,12 +5,15 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from pydantic import SecretStr
 
-from app.api.routes import health, ingest, memory
+from app.api.routes import answer, health, ingest, memory
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.db.session import create_engine, create_sessionmaker
 from app.services.embeddings import EmbeddingError, OpenAIEmbeddingClient
+from app.services.glpi import GlpiError, GlpiRestClient
+from app.services.llm import OpenAIChatClient
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +27,39 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = create_engine(settings.database_url)
     app.state.sessionmaker = create_sessionmaker(engine)
 
-    headers = {}
-    if settings.embedding_api_key is not None:
-        headers["Authorization"] = f"Bearer {settings.embedding_api_key.get_secret_value()}"
-    async with httpx.AsyncClient(
-        base_url=str(settings.embedding_base_url),
-        headers=headers,
-        timeout=settings.embedding_timeout_seconds,
-    ) as http:
+    async with (
+        httpx.AsyncClient(
+            base_url=str(settings.embedding_base_url),
+            headers=_bearer(settings.embedding_api_key),
+            timeout=settings.embedding_timeout_seconds,
+        ) as embedding_http,
+        httpx.AsyncClient(
+            base_url=str(settings.llm_base_url),
+            headers=_bearer(settings.llm_api_key),
+            timeout=settings.llm_timeout_seconds,
+        ) as llm_http,
+        httpx.AsyncClient(base_url=str(settings.glpi_api_url), timeout=30.0) as glpi_http,
+    ):
         app.state.embedder = OpenAIEmbeddingClient(
-            http, settings.embedding_model, settings.embedding_instruction
+            embedding_http, settings.embedding_model, settings.embedding_instruction
         )
+        app.state.chat_model = OpenAIChatClient(llm_http, settings.llm_model)
+        app.state.glpi = None
+        if settings.glpi_user_token is not None:
+            app.state.glpi = GlpiRestClient(
+                glpi_http,
+                settings.glpi_user_token.get_secret_value(),
+                settings.glpi_app_token.get_secret_value() if settings.glpi_app_token else None,
+            )
+        else:
+            logger.warning("GLPI_USER_TOKEN vide : réponse aux tickets désactivée")
         yield
 
     await engine.dispose()
+
+
+def _bearer(api_key: SecretStr | None) -> dict[str, str]:
+    return {"Authorization": f"Bearer {api_key.get_secret_value()}"} if api_key else {}
 
 
 async def _embedding_error_handler(_: Request, exc: Exception) -> JSONResponse:
@@ -45,6 +67,13 @@ async def _embedding_error_handler(_: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_502_BAD_GATEWAY,
         content={"detail": "Serveur d'embeddings indisponible"},
+    )
+
+
+async def _glpi_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    logger.error("%s", exc)
+    return JSONResponse(
+        status_code=status.HTTP_502_BAD_GATEWAY, content={"detail": "GLPI indisponible"}
     )
 
 
@@ -64,7 +93,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api_v1 = APIRouter(prefix="/api/v1")
     api_v1.include_router(ingest.router)
     api_v1.include_router(memory.router)
+    api_v1.include_router(answer.router)
     app.include_router(health.router)
     app.include_router(api_v1)
     app.add_exception_handler(EmbeddingError, _embedding_error_handler)
+    app.add_exception_handler(GlpiError, _glpi_error_handler)
     return app

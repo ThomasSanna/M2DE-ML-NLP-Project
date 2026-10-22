@@ -16,6 +16,13 @@ require '/var/www/glpi/vendor/autoload.php';
 $kernel = new \Glpi\Kernel\Kernel('production');
 $kernel->boot();
 
+// Le gestionnaire d'erreurs de GLPI affiche les exceptions mais laisse le code de
+// sortie à 0 : on force un échec visible pour le script appelant.
+set_exception_handler(static function (Throwable $e): void {
+    fwrite(STDERR, 'ERREUR : ' . $e->getMessage() . "\n");
+    exit(1);
+});
+
 global $DB;
 
 $_SESSION['glpi_currenttime'] ??= date('Y-m-d H:i:s');
@@ -41,7 +48,7 @@ function setCoreConfig(array $values): void
 }
 
 // ------------------------------------------------------------------ Général
-echo "[1/5] Général\n";
+echo "[1/7] Général\n";
 setCoreConfig([
     // URL utilisée dans les liens des mails (http://localhost sans port = liens cassés)
     'url_base'     => env('GLPI_URL_BASE', 'http://localhost:8080'),
@@ -50,7 +57,7 @@ setCoreConfig([
 step('url_base = ' . env('GLPI_URL_BASE', 'http://localhost:8080'));
 
 // ---------------------------------------------------------------------- API
-echo "[2/5] API REST\n";
+echo "[2/7] API REST\n";
 setCoreConfig([
     'enable_api'                      => 1,
     'enable_api_login_credentials'    => 1,
@@ -62,9 +69,14 @@ $DB->update('glpi_apiclients', [
     'ipv4_range_end'   => ip2long(env('GLPI_API_IP_END', '172.31.255.255')),
 ], ['id' => 1]);
 step('API activée, client #1 : ' . env('GLPI_API_IP_START', '172.16.0.0') . ' → ' . env('GLPI_API_IP_END', '172.31.255.255'));
+if (env('GLPI_APP_TOKEN') !== null) {
+    // APIClient::prepareInputForUpdate chiffre le jeton (GLPIKey)
+    (new APIClient())->update(['id' => 1, 'app_token' => env('GLPI_APP_TOKEN')]);
+    step('App-Token du client #1 défini (GLPI_APP_TOKEN)');
+}
 
 // --------------------------------------------------------------------- LDAP
-echo "[3/5] Annuaire LDAP\n";
+echo "[3/7] Annuaire LDAP\n";
 $ldapName  = 'Univ Corse LDAP';
 $ldapInput = [
     'name'            => $ldapName,
@@ -99,7 +111,7 @@ $ok = AuthLDAP::testLDAPConnection($authldap->getID());
 step('test de connexion LDAP : ' . ($ok ? 'OK' : 'ÉCHEC'));
 
 // ------------------------------------------------------ Notifications / SMTP
-echo "[4/5] Notifications e-mail\n";
+echo "[4/7] Notifications e-mail\n";
 setCoreConfig([
     'use_notifications'     => 1,
     'notifications_mailing' => 1,
@@ -131,7 +143,7 @@ if (env('SMTP_HOST') !== null) {
 }
 
 // ------------------------------------------- Feedback : enquête de satisfaction
-echo "[5/5] Enquête de satisfaction (source du feedback w1)\n";
+echo "[5/7] Enquête de satisfaction (source du feedback w1)\n";
 $entity = new Entity();
 $entity->update([
     'id'                        => 0,
@@ -170,5 +182,88 @@ foreach ($crons as [$itemtype, $name, $frequency]) {
     ], ['itemtype' => $itemtype, 'name' => $name]);
 }
 step('cron CLI : envoi des mails (1 min), clôture auto et création d\'enquêtes (1 h)');
+// Si l'horloge de la machine a reculé (veille, resynchro NTP), un `lastrun` dans le futur
+// bloque la tâche jusqu'à cette date : mails et webhooks ne partent plus.
+$DB->update('glpi_crontasks', ['lastrun' => null], [new \Glpi\DBAL\QueryExpression('`lastrun` > NOW()')]);
+
+// ------------------------------------------------- Utilisateur « bot » de l'API
+echo "[6/7] Utilisateur bot (API mémoire)\n";
+$botName = env('GLPI_BOT_USER', 'chatbot');
+$bot     = new User();
+if (!$bot->getFromDBbyName($botName)) {
+    $password = bin2hex(random_bytes(24));   // jamais utilisé : le bot s'authentifie par jeton
+    $bot->add([
+        'name'      => $botName,
+        'realname'  => 'Assistant IA',
+        'password'  => $password,
+        'password2' => $password,
+        'authtype'  => Auth::DB_GLPI,
+        'is_active' => 1,
+    ]);
+    step("utilisateur « {$botName} » créé (id {$bot->getID()})");
+} else {
+    step("utilisateur « {$botName} » existant (id {$bot->getID()})");
+}
+// Profil Technicien sur toute l'arborescence : lire les tickets et y ajouter des suivis.
+$technician = new Profile();
+$technician->getFromDBByCrit(['name' => 'Technician']);
+$profileUser = new Profile_User();
+if (!$profileUser->getFromDBByCrit([
+    'users_id' => $bot->getID(), 'profiles_id' => $technician->getID(), 'entities_id' => 0,
+])) {
+    $profileUser->add([
+        'users_id'     => $bot->getID(),
+        'profiles_id'  => $technician->getID(),
+        'entities_id'  => 0,
+        'is_recursive' => 1,
+    ]);
+}
+// Profil par défaut de la session API (sinon Self-Service, qui ne voit que ses tickets).
+$DB->update('glpi_users', ['profiles_id' => $technician->getID(), 'entities_id' => 0], ['id' => $bot->getID()]);
+if (env('GLPI_USER_TOKEN') !== null) {
+    // User::update() ignore api_token : on écrit directement la valeur chiffrée, comme GLPI.
+    $DB->update('glpi_users', [
+        'api_token'      => (new GLPIKey())->encrypt(env('GLPI_USER_TOKEN')),
+        'api_token_date' => $_SESSION['glpi_currenttime'],
+    ], ['id' => $bot->getID()]);
+    step('User-Token défini (GLPI_USER_TOKEN), profil Technician par défaut');
+} else {
+    step('GLPI_USER_TOKEN vide : pas de jeton API pour le bot');
+}
+
+// --------------------------------------------------- Webhook « nouveau ticket »
+echo "[7/7] Webhook nouveau ticket → API mémoire\n";
+if (env('GLPI_WEBHOOK_SECRET') === null) {
+    step('GLPI_WEBHOOK_SECRET vide : webhook non créé (l\'API ne pourrait pas vérifier la signature)');
+} else {
+    $webhookName  = 'API mémoire — nouveau ticket';
+    $webhookInput = [
+        'name'                => $webhookName,
+        'entities_id'         => 0,
+        'is_recursive'        => 1,
+        'itemtype'            => 'Ticket',
+        'event'               => 'new',
+        // L'URL doit être autorisée par GLPI_SERVERSIDE_URL_ALLOWLIST (glpi/config/local_define.php)
+        'url'                 => env('GLPI_WEBHOOK_URL', 'http://api:8000/api/v1/ingest/ticket'),
+        'http_method'         => 'post',
+        'secret'              => env('GLPI_WEBHOOK_SECRET'),   // chiffré par Webhook::handleInput
+        'use_default_payload' => 1,
+        'use_cra_challenge'   => 0,
+        'sent_try'            => 5,
+        'is_active'           => 1,
+        'log_in_item_history' => 1,
+    ];
+    $webhook = new Webhook();
+    if ($webhook->getFromDBByCrit(['name' => $webhookName])) {
+        $webhook->update(['id' => $webhook->getID()] + $webhookInput);
+        step("webhook mis à jour (id {$webhook->getID()}) : {$webhookInput['url']}");
+    } else {
+        $webhook->add($webhookInput);
+        step("webhook créé (id {$webhook->getID()}) : {$webhookInput['url']}");
+    }
+    if (!Toolbox::isUrlSafe($webhookInput['url'])) {
+        step('ATTENTION : URL refusée par GLPI_SERVERSIDE_URL_ALLOWLIST, le webhook ne partira pas');
+    }
+}
 
 echo "Configuration GLPI terminée.\n";

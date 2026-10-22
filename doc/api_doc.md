@@ -18,10 +18,11 @@ Ce qui existe aujourd'hui :
 - une base **PostgreSQL 17 + pgvector** qui contient à la fois les vecteurs et les données relationnelles ;
 - un client vers le **serveur d'embeddings de l'université** (aucun modèle ne tourne chez nous) ;
 - des routes pour **ajouter / lire / rechercher** des connaissances, et une route qui **reçoit les webhooks GLPI** ;
-- des **migrations** de schéma (Alembic) et **18 tests** automatiques.
+- une route qui **génère la réponse à un ticket en streaming (SSE)** avec la mémoire comme contexte, puis la **poste en suivi dans GLPI** (§12) ;
+- des **migrations** de schéma (Alembic) et **34 tests** automatiques.
 
-Ce qui n'existe **pas encore** (volontairement) : la pipeline LLM elle-même — garde-fous, appel à
-Gemma, websearch, réponse dans GLPI, notation du feedback, pondération. L'API en pose les fondations
+Ce qui n'existe **pas encore** (volontairement) : le reste de la pipeline LLM — worker qui consomme
+les webhooks, garde-fous, websearch, notation du feedback, pondération. L'API en pose les fondations
 (tables `feedback` et `glpi_event`, point d'accroche dans `search`), voir §10.
 
 ---
@@ -247,7 +248,7 @@ uv run alembic check          # doit afficher "No new upgrade operations detecte
 
 | Où | Mécanisme |
 |---|---|
-| Routes `/api/v1/memory/*` | En-tête **`X-API-Key`** comparé à `API_KEY` (comparaison à temps constant). Absent ou faux → `401`. |
+| Routes `/api/v1/memory/*` et `/api/v1/tickets/*` | En-tête **`X-API-Key`** comparé à `API_KEY` (comparaison à temps constant). Absent ou faux → `401`. |
 | Webhook `/api/v1/ingest/ticket` | Si `GLPI_WEBHOOK_SECRET` est défini : vérification de **`X-GLPI-signature`** = `HMAC-SHA256(corps + X-GLPI-timestamp, secret)`, le format de GLPI 11 (vérifié dans le code source de GLPI). Faux → `401`. S'il est vide : tout est accepté et un avertissement est loggé au démarrage. |
 | Secrets | Tous en variables d'environnement (`.env`, ignoré par git). Typés `SecretStr` : ils n'apparaissent pas dans les logs. |
 | Conteneur | Utilisateur non-root, pas d'outils de build dans l'image finale. `/docs` désactivé si `ENVIRONMENT=prod`. |
@@ -268,6 +269,12 @@ Tout passe par `app/core/config.py` (lit l'environnement et, en local, le `.env`
 | `EMBEDDING_BASE_URL` | **obligatoire** | `http://193.48.31.6:31550/v1` |
 | `EMBEDDING_MODEL` | `BAAI/bge-multilingual-gemma2` | |
 | `EMBEDDING_API_KEY` | vide | si le serveur en exige une un jour |
+| `LLM_BASE_URL` / `LLM_MODEL` | `http://193.48.31.6:32297/v1` / `google/gemma3-12b-it` | LLM de génération (streaming) |
+| `LLM_API_KEY` | vide | |
+| `SSE_CHUNK_TOKENS` | `6` | tokens regroupés par événement SSE |
+| `GLPI_API_URL` | `http://glpi/apirest.php/` | API REST GLPI (réseau Docker) |
+| `GLPI_USER_TOKEN` / `GLPI_APP_TOKEN` | vide | jetons du bot `chatbot` ; sans User-Token, `/tickets/*` répond `503` |
+| `GLPI_FOLLOWUP_PRIVATE` | `false` | `true` = suivi privé (à valider par un technicien) au lieu d'un envoi direct |
 | `API_PORT` | `8000` | port de l'API sur la machine |
 | `ENVIRONMENT`, `LOG_LEVEL` | `dev`, `INFO` | |
 
@@ -296,6 +303,9 @@ cd api && uv run pytest -v
 | `test_memory.py` | clé API, ajout/lecture, 404, classement de la recherche, exclusion des non-`active`, validation `top_k`, `502` si embeddings HS |
 | `test_ingest.py` | signature valide/invalide/absente, corps modifié, JSON non-objet |
 | `test_embeddings.py` | client HTTP du serveur d'embeddings |
+| `test_answer.py` | route SSE : clé API, 404/503, découpage par paquets, contexte mémoire dans le prompt, erreur LLM/GLPI → événement `error` sans suivi |
+| `test_llm.py` | client streaming du LLM (deltas, `[DONE]`, erreurs) |
+| `test_glpi.py` | client REST GLPI (session, HTML ↔ texte, suivi, jeton invalide) |
 
 Qualité du code : `uv run ruff check . && uv run ruff format .`
 
@@ -306,10 +316,8 @@ Qualité du code : `uv run ruff check . && uv run ruff format .`
 | À faire | Où |
 |---|---|
 | **Worker de la pipeline** : lire les `glpi_event` en `received`, les passer en `processing`, faire le travail, finir en `done` / `failed` (+ `attempts`, `last_error`) | nouveau module (ex. `app/pipeline/`), qui appelle `services/memory.py` |
-| Lire le ticket / poster la réponse dans GLPI | client de l'**API REST GLPI** (App Token + User Token, cf. `Projet M2.pdf`) |
 | Garde-fous IN/OUT | client LLM vers **Gemma 3 4B** en attendant **ShieldStral 3B** — à écrire derrière une interface, comme `Embedder`, pour basculer sans toucher à la pipeline |
 | Reranker | client `POST :31127/rerank` à appliquer sur le top-k de `search` |
-| Génération de la réponse | client chat **Gemma 3 12B** (`/v1/chat/completions`) |
 | **Pondération** (le cœur du projet) | dans `services/memory.search` : combiner la similarité avec les `feedback`, `reuse_count`, la fraîcheur (`created_at`)… en SQL |
 | Routes de feedback | nouvelle route qui insère dans `feedback` ; passage en `to_review` si mal noté |
 | Remplir la mémoire | script d'import du jeu synthétique / de l'historique GLPI via `services/memory.add_knowledge` (ajouter un ajout par lot pour embedder plusieurs questions en un appel) |
@@ -328,3 +336,32 @@ Qualité du code : `uv run ruff check . && uv run ruff format .`
   n'intègre pas encore le feedback.
 - GLPI (`poc-glpi`) ne démarre pas tant que le port **8080** est pris par un autre projet sur ta machine.
 - `docker compose down -v` efface **aussi** la mémoire (volume `pg_data`).
+
+---
+
+## 12. Réponse en streaming (SSE) et écriture dans GLPI
+
+`GET /api/v1/tickets/{id}/answer/stream` (en-tête `X-API-Key`) :
+
+1. lit le ticket par l'**API REST GLPI** (`services/glpi.py`, utilisateur `chatbot`, User-Token) ;
+2. cherche les `ANSWER_TOP_K` connaissances proches (`services/memory.search`) **avant** d'ouvrir
+   le flux : la session SQL n'est pas gardée pendant le streaming ;
+3. appelle **Gemma 3 12B** en `stream: true` (`services/llm.py`) et renvoie les tokens par
+   paquets de `SSE_CHUNK_TOKENS` (`services/answer.chunk_tokens`) ;
+4. à la fin seulement, poste la réponse en **suivi** du ticket (une écriture = un mail GLPI).
+
+```
+event: sources   data: [{"id": "…", "similarity": 0.83}]
+event: token     data: {"text": "Bonjour, pour "}      ← N fois
+event: done      data: {"followup_id": 12}             ← ou event: error
+```
+
+| Choix | Pourquoi |
+|---|---|
+| SSE plutôt que WebSocket | Flux à sens unique serveur → client, HTTP simple, reconnexion native. |
+| Paquets de N tokens | Un événement par token = beaucoup de petits paquets ; 4-8 tokens restent fluides à l'œil. |
+| Suivi écrit **à la fin** | GLPI ne sait pas recevoir un flux, et chaque écriture déclencherait un mail. |
+| Erreur = événement `error` | Les en-têtes `200` sont déjà partis quand le LLM échoue : l'erreur passe dans le flux, et rien n'est écrit dans GLPI. |
+
+Côté navigateur, `EventSource` ne permet pas d'envoyer `X-API-Key` : lire le flux avec
+`fetch()` + `response.body.getReader()`.

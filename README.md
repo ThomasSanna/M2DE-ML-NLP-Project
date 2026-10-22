@@ -23,6 +23,27 @@ docker compose up -d
 
 - GLPI s'auto-installe au premier démarrage (schéma BDD + cron).
 - L'annuaire LDAP est peuplé automatiquement au premier démarrage via `ldap/bootstrap.ldif`.
+- Puis appliquer la configuration GLPI (idempotent, à relancer après chaque `down -v`) :
+  ```bash
+  ./scripts/configure-glpi.sh
+  ```
+  API REST, source LDAP, SMTP, notifications, enquête de satisfaction, **utilisateur bot**
+  (`GLPI_USER_TOKEN`), **webhook nouveau ticket → API** (`GLPI_WEBHOOK_SECRET`) et
+  **utilisateur SQL en lecture seule** (`GLPI_DB_RO_PASSWORD`). Une variable vide = étape sautée
+  ou réglage laissé tel quel. Générer les jetons : `openssl rand -hex 20` (`-hex 32` pour le secret).
+
+### Branchement GLPI ↔ API mémoire
+
+| Sens | Mécanisme | Détail |
+|---|---|---|
+| GLPI → API | **Webhook** `Ticket / Nouveau` | `POST http://api:8000/api/v1/ingest/ticket`, signé HMAC. Mis en file par GLPI et envoyé par la tâche `queuedwebhook` (≤ 60 s). |
+| API → GLPI (lecture/écriture) | **API REST** `/apirest.php`, utilisateur `chatbot` (profil Technician) | `User-Token` + `App-Token`. La réponse est postée en **suivi** : public par défaut → mail au demandeur (`GLPI_FOLLOWUP_PRIVATE=true` pour un suivi à valider). |
+| API → base GLPI (lecture en masse) | Utilisateur MariaDB `memoire_ro` | `SELECT` seulement, sur tickets / suivis / solutions / enquêtes / catégories / utilisateurs (`db:3306`). Jamais d'écriture SQL. |
+| API → interface | **SSE** `GET /api/v1/tickets/{id}/answer/stream` | Événements `sources`, `token` (par paquets de `SSE_CHUNK_TOKENS`), `done` / `error`. |
+
+> GLPI refuse par défaut toute URL serveur avec un port : `glpi/config/local_define.php`
+> (monté dans le conteneur) autorise `http://api:8000/api/v1/`. Il **remplace** l'allowlist
+> par défaut (flux RSS / calendriers externes bloqués).
 
 > ⚠️ Si les volumes sont recréés (`docker compose down -v`), GLPI réinstalle tout seul,
 > mais les permissions des volumes GLPI peuvent devoir être corrigées une fois :
@@ -163,6 +184,7 @@ Modèles servis par l'université (cf. `doc/Projet M2.pdf`, VPN requis) :
 | `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | ajoute une paire Q/R (question embeddée) |
 | `GET` | `/api/v1/memory/knowledge/{id}` | `X-API-Key` | lit une connaissance |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | top-k par similarité cosinus (connaissances actives) |
+| `GET` | `/api/v1/tickets/{id}/answer/stream` | `X-API-Key` | réponse LLM en **SSE**, puis suivi posté dans GLPI |
 
 Webhook : si `GLPI_WEBHOOK_SECRET` est défini, l'en-tête `X-GLPI-signature` est vérifié
 (`hmac_sha256(body + X-GLPI-timestamp, secret)`, le format de GLPI 11) ; sinon tout est accepté (log d'avertissement).
