@@ -207,6 +207,8 @@ def test_citations_tolerate_brackets_and_case() -> None:
         ("Faites ceci [K2], puis cela [K1].", [], ["K2", "K1"]),
         ("Voir la procédure.", ["K1", ", K2"], ["K1", "K2"]),
         ("Voir [K2].", ["K1"], ["K1", "K2"]),
+        ("Voir [K2, k1].", [], ["K2", "K1"]),
+        ("K1 ne s'applique pas ici, voir [K2].", [], ["K2"]),
     ],
 )
 def test_citations_are_read_from_answer_and_sources(
@@ -217,3 +219,13 @@ def test_citations_are_read_from_answer_and_sources(
     run = _run(model, None, memory_refs={"K1", "K2"})
 
     assert run.cited_refs == cited
+
+
+def test_unbracketed_refs_in_answer_are_not_citations() -> None:
+    results = [WebResult(f"t{index}", f"https://{index}.fr", None, "e") for index in range(11)]
+    model = ScriptedChatModel([_search("wifi"), _answer("Sous W10 ou W11, voir [W1].")])
+
+    run = _run(model, FakeWebSearch(results))
+
+    assert {"W1", "W10", "W11"} <= set(run.web_results)
+    assert run.cited_refs == ["W1"]

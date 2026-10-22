@@ -142,7 +142,9 @@ curl -X POST http://localhost:8000/api/v1/answer \
 ```
 
 - `sources`: the refs the answer cites that exist, in citation order. `K<n>` is a memory
-  entry, `W<n>` a web result; refs the model made up are dropped.
+  entry, `W<n>` a web result; refs the model made up are dropped. In the answer text only
+  bracketed refs (`[K1]`, `[K1, W2]`) count, and refs left in earlier answers of the thread
+  are hidden from the model.
 - `memory`: every retrieved entry with its reranker score in [0, 1], cited or not. Entries
   under `RERANK_THRESHOLD` are not retrieved.
 - `searches`: the queries actually sent to Exa (duplicates are not resent).

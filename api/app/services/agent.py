@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from app.services.agent_prompt import (
     DUPLICATE_SEARCH,
     MAX_STEPS_NOTICE,
+    REF_GROUP,
     SEARCH_UNAVAILABLE,
     AnswerAction,
     SearchAction,
@@ -97,8 +98,10 @@ async def run_agent(
             )
             known = memory_refs | web_results.keys()
             # Small models cite inline and leave `sources` empty, or put brackets and
-            # commas in its items: refs are read from both, explicit sources first.
-            refs = [ref.upper() for ref in _REF.findall(" ".join([*action.sources, action.answer]))]
+            # commas in its items: refs are read from both, explicit sources first. In
+            # the answer only bracketed refs count: "W10" there is Windows, not a source.
+            inline = " ".join(REF_GROUP.findall(action.answer))
+            refs = [ref.upper() for ref in _REF.findall(" ".join([*action.sources, inline]))]
             if unknown := set(refs) - known:
                 logger.info("agent dropped unknown refs %s", sorted(unknown))
             return AgentRun(

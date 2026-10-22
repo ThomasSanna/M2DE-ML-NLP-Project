@@ -87,6 +87,22 @@ def test_render_thread() -> None:
     assert long_thread.endswith("Support : dernier message")
 
 
+def test_render_thread_strips_refs_from_earlier_answers() -> None:
+    thread = render_thread(
+        [
+            ("user", "Le wifi eduroam ne marche pas"),
+            ("assistant", "Supprimez le profil [K1] [W2], puis reconnectez-vous [k1, W3]."),
+            ("user", "Sous W10 ça ne marche pas"),
+        ]
+    )
+
+    assert thread == (
+        "Fil :\nUtilisateur : Le wifi eduroam ne marche pas\n"
+        "Support : Supprimez le profil, puis reconnectez-vous.\n"
+        "Utilisateur : Sous W10 ça ne marche pas"
+    )
+
+
 def test_render_thread_keeps_the_opening_message() -> None:
     thread = render_thread(
         [

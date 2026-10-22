@@ -1,6 +1,7 @@
 """Everything the model reads: system prompt, rendered context, feedback messages and the
 JSON action protocol. Model-facing text is French; the rest of the code is English."""
 
+import re
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
@@ -36,6 +37,10 @@ et liste-les dans "sources".
 - {"action": "answer", "answer": "<réponse>", "sources": ["K1", "W2"]} pour répondre."""
 
 _ROLE_LABELS = {"user": "Utilisateur", "assistant": "Support"}
+
+# Refs cited the way the prompt asks, in brackets: "[K1]", "[K1, W2]".
+REF_GROUP = re.compile(r"\[\s*[KW]\d+(?:\s*[,;]\s*[KW]\d+)*\s*\]", re.IGNORECASE)
+_STALE_REFS = re.compile(rf"\s*{REF_GROUP.pattern}", re.IGNORECASE)
 
 
 class SearchAction(BaseModel):
@@ -108,8 +113,9 @@ def render_memory(entries: list[tuple[str, str]]) -> str:
 
 def render_thread(messages: list[tuple[str, str]]) -> str:
     # The thread is text, not chat roles: GLPI threads can hold two consecutive user
-    # messages, which the Gemma template rejects.
-    lines = [f"{_ROLE_LABELS[role]} : {content}" for role, content in messages]
+    # messages, which the Gemma template rejects. Refs in earlier bot answers pointed to
+    # that run's sources: left in, the model copies them onto this run's entries.
+    lines = [f"{_ROLE_LABELS[role]} : {_STALE_REFS.sub('', content)}" for role, content in messages]
     text = "\n".join(lines)
     if len(text) > THREAD_MAX_CHARS:
         # The first message states the problem and the tail holds the current request:
