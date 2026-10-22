@@ -22,6 +22,10 @@ from app.services.websearch import WebSearch
 
 logger = logging.getLogger(__name__)
 
+# The embeddings and reranker servers reject inputs over their max length: a pasted log
+# must be cut, not fail the request. The model still reads the thread (truncated too).
+RETRIEVAL_QUERY_MAX_CHARS = 1000
+
 
 async def answer_thread(
     session: AsyncSession,
@@ -35,7 +39,7 @@ async def answer_thread(
     """Answer the thread's last user message from the memory, then the web if needed."""
     # Retrieval uses the last message only: it holds the current request, and older
     # turns would dilute the embedding. The model still reads the whole thread.
-    text = request.messages[-1].content
+    text = request.messages[-1].content[:RETRIEVAL_QUERY_MAX_CHARS]
     hits = await memory.retrieve(
         session,
         embedder,

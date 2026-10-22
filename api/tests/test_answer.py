@@ -8,11 +8,12 @@ from app.api.deps import get_chat_model, get_embedder, get_reranker, get_web_sea
 from app.core.config import Settings
 from app.db.session import create_engine
 from app.services.agent_prompt import NO_MEMORY
+from app.services.answer import RETRIEVAL_QUERY_MAX_CHARS
 from app.services.embeddings import EmbeddingError
 from app.services.llm import ChatMessage, Completion, LLMError
 from app.services.reranker import RerankerError
 from app.services.websearch import WebResult
-from tests.conftest import FakeWebSearch, ScriptedChatModel
+from tests.conftest import FakeEmbedder, FakeWebSearch, ScriptedChatModel
 
 QUESTION = "Je n'arrive plus à me connecter au wifi eduroam"
 ANSWER = "Réinstallez le profil eduroam via CAT."
@@ -93,15 +94,16 @@ def test_answer_without_memory_says_so(client: TestClient, auth: dict[str, str])
     assert NO_MEMORY in model.calls[0][0][1]["content"]
 
 
+class RecordingReranker:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    async def rerank(self, query: str, documents: list[str]) -> list[float]:
+        self.queries.append(query)
+        return [5.0] * len(documents)
+
+
 def test_answer_retrieves_on_last_user_message(client: TestClient, auth: dict[str, str]) -> None:
-    class RecordingReranker:
-        def __init__(self) -> None:
-            self.queries: list[str] = []
-
-        async def rerank(self, query: str, documents: list[str]) -> list[float]:
-            self.queries.append(query)
-            return [5.0] * len(documents)
-
     reranker = RecordingReranker()
     _add_knowledge(client, auth)
     _override(client, get_reranker, reranker)
@@ -115,6 +117,31 @@ def test_answer_retrieves_on_last_user_message(client: TestClient, auth: dict[st
 
     assert response.status_code == 200, response.text
     assert reranker.queries == ["wifi eduroam"]
+
+
+def test_answer_caps_the_retrieval_query(client: TestClient, auth: dict[str, str]) -> None:
+    class RecordingEmbedder(FakeEmbedder):
+        def __init__(self) -> None:
+            self.texts: list[str] = []
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            self.texts.extend(texts)
+            return await super().embed(texts)
+
+    _add_knowledge(client, auth)
+    embedder = RecordingEmbedder()
+    reranker = RecordingReranker()
+    _override(client, get_embedder, embedder)
+    _override(client, get_reranker, reranker)
+    pasted_log = "wifi eduroam " + "x" * 10_000
+
+    response = client.post(
+        "/api/v1/answer", json={"messages": [{"role": "user", "content": pasted_log}]}, headers=auth
+    )
+
+    assert response.status_code == 200, response.text
+    assert embedder.texts == [pasted_log[:RETRIEVAL_QUERY_MAX_CHARS]]
+    assert reranker.queries == [pasted_log[:RETRIEVAL_QUERY_MAX_CHARS]]
 
 
 @pytest.mark.parametrize(
