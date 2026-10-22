@@ -104,20 +104,44 @@ class RecordingReranker:
         return [5.0] * len(documents)
 
 
-def test_answer_retrieves_on_last_user_message(client: TestClient, auth: dict[str, str]) -> None:
+def test_answer_retrieves_on_first_and_last_user_messages(
+    client: TestClient, auth: dict[str, str]
+) -> None:
     reranker = RecordingReranker()
     _add_knowledge(client, auth)
     _override(client, get_reranker, reranker)
     thread = [
-        {"role": "user", "content": "imprimante"},
-        {"role": "assistant", "content": "Laquelle ?"},
-        {"role": "user", "content": "wifi eduroam"},
+        {"role": "user", "content": "Le wifi eduroam ne marche pas"},
+        {"role": "assistant", "content": "Sur quel appareil ?"},
+        {"role": "user", "content": "Un Mac"},
+        {"role": "assistant", "content": "Avez-vous redémarré ?"},
+        {"role": "user", "content": "Oui, toujours pareil"},
     ]
 
     response = client.post("/api/v1/answer", json={"messages": thread}, headers=auth)
 
     assert response.status_code == 200, response.text
-    assert reranker.queries == ["wifi eduroam"]
+    assert reranker.queries == ["Le wifi eduroam ne marche pas\nOui, toujours pareil"]
+
+
+def test_answer_splits_the_query_cap_between_first_and_last(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    reranker = RecordingReranker()
+    _add_knowledge(client, auth)
+    _override(client, get_reranker, reranker)
+    thread = [
+        {"role": "user", "content": "wifi " + "a" * 5000},
+        {"role": "assistant", "content": "Lequel ?"},
+        {"role": "user", "content": "eduroam " + "b" * 5000},
+    ]
+
+    response = client.post("/api/v1/answer", json={"messages": thread}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    half = RETRIEVAL_QUERY_MAX_CHARS // 2
+    [query] = reranker.queries
+    assert query == f"{thread[0]['content'][:half]}\n{thread[2]['content'][:half]}"
 
 
 def test_answer_caps_the_retrieval_query(client: TestClient, auth: dict[str, str]) -> None:

@@ -100,8 +100,9 @@ curl -X POST http://localhost:8000/api/v1/memory/search \
 
 ### `POST /api/v1/answer`
 
-Answers a ticket thread. The last user message is searched in the memory (vector
-candidates, then the reranker), and the model either answers from it or runs a web search
+Answers a ticket thread. The first and last user messages (the problem and the current
+request, 1000 characters at most) are searched in the memory (vector candidates, then the
+reranker), and the model either answers from it or runs a web search
 (Exa) first, for at most `AGENT_MAX_STEPS` steps. Synchronous: about 1 to 15 s depending on
 the number of searches.
 

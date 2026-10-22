@@ -9,6 +9,7 @@ from app.schemas.answer import (
     Citation,
     KnowledgeCitation,
     MemoryHit,
+    ThreadMessage,
     Usage,
     WebCitation,
 )
@@ -37,9 +38,7 @@ async def answer_thread(
     request: AnswerRequest,
 ) -> AnswerResult:
     """Answer the thread's last user message from the memory, then the web if needed."""
-    # Retrieval uses the last message only: it holds the current request, and older
-    # turns would dilute the embedding. The model still reads the whole thread.
-    text = request.messages[-1].content[:RETRIEVAL_QUERY_MAX_CHARS]
+    text = _retrieval_query(request.messages)
     hits = await memory.retrieve(
         session,
         embedder,
@@ -85,3 +84,13 @@ async def answer_thread(
         steps=run.steps,
         usage=Usage(prompt_tokens=run.prompt_tokens, completion_tokens=run.completion_tokens),
     )
+
+
+def _retrieval_query(messages: list[ThreadMessage]) -> str:
+    # The first user message states the problem and the last one the current request: a
+    # follow-up like "Oui, toujours pareil" matches nothing on its own. Middle turns would
+    # dilute the embedding. The model still reads the whole thread.
+    user = [message.content for message in messages if message.role == "user"]
+    parts = list(dict.fromkeys([user[0], user[-1]]))
+    limit = RETRIEVAL_QUERY_MAX_CHARS // len(parts)
+    return "\n".join(part[:limit] for part in parts)
