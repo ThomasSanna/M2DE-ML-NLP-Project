@@ -176,6 +176,24 @@ def test_web_search_error_is_fed_back() -> None:
     assert SEARCH_UNAVAILABLE in _last_content(model, 1)
     assert run.answer == "Avec la mémoire"
     assert run.web_results == {}
+    assert run.searches == []
+
+
+def test_failed_search_can_be_retried() -> None:
+    class FlakyWebSearch(FakeWebSearch):
+        async def search(self, query: str) -> list[WebResult]:
+            self._fail = not self.queries
+            return await super().search(query)
+
+    model = ScriptedChatModel([_search("eduroam"), _search("eduroam"), _answer("Voir [W1]")])
+    web = FlakyWebSearch(RESULTS)
+
+    run = _run(model, web)
+
+    assert web.queries == ["eduroam", "eduroam"]
+    assert DUPLICATE_SEARCH not in _last_content(model, 2)
+    assert run.searches == ["eduroam"]
+    assert run.cited_refs == ["W1"]
 
 
 def test_search_disabled_allows_only_answer() -> None:

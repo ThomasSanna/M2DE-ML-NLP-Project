@@ -35,7 +35,7 @@ class AgentRun:
     answer: str
     # Existing refs only, deduplicated, in citation order.
     cited_refs: list[str]
-    # Queries actually sent to the web search.
+    # Queries the web search answered; failed calls are left out.
     searches: list[str]
     web_results: dict[str, WebResult]
     steps: int
@@ -129,14 +129,15 @@ async def run_agent(
             elif key in searched:
                 feedback = DUPLICATE_SEARCH
             else:
-                searched.add(key)
-                searches.append(action.query)
                 try:
                     results = await web_search.search(action.query)
                 except WebSearchError as exc:
+                    # Not recorded: the model may retry the query, nothing was shown.
                     logger.warning("Web search failed: %s", exc)
                     feedback = SEARCH_UNAVAILABLE
                 else:
+                    searched.add(key)
+                    searches.append(action.query)
                     first_ref = len(web_results) + 1
                     for ref, result in enumerate(results, start=first_ref):
                         web_results[f"W{ref}"] = result

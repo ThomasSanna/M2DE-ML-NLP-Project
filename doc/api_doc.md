@@ -147,7 +147,8 @@ curl -X POST http://localhost:8000/api/v1/answer \
   are hidden from the model.
 - `memory`: every retrieved entry with its reranker score in [0, 1], cited or not. Entries
   under `RERANK_THRESHOLD` are not retrieved.
-- `searches`: the queries actually sent to Exa (duplicates are not resent).
+- `searches`: the queries Exa answered (duplicates are not resent; a failed call is not
+  listed and the model may retry it).
 - `502` with a generic `detail` when the embeddings server (`Embeddings server unavailable`),
   the reranker (`Reranker unavailable`) or the language model (`Language model unavailable`)
   fails, including a model that still returns invalid JSON at the last step. The cause is
