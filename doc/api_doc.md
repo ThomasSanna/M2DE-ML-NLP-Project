@@ -111,7 +111,7 @@ the number of searches.
 |---|---|---|---|
 | `messages` | list of `{"role", "content"}` | yes | 1 to 50 items, the last one from `user` |
 | `messages[].role` | `user` / `assistant` | yes | `assistant` is the support side (technician or bot) |
-| `messages[].content` | text | yes | ≥ 1 non-blank character |
+| `messages[].content` | text | yes | 1 to 20,000 characters, not blank |
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/answer \

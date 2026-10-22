@@ -7,6 +7,7 @@ from sqlalchemy import text
 from app.api.deps import get_chat_model, get_embedder, get_reranker, get_web_search
 from app.core.config import Settings
 from app.db.session import create_engine
+from app.schemas.answer import THREAD_MESSAGE_MAX_CHARS
 from app.services.agent_prompt import NO_MEMORY
 from app.services.answer import RETRIEVAL_QUERY_MAX_CHARS
 from app.services.embeddings import EmbeddingError
@@ -152,6 +153,7 @@ def test_answer_caps_the_retrieval_query(client: TestClient, auth: dict[str, str
         [{"role": "system", "content": "wifi"}],
         [{"role": "user", "content": "   "}],
         [{"role": "user", "content": "wifi"}] * 51,
+        [{"role": "user", "content": "x" * (THREAD_MESSAGE_MAX_CHARS + 1)}],
     ],
 )
 def test_answer_validates_thread(
