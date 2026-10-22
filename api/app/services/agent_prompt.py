@@ -59,17 +59,29 @@ def decision_schema(allow_search: bool) -> dict[str, object]:
     """JSON grammar for one step. Flat on purpose: TGI rejects a root `oneOf`, so the
     per-action requirements are checked by `parse_action` instead. `minLength` is
     enforced by the grammar: without it the 4B emits empty strings and repeats them
-    despite the feedback."""
+    despite the feedback.
+
+    Without search (last step, or web search disabled) there is a single action, so the
+    grammar itself requires `answer`: an output missing it would fail the request."""
+    answer = {"type": "string", "minLength": 1}
+    sources = {"type": "array", "items": {"type": "string"}}
+    if not allow_search:
+        return {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["answer"]},
+                "answer": answer,
+                "sources": sources,
+            },
+            "required": ["action", "answer"],
+        }
     return {
         "type": "object",
         "properties": {
-            "action": {
-                "type": "string",
-                "enum": ["search", "answer"] if allow_search else ["answer"],
-            },
+            "action": {"type": "string", "enum": ["search", "answer"]},
             "query": {"type": "string", "minLength": 1},
-            "answer": {"type": "string", "minLength": 1},
-            "sources": {"type": "array", "items": {"type": "string"}},
+            "answer": answer,
+            "sources": sources,
         },
         "required": ["action"],
     }

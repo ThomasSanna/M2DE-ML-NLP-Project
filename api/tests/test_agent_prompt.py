@@ -16,12 +16,12 @@ from app.services.agent_prompt import (
 from app.services.websearch import WebResult
 
 
-def _schema(actions: list[str]) -> dict[str, object]:
+def test_decision_schema() -> None:
     # Flat object on purpose: TGI rejects a root `oneOf`.
-    return {
+    assert decision_schema(True) == {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": actions},
+            "action": {"type": "string", "enum": ["search", "answer"]},
             "query": {"type": "string", "minLength": 1},
             "answer": {"type": "string", "minLength": 1},
             "sources": {"type": "array", "items": {"type": "string"}},
@@ -30,9 +30,17 @@ def _schema(actions: list[str]) -> dict[str, object]:
     }
 
 
-def test_decision_schema() -> None:
-    assert decision_schema(True) == _schema(["search", "answer"])
-    assert decision_schema(False) == _schema(["answer"])
+def test_answer_only_schema_requires_answer() -> None:
+    # `{"action": "answer"}` matched the flat grammar and failed `parse_action`.
+    assert decision_schema(False) == {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["answer"]},
+            "answer": {"type": "string", "minLength": 1},
+            "sources": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["action", "answer"],
+    }
 
 
 def test_parse_action() -> None:
