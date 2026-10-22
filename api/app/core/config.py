@@ -6,23 +6,39 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy import URL
 
 
-class Settings(BaseSettings):
-    """Configuration read from the environment.
+class DatabaseSettings(BaseSettings):
+    """Database connection read from the environment.
 
     Locally (outside Docker), the repository root `.env` is also read: run
-    commands from `api/`.
+    commands from `api/`. Alembic reads only this part, so migrations do not depend on
+    the model server settings the API requires.
     """
 
     model_config = SettingsConfigDict(env_file=("../.env", ".env"), extra="ignore")
-
-    environment: Literal["dev", "test", "prod"] = "dev"
-    log_level: str = "INFO"
 
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_user: str = "memoire"
     postgres_password: SecretStr
     postgres_db: str = "memoire"
+
+    @property
+    def database_url(self) -> URL:
+        return URL.create(
+            "postgresql+asyncpg",
+            username=self.postgres_user,
+            password=self.postgres_password.get_secret_value(),
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
+        )
+
+
+class Settings(DatabaseSettings):
+    """Configuration of the API."""
+
+    environment: Literal["dev", "test", "prod"] = "dev"
+    log_level: str = "INFO"
 
     # Key required (X-API-Key header) on the memory routes.
     api_key: SecretStr
@@ -86,18 +102,12 @@ class Settings(BaseSettings):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
 
-    @property
-    def database_url(self) -> URL:
-        return URL.create(
-            "postgresql+asyncpg",
-            username=self.postgres_user,
-            password=self.postgres_password.get_secret_value(),
-            host=self.postgres_host,
-            port=self.postgres_port,
-            database=self.postgres_db,
-        )
-
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()  # type: ignore[call-arg]  # required fields provided by the environment
+
+
+@lru_cache
+def get_database_settings() -> DatabaseSettings:
+    return DatabaseSettings()  # type: ignore[call-arg]  # password provided by the environment
