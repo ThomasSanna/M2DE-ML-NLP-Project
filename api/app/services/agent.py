@@ -76,8 +76,9 @@ async def run_agent(
                 "role": final["role"],
                 "content": f"{final['content']}\n\n{MAX_STEPS_NOTICE}",
             }
+        known = memory_refs | web_results.keys()
         completion = await model.complete(
-            messages, decision_schema(web_search is not None and not last)
+            messages, decision_schema(web_search is not None and not last, sorted(known))
         )
         prompt_tokens += completion.prompt_tokens
         completion_tokens += completion.completion_tokens
@@ -96,10 +97,9 @@ async def run_agent(
                 completion.prompt_tokens,
                 completion.completion_tokens,
             )
-            known = memory_refs | web_results.keys()
-            # Small models cite inline and leave `sources` empty, or put brackets and
-            # commas in its items: refs are read from both, explicit sources first. In
-            # the answer only bracketed refs count: "W10" there is Windows, not a source.
+            # Small models cite inline and leave `sources` empty: refs are read from both,
+            # explicit sources first. In the answer only bracketed refs count: "W10" there
+            # is Windows, not a source.
             inline = " ".join(REF_GROUP.findall(action.answer))
             refs = [ref.upper() for ref in _REF.findall(" ".join([*action.sources, inline]))]
             if unknown := set(refs) - known:

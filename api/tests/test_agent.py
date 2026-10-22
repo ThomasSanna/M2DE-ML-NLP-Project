@@ -196,6 +196,15 @@ def test_failed_search_can_be_retried() -> None:
     assert run.cited_refs == ["W1"]
 
 
+def test_sources_grammar_lists_the_refs_shown_so_far() -> None:
+    model = ScriptedChatModel([_search("eduroam"), _answer()])
+
+    _run(model, FakeWebSearch(RESULTS), memory_refs={"K2", "K1"})
+
+    sources = [json.loads(json.dumps(schema))["properties"]["sources"] for _, schema in model.calls]
+    assert [items["items"]["enum"] for items in sources] == [["K1", "K2"], ["K1", "K2", "W1", "W2"]]
+
+
 def test_search_disabled_allows_only_answer() -> None:
     model = ScriptedChatModel([_answer()])
 

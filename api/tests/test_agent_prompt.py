@@ -18,13 +18,13 @@ from app.services.websearch import WebResult
 
 def test_decision_schema() -> None:
     # Flat object on purpose: TGI rejects a root `oneOf`.
-    assert decision_schema(True) == {
+    assert decision_schema(True, ["K1", "W1"]) == {
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["search", "answer"]},
             "query": {"type": "string", "minLength": 1},
             "answer": {"type": "string", "minLength": 1},
-            "sources": {"type": "array", "items": {"type": "string"}},
+            "sources": {"type": "array", "items": {"type": "string", "enum": ["K1", "W1"]}},
         },
         "required": ["action"],
     }
@@ -32,15 +32,21 @@ def test_decision_schema() -> None:
 
 def test_answer_only_schema_requires_answer() -> None:
     # `{"action": "answer"}` matched the flat grammar and failed `parse_action`.
-    assert decision_schema(False) == {
+    assert decision_schema(False, ["K1"]) == {
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["answer"]},
             "answer": {"type": "string", "minLength": 1},
-            "sources": {"type": "array", "items": {"type": "string"}},
+            "sources": {"type": "array", "items": {"type": "string", "enum": ["K1"]}},
         },
         "required": ["action", "answer"],
     }
+
+
+def test_schema_without_refs_has_no_sources() -> None:
+    # An empty `enum` matches nothing: the field is left out instead.
+    assert "sources" not in decision_schema(True, [])["properties"]
+    assert "sources" not in decision_schema(False, [])["properties"]
 
 
 def test_parse_action() -> None:
