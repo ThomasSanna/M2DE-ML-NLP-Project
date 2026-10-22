@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import inspect
 
 from app.api.deps import get_embedder
 from app.core.config import Settings
@@ -183,6 +184,21 @@ def test_retrieve_ignores_inactive_knowledge(
     hits = _retrieve(settings, FixedReranker(LOGITS), "wifi eduroam")
 
     assert [question for question, _ in hits] == [KNOWLEDGE[1][0]]
+
+
+def test_search_does_not_load_embeddings(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    _add(client, auth, *KNOWLEDGE[0])
+
+    async def _run() -> set[str]:
+        engine = create_engine(settings.database_url)
+        async with create_sessionmaker(engine)() as session:
+            [(knowledge, _)] = await memory.search(session, FakeEmbedder(), "wifi eduroam", 5)
+        await engine.dispose()
+        return inspect(knowledge).unloaded
+
+    assert "embedding" in asyncio.run(_run())
 
 
 def test_retrieve_on_empty_memory_skips_reranker(client: TestClient, settings: Settings) -> None:
