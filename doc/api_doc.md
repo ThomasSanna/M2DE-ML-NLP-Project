@@ -17,10 +17,11 @@ Routes métier sous `/api/v1`.
 | `GET` | `/api/v1/memory/knowledge/{knowledge_id}` | `X-API-Key` | `200` | `401`, `404`, `422` |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | `200` | `401`, `422`, `502` |
 | `POST` | `/api/v1/answer` | `X-API-Key` | `200` | `401`, `422`, `502` |
+| `POST` | `/api/v1/tickets/{ticket_id}/answer/stream` | `X-API-Key` | `200` (SSE) | `401`, `404`, `422`, `502`, `503` |
 
 ### Conventions
 
-- **Authentification** : en-tête `X-API-Key: <API_KEY>` sur toutes les routes `/api/v1/memory/*` et sur `/api/v1/answer`. Absente ou fausse → `401` `{"detail": "Clé API absente ou invalide"}`.
+- **Authentification** : en-tête `X-API-Key: <API_KEY>` sur toutes les routes `/api/v1/memory/*` et `/api/v1/tickets/*` et sur `/api/v1/answer`. Absente ou fausse → `401` `{"detail": "Clé API absente ou invalide"}`.
 - **Validation** : champ invalide → `422` au format FastAPI standard.
 - **Embeddings indisponibles** : toute route qui embedde répond `502` `{"detail": "Serveur d'embeddings indisponible"}`. La cause n'est que dans les logs.
 
@@ -157,6 +158,39 @@ curl -X POST http://localhost:8000/api/v1/answer \
   memory. Without `EXA_API_KEY`, web search is disabled and the model can only answer.
 - Read-only: `reuse_count` is not incremented.
 
+### `POST /api/v1/tickets/{ticket_id}/answer/stream`
+
+Answers a GLPI ticket, then posts the answer as a followup of the ticket through the GLPI
+REST API (bot user). The ticket's title and description form a one-message thread answered
+as by `POST /api/v1/answer`; its existing followups are not read.
+
+```bash
+curl -N -X POST http://localhost:8000/api/v1/tickets/42/answer/stream -H "X-API-Key: $API_KEY"
+```
+
+**Output**: `200`, `text/event-stream`, two events:
+
+```text
+event: answer
+data: {"kind": "answer", "answer": "Supprimez le profil eduroam ... [K1]", "sources": [...], ...}
+
+event: done
+data: {"followup_id": 1234}
+```
+
+- `answer`: the `AnswerResult` of `POST /api/v1/answer`, sent before the followup is written.
+- `done`: the followup is in GLPI. Public by default, so GLPI emails the requester;
+  `GLPI_FOLLOWUP_PRIVATE=true` makes it private, for a technician to validate.
+- `error` `{"detail": "GLPI unavailable"}` instead of `done` when GLPI rejects the followup.
+  The status is already `200` at that point; the cause is only logged.
+- Errors before the stream opens are plain JSON: `404` `GLPI ticket not found`, `503` when
+  `GLPI_USER_TOKEN` is empty, `502` when GLPI (`GLPI unavailable`) or a model fails (same
+  messages as `POST /api/v1/answer`).
+- `POST`, not `GET`: the route writes to GLPI and needs `X-API-Key`. A browser reads it with
+  `fetch()` and `response.body.getReader()`; `EventSource` sends neither the method nor the
+  header, and its automatic reconnection would post duplicate followups.
+- Not idempotent: every call posts a new followup.
+
 ## Schéma (résumé)
 
 **`knowledge`** : `id`, `question`, `answer`, `category`, `source`, `status` (`active` / `to_review` / `archived`), `glpi_ticket_id`, `reuse_count`, `embedding` (`halfvec(3584)`, embedding de la question, index HNSW cosinus), `created_at`, `updated_at`.
@@ -217,4 +251,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Pipeline LLM (garde-fous, génération, reranker, websearch), réponse dans GLPI, routes de feedback, pondération de la recherche.
+Garde-fous du pipeline LLM, lecture des suivis GLPI comme fil de discussion, routes de feedback, pondération de la recherche.

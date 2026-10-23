@@ -6,7 +6,7 @@ import httpx
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-from app.api.routes import answer, health, ingest, memory
+from app.api.routes import answer, health, ingest, memory, tickets
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.db.session import create_engine, create_sessionmaker
@@ -113,6 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api_v1.include_router(ingest.router)
     api_v1.include_router(memory.router)
     api_v1.include_router(answer.router)
+    api_v1.include_router(tickets.router)
     app.include_router(health.router)
     app.include_router(api_v1)
     app.add_exception_handler(EmbeddingError, _bad_gateway("Embeddings server unavailable"))

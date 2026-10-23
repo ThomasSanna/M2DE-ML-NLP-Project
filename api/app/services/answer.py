@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.schemas.answer import (
+    THREAD_MESSAGE_MAX_CHARS,
     AnswerRequest,
     AnswerResult,
     Citation,
@@ -17,6 +18,7 @@ from app.services import memory
 from app.services.agent import run_agent
 from app.services.agent_prompt import initial_messages, render_memory, render_thread
 from app.services.embeddings import Embedder
+from app.services.glpi import Glpi
 from app.services.llm import ChatModel
 from app.services.reranker import Reranker
 from app.services.websearch import WebSearch
@@ -84,6 +86,26 @@ async def answer_thread(
         steps=run.steps,
         usage=Usage(prompt_tokens=run.prompt_tokens, completion_tokens=run.completion_tokens),
     )
+
+
+async def answer_ticket(
+    session: AsyncSession,
+    embedder: Embedder,
+    reranker: Reranker,
+    model: ChatModel,
+    web_search: WebSearch | None,
+    glpi: Glpi,
+    settings: Settings,
+    ticket_id: int,
+) -> AnswerResult | None:
+    """Answer a GLPI ticket from its title and description; None if it does not exist."""
+    ticket = await glpi.get_ticket(ticket_id)
+    if ticket is None:
+        return None
+    # A one-message thread: the ticket's followups are not read yet.
+    content = f"{ticket.title}\n\n{ticket.content}"[:THREAD_MESSAGE_MAX_CHARS]
+    request = AnswerRequest(messages=[ThreadMessage(role="user", content=content)])
+    return await answer_thread(session, embedder, reranker, model, web_search, settings, request)
 
 
 def _retrieval_query(messages: list[ThreadMessage]) -> str:

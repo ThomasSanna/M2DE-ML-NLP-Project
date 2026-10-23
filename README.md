@@ -64,6 +64,7 @@ Compose runs it as three services: `postgres` (PostgreSQL 17 + pgvector), `migra
 | `GET` | `/api/v1/memory/knowledge/{id}` | `X-API-Key` | read a knowledge entry |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | top-k cosine similarity search over `active` entries |
 | `POST` | `/api/v1/answer` | `X-API-Key` | answer a ticket thread from memory and web search, with sources |
+| `POST` | `/api/v1/tickets/{id}/answer/stream` | `X-API-Key` | answer a GLPI ticket and post the answer as a followup (SSE) |
 
 When `GLPI_WEBHOOK_SECRET` is set, the `X-GLPI-signature` header is verified (`HMAC-SHA256(body + X-GLPI-timestamp, secret)`, GLPI 11 format). When it is empty, every request is accepted and a warning is logged at startup.
 
@@ -145,6 +146,7 @@ An empty variable skips the step or leaves the corresponding setting unchanged. 
 | GLPI → API | Webhook `Ticket / New` | `POST http://api:8000/api/v1/ingest/ticket`, HMAC-signed. Queued by GLPI and sent by the `queuedwebhook` task (within 60 s). |
 | API → GLPI (read/write) | REST API `/apirest.php` as the bot user | `User-Token` + `App-Token`. Writes go through the REST API only, so GLPI keeps its notifications, history and rights. |
 | API → GLPI database (bulk read) | MariaDB user `memoire_ro` | `SELECT` only (`db:3306`). Never any SQL write. |
+| Client → API → GLPI | `POST /api/v1/tickets/{id}/answer/stream` (SSE) | Reads the ticket, answers it, then posts the answer as a followup through the REST API. |
 
 GLPI rejects any server-side URL with a port by default. `glpi/config/local_define.php` (mounted into the container) allows `http://api:8000/api/v1/`. It **replaces** the default allowlist, so external RSS feeds and calendars are blocked.
 

@@ -18,7 +18,9 @@ from app.core.config import Settings
 from app.db.session import create_engine
 from app.main import create_app
 from app.models import EMBEDDING_DIM
-from app.services.llm import ChatMessage, Completion
+from app.services.embeddings import EmbeddingError
+from app.services.llm import ChatMessage, Completion, LLMError
+from app.services.reranker import RerankerError
 from app.services.websearch import WebResult, WebSearchError
 
 API_KEY = "test-api-key"
@@ -74,6 +76,26 @@ class FakeWebSearch:
         if self._fail:
             raise WebSearchError("Exa unreachable")
         return self._results
+
+
+class FailingEmbedder:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        raise EmbeddingError("embeddings down")
+
+
+class FailingReranker:
+    async def rerank(self, query: str, documents: list[str]) -> list[float]:
+        raise RerankerError("reranker down")
+
+
+class FailingChatModel:
+    async def complete(self, messages: list[ChatMessage], schema: dict[str, object]) -> Completion:
+        raise LLMError("boom")
+
+
+def override(client: TestClient, dependency: object, value: object) -> None:
+    # TestClient.app is typed as ASGIApp, not FastAPI.
+    client.app.dependency_overrides[dependency] = lambda: value  # type: ignore[attr-defined]
 
 
 def run_sql(settings: Settings, statement: str) -> None:
