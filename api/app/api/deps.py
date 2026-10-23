@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.services.embeddings import Embedder
+from app.services.llm import ChatModel
+from app.services.reranker import Reranker
+from app.services.websearch import WebSearch
 
 
 def get_settings(request: Request) -> Settings:
@@ -23,9 +26,24 @@ def get_embedder(request: Request) -> Embedder:
     return request.app.state.embedder
 
 
+def get_reranker(request: Request) -> Reranker:
+    return request.app.state.reranker
+
+
+def get_chat_model(request: Request) -> ChatModel:
+    return request.app.state.chat_model
+
+
+def get_web_search(request: Request) -> WebSearch | None:
+    return request.app.state.web_search
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 EmbedderDep = Annotated[Embedder, Depends(get_embedder)]
+RerankerDep = Annotated[Reranker, Depends(get_reranker)]
+ChatModelDep = Annotated[ChatModel, Depends(get_chat_model)]
+WebSearchDep = Annotated[WebSearch | None, Depends(get_web_search)]
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 

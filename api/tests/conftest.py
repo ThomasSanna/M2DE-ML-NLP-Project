@@ -1,5 +1,7 @@
 import asyncio
+import copy
 import hashlib
+import json
 import math
 from collections.abc import Iterator
 from pathlib import Path
@@ -11,11 +13,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from testcontainers.community.postgres import PostgresContainer
 
-from app.api.deps import get_embedder
+from app.api.deps import get_chat_model, get_embedder, get_reranker, get_web_search
 from app.core.config import Settings
 from app.db.session import create_engine
 from app.main import create_app
 from app.models import EMBEDDING_DIM
+from app.services.llm import ChatMessage, Completion
+from app.services.websearch import WebResult, WebSearchError
 
 API_KEY = "test-api-key"
 WEBHOOK_SECRET = "test-webhook-secret"
@@ -36,6 +40,40 @@ class FakeEmbedder:
             vector[int(hashlib.md5(word.encode()).hexdigest(), 16) % EMBEDDING_DIM] += 1.0
         norm = math.sqrt(sum(x * x for x in vector)) or 1.0
         return [x / norm for x in vector]
+
+
+class FakeReranker:
+    """Accepts every candidate (sigmoid(5.0) ~ 0.993), without a model server."""
+
+    async def rerank(self, query: str, documents: list[str]) -> list[float]:
+        return [5.0] * len(documents)
+
+
+class ScriptedChatModel:
+    """Returns scripted outputs in order (100 prompt and 10 completion tokens each) and
+    records a deep copy of every call, so later appends cannot rewrite history."""
+
+    def __init__(self, outputs: list[str | Completion]) -> None:
+        self._outputs = list(outputs)
+        self.calls: list[tuple[list[ChatMessage], dict[str, object]]] = []
+
+    async def complete(self, messages: list[ChatMessage], schema: dict[str, object]) -> Completion:
+        self.calls.append((copy.deepcopy(messages), copy.deepcopy(schema)))
+        output = self._outputs.pop(0)
+        return output if isinstance(output, Completion) else Completion(output, "stop", 100, 10)
+
+
+class FakeWebSearch:
+    def __init__(self, results: list[WebResult] | None = None, fail: bool = False) -> None:
+        self._results = results or []
+        self._fail = fail
+        self.queries: list[str] = []
+
+    async def search(self, query: str) -> list[WebResult]:
+        self.queries.append(query)
+        if self._fail:
+            raise WebSearchError("Exa unreachable")
+        return self._results
 
 
 def run_sql(settings: Settings, statement: str) -> None:
@@ -62,6 +100,8 @@ def settings() -> Iterator[Settings]:
             api_key=API_KEY,
             glpi_webhook_secret=WEBHOOK_SECRET,
             embedding_base_url="http://embeddings.invalid/v1",
+            llm_base_url="http://llm.invalid/v1",
+            reranker_base_url="http://reranker.invalid",
         )
         alembic_config = Config(API_ROOT / "alembic.ini")
         alembic_config.attributes["settings"] = test_settings
@@ -74,6 +114,11 @@ def settings() -> Iterator[Settings]:
 def client(settings: Settings) -> Iterator[TestClient]:
     app = create_app(settings)
     app.dependency_overrides[get_embedder] = FakeEmbedder
+    app.dependency_overrides[get_reranker] = FakeReranker
+    app.dependency_overrides[get_chat_model] = lambda: ScriptedChatModel(
+        [json.dumps({"action": "answer", "answer": "Réponse", "sources": []})] * 3
+    )
+    app.dependency_overrides[get_web_search] = lambda: None
     with TestClient(app) as test_client:
         yield test_client
     run_sql(settings, "TRUNCATE knowledge, feedback, glpi_event RESTART IDENTITY CASCADE")
