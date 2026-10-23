@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import hashlib
+import hmac
 import json
 import math
 from collections.abc import Iterator
@@ -19,6 +20,7 @@ from app.db.session import create_engine
 from app.main import create_app
 from app.models import EMBEDDING_DIM
 from app.services.embeddings import EmbeddingError
+from app.services.glpi import GlpiError, GlpiTicket
 from app.services.llm import ChatMessage, Completion, LLMError
 from app.services.reranker import RerankerError
 from app.services.websearch import WebResult, WebSearchError
@@ -26,6 +28,9 @@ from app.services.websearch import WebResult, WebSearchError
 API_KEY = "test-api-key"
 WEBHOOK_SECRET = "test-webhook-secret"
 API_ROOT = Path(__file__).resolve().parents[1]
+TICKET = GlpiTicket(
+    id=42, title="Wifi eduroam", content="Le wifi eduroam ne marche pas sur mon Mac"
+)
 
 
 class FakeEmbedder:
@@ -78,6 +83,26 @@ class FakeWebSearch:
         return self._results
 
 
+class FakeGlpi:
+    """Serves TICKET and records the followups, without a GLPI server."""
+
+    def __init__(self, fail_read: bool = False, fail_followup: bool = False) -> None:
+        self._fail_read = fail_read
+        self._fail_followup = fail_followup
+        self.followups: list[tuple[int, str, bool]] = []
+
+    async def get_ticket(self, ticket_id: int) -> GlpiTicket | None:
+        if self._fail_read:
+            raise GlpiError("GLPI down")
+        return TICKET if ticket_id == TICKET.id else None
+
+    async def add_followup(self, ticket_id: int, text: str, *, private: bool) -> int:
+        if self._fail_followup:
+            raise GlpiError("GLPI down")
+        self.followups.append((ticket_id, text, private))
+        return 7
+
+
 class FailingEmbedder:
     async def embed(self, texts: list[str]) -> list[list[float]]:
         raise EmbeddingError("embeddings down")
@@ -96,6 +121,16 @@ class FailingChatModel:
 def override(client: TestClient, dependency: object, value: object) -> None:
     # TestClient.app is typed as ASGIApp, not FastAPI.
     client.app.dependency_overrides[dependency] = lambda: value  # type: ignore[attr-defined]
+
+
+def glpi_headers(body: bytes, timestamp: str = "1760000000") -> dict[str, str]:
+    """Headers as GLPI 11 computes them: hmac_sha256(body . timestamp, secret)."""
+    signature = hmac.new(WEBHOOK_SECRET.encode(), body + timestamp.encode(), hashlib.sha256)
+    return {
+        "Content-Type": "application/json",
+        "X-GLPI-signature": signature.hexdigest(),
+        "X-GLPI-timestamp": timestamp,
+    }
 
 
 def run_sql(settings: Settings, statement: str) -> None:

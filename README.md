@@ -143,7 +143,7 @@ An empty variable skips the step or leaves the corresponding setting unchanged. 
 
 | Direction | Mechanism | Detail |
 |---|---|---|
-| GLPI → API | Webhook `Ticket / New` | `POST http://api:8000/api/v1/ingest/ticket`, HMAC-signed. Queued by GLPI and sent by the `queuedwebhook` task (within 60 s). |
+| GLPI → API | Webhook `Ticket / New` | `POST http://api:8000/api/v1/ingest/ticket`, HMAC-signed. Queued by GLPI and sent by the `queuedwebhook` task (within 60 s). An API worker then answers the ticket in a followup, as the SSE route does. |
 | API → GLPI (read/write) | REST API `/apirest.php` as the bot user | `User-Token` + `App-Token`. Writes go through the REST API only, so GLPI keeps its notifications, history and rights. |
 | API → GLPI database (bulk read) | MariaDB user `memoire_ro` | `SELECT` only (`db:3306`). Never any SQL write. |
 | Client → API → GLPI | `POST /api/v1/tickets/{id}/answer/stream` (SSE) | Reads the ticket, answers it, then posts the answer as a followup through the REST API. |

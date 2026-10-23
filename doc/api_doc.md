@@ -46,7 +46,7 @@ Reçoit un webhook GLPI, l'enregistre dans `glpi_event` (statut `received`) et r
   2. `422` `Corps JSON invalide`.
   3. `422` `Objet JSON attendu` : JSON valide mais pas un objet.
 - **Signature** : `HMAC-SHA256(corps brut + timestamp, secret)`, format GLPI 11. Ne pas reparser ni re-sérialiser le corps avant vérification.
-- Pas de déduplication. Le ticket n'est pas lu dans GLPI : c'est le rôle de la future pipeline.
+- Pas de déduplication. Le ticket n'est pas lu dans GLPI ici : le worker s'en charge ensuite (voir « Automatic answer to new tickets »).
 - Secret vide = aucune vérification (un avertissement est loggé au démarrage).
 
 ### `POST /api/v1/memory/knowledge`
@@ -194,13 +194,28 @@ data: {"followup_id": 1234}
   header, and its automatic reconnection would post duplicate followups.
 - Not idempotent: every call posts a new followup.
 
+### Automatic answer to new tickets
+
+When `GLPI_USER_TOKEN` is set, a worker started with the API polls `glpi_event` every 5 s and
+answers each `new` event like the route above: same followup, no stream. GLPI sends the webhook
+up to 60 s after the ticket is created, so the followup arrives within about a minute.
+
+- Status: `received` → `processing` → `done` (followup posted, or an event other than `new`) or
+  `failed` with the cause in `last_error` (model or GLPI failure, unknown ticket, no
+  `item.id` in the payload).
+- A `failed` event is retried 2 min later, up to 3 attempts in all (`attempts`).
+- An event left `processing` (API stopped mid-answer) is never retried: a ticket may miss
+  its answer, but never gets two.
+- Each event is locked while claimed (`FOR UPDATE SKIP LOCKED`): several API processes can poll
+  without answering a ticket twice.
+
 ## Schéma (résumé)
 
 **`knowledge`** : `id`, `question`, `answer`, `category`, `source`, `status` (`active` / `to_review` / `archived`), `glpi_ticket_id`, `reuse_count`, `embedding` (`halfvec(3584)`, embedding de la question, index HNSW cosinus), `created_at`, `updated_at`.
 
 **`feedback`** : un enregistrement par retour (`knowledge_id`, `source`, `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Non exposé par l'API pour l'instant.
 
-**`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par la future pipeline.
+**`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par le worker (`app/services/glpi_worker.py`).
 
 ## Configuration
 

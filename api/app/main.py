@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -12,6 +13,7 @@ from app.core.logging import configure_logging
 from app.db.session import create_engine, create_sessionmaker
 from app.services.embeddings import EmbeddingError, OpenAIEmbeddingClient
 from app.services.glpi import GlpiError, GlpiRestClient
+from app.services.glpi_worker import GlpiEventWorker
 from app.services.llm import LLMError, TGIChatClient
 from app.services.reranker import HttpRerankerClient, RerankerError
 from app.services.websearch import EXA_BASE_URL, ExaClient
@@ -81,6 +83,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 settings.glpi_user_token.get_secret_value(),
                 settings.glpi_app_token.get_secret_value() if settings.glpi_app_token else None,
             )
+            worker = GlpiEventWorker(
+                app.state.sessionmaker,
+                app.state.embedder,
+                app.state.reranker,
+                app.state.chat_model,
+                app.state.web_search,
+                app.state.glpi,
+                settings,
+            )
+            # Registered after the clients: cancelled before they close. Also keeps the only
+            # strong reference to the task.
+            stack.callback(asyncio.create_task(worker.run()).cancel)
         yield
 
     await engine.dispose()

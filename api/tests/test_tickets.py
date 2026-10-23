@@ -4,41 +4,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_chat_model, get_embedder, get_glpi, get_reranker, get_web_search
-from app.services.glpi import GlpiError, GlpiTicket
 from app.services.websearch import WebResult
 from tests.conftest import (
+    TICKET,
     FailingChatModel,
     FailingEmbedder,
     FailingReranker,
+    FakeGlpi,
     FakeWebSearch,
     ScriptedChatModel,
     override,
 )
 
-TICKET = GlpiTicket(
-    id=42, title="Wifi eduroam", content="Le wifi eduroam ne marche pas sur mon Mac"
-)
 URL = f"/api/v1/tickets/{TICKET.id}/answer/stream"
-
-
-class FakeGlpi:
-    """Serves TICKET and records the followups, without a GLPI server."""
-
-    def __init__(self, fail_read: bool = False, fail_followup: bool = False) -> None:
-        self._fail_read = fail_read
-        self._fail_followup = fail_followup
-        self.followups: list[tuple[int, str, bool]] = []
-
-    async def get_ticket(self, ticket_id: int) -> GlpiTicket | None:
-        if self._fail_read:
-            raise GlpiError("GLPI down")
-        return TICKET if ticket_id == TICKET.id else None
-
-    async def add_followup(self, ticket_id: int, text: str, *, private: bool) -> int:
-        if self._fail_followup:
-            raise GlpiError("GLPI down")
-        self.followups.append((ticket_id, text, private))
-        return 7
 
 
 def _events(body: str) -> list[tuple[str, dict[str, object]]]:
