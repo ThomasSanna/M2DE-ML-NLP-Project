@@ -10,7 +10,7 @@ BASE_URL = "http://glpi.test/apirest.php/"
 
 
 class FakeGlpiServer:
-    """Imite l'API REST v1 de GLPI et enregistre les requêtes reçues."""
+    """Mimics the GLPI REST API v1 and records the requests it receives."""
 
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
@@ -78,7 +78,7 @@ def test_add_followup_posts_html() -> None:
 
 def test_bad_token_raises_glpi_error() -> None:
     with pytest.raises(GlpiError):
-        _run(FakeGlpiServer(), lambda glpi: glpi.get_ticket(42), user_token="faux")
+        _run(FakeGlpiServer(), lambda glpi: glpi.get_ticket(42), user_token="wrong")
 
 
 def test_html_round_trip() -> None:

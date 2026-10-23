@@ -9,14 +9,14 @@ import httpx
 
 
 class GlpiError(RuntimeError):
-    """L'API REST de GLPI est injoignable ou a refusé la requête."""
+    """The GLPI REST API is unreachable or rejected the request."""
 
 
 @dataclass(frozen=True)
 class GlpiTicket:
     id: int
     title: str
-    content: str  # texte brut (le HTML de GLPI est retiré)
+    content: str  # plain text (GLPI's HTML is stripped)
 
 
 class Glpi(Protocol):
@@ -30,7 +30,7 @@ _BLOCK_END = re.compile(r"</(p|div|li|h[1-6])>|<br\s*/?>", re.IGNORECASE)
 
 
 def html_to_text(value: str) -> str:
-    """Contenu riche GLPI → texte. GLPI peut renvoyer le HTML échappé (`&lt;p&gt;`)."""
+    """GLPI rich content to text. GLPI may return escaped HTML (`&lt;p&gt;`)."""
     value = html.unescape(value)
     value = _BLOCK_END.sub("\n", value)
     value = html.unescape(_TAG.sub("", value))
@@ -45,10 +45,10 @@ def text_to_html(value: str) -> str:
 
 
 class GlpiRestClient:
-    """Client de l'API REST v1 de GLPI (`/apirest.php`), authentifié par User-Token.
+    """Client of the GLPI REST API v1 (`/apirest.php`), authenticated with a User-Token.
 
-    Une session GLPI par opération (`initSession` … `killSession`) : quelques requêtes de
-    plus, mais aucun jeton de session à garder en mémoire ni à renouveler.
+    One GLPI session per operation (`initSession` ... `killSession`): a few more requests,
+    but no session token to keep in memory or renew.
     """
 
     def __init__(self, http: httpx.AsyncClient, user_token: str, app_token: str | None) -> None:
@@ -63,11 +63,11 @@ class GlpiRestClient:
             response.raise_for_status()
             headers = {"Session-Token": response.json()["session_token"]} | self._app
         except (httpx.HTTPError, ValueError, KeyError) as exc:
-            raise GlpiError(f"Ouverture de session GLPI impossible : {exc!r}") from exc
+            raise GlpiError(f"Cannot open a GLPI session: {exc!r}") from exc
         try:
             yield headers
         finally:
-            # En cas d'échec, la session expirera d'elle-même.
+            # On failure, the session expires on its own.
             with suppress(httpx.HTTPError):
                 await self._http.get("killSession", headers=headers)
 
@@ -85,10 +85,10 @@ class GlpiRestClient:
                     content=html_to_text(data.get("content") or ""),
                 )
             except (httpx.HTTPError, ValueError, KeyError) as exc:
-                raise GlpiError(f"Lecture du ticket {ticket_id} impossible : {exc!r}") from exc
+                raise GlpiError(f"Cannot read ticket {ticket_id}: {exc!r}") from exc
 
     async def add_followup(self, ticket_id: int, text: str, *, private: bool) -> int:
-        """Ajoute un suivi au ticket. Public : GLPI notifie (mail) le demandeur."""
+        """Add a followup to the ticket. Public: GLPI notifies the requester by email."""
         payload = {
             "input": {
                 "itemtype": "Ticket",
@@ -103,6 +103,4 @@ class GlpiRestClient:
                 response.raise_for_status()
                 return int(response.json()["id"])
             except (httpx.HTTPError, ValueError, KeyError) as exc:
-                raise GlpiError(
-                    f"Ajout du suivi au ticket {ticket_id} impossible : {exc!r}"
-                ) from exc
+                raise GlpiError(f"Cannot add a followup to ticket {ticket_id}: {exc!r}") from exc
