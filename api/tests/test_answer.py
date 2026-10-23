@@ -1,139 +1,267 @@
 import json
-from collections.abc import AsyncIterator, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
-from app.api.deps import get_chat_model, get_glpi
-from app.services.glpi import GlpiError, GlpiTicket
-from app.services.llm import LLMError
+from app.api.deps import get_chat_model, get_embedder, get_reranker, get_web_search
+from app.core.config import Settings
+from app.db.session import create_engine
+from app.schemas.answer import THREAD_MESSAGE_MAX_CHARS
+from app.services.agent_prompt import NO_MEMORY
+from app.services.answer import RETRIEVAL_QUERY_MAX_CHARS
+from app.services.embeddings import EmbeddingError
+from app.services.llm import ChatMessage, Completion, LLMError
+from app.services.reranker import RerankerError
+from app.services.websearch import WebResult
+from tests.conftest import FakeEmbedder, FakeWebSearch, ScriptedChatModel
 
-TICKET = GlpiTicket(id=42, title="Wifi eduroam", content="Je n'arrive plus à me connecter au wifi")
-URL = "/api/v1/tickets/42/answer/stream"
-
-
-class FakeChatModel:
-    def __init__(self, tokens: list[str], fail_after: int | None = None) -> None:
-        self.tokens = tokens
-        self.fail_after = fail_after
-        self.messages: list[dict[str, str]] = []
-
-    async def stream(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
-        self.messages = messages
-        for i, token in enumerate(self.tokens):
-            if i == self.fail_after:
-                raise LLMError("coupure")
-            yield token
+QUESTION = "Je n'arrive plus à me connecter au wifi eduroam"
+ANSWER = "Réinstallez le profil eduroam via CAT."
+THREAD = [{"role": "user", "content": "Le wifi eduroam ne marche pas sur mon Mac"}]
 
 
-class FakeGlpi:
-    def __init__(self, fail_followup: bool = False) -> None:
-        self.tickets = {TICKET.id: TICKET}
-        self.followups: list[tuple[int, str, bool]] = []
-        self.fail_followup = fail_followup
-
-    async def get_ticket(self, ticket_id: int) -> GlpiTicket | None:
-        return self.tickets.get(ticket_id)
-
-    async def add_followup(self, ticket_id: int, text: str, *, private: bool) -> int:
-        if self.fail_followup:
-            raise GlpiError("GLPI HS")
-        self.followups.append((ticket_id, text, private))
-        return 7
+def _add_knowledge(client: TestClient, auth: dict[str, str]) -> str:
+    response = client.post(
+        "/api/v1/memory/knowledge", json={"question": QUESTION, "answer": ANSWER}, headers=auth
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
 
 
-@pytest.fixture
-def glpi(client: TestClient) -> Iterator[FakeGlpi]:
-    fake = FakeGlpi()
-    client.app.dependency_overrides[get_glpi] = lambda: fake
-    yield fake
+def _override(client: TestClient, dependency: object, value: object) -> None:
+    # TestClient.app is typed as ASGIApp, not FastAPI.
+    client.app.dependency_overrides[dependency] = lambda: value  # type: ignore[attr-defined]
 
 
-def _use_llm(client: TestClient, llm: FakeChatModel) -> FakeChatModel:
-    client.app.dependency_overrides[get_chat_model] = lambda: llm
-    return llm
+def test_answer_requires_api_key(client: TestClient) -> None:
+    assert client.post("/api/v1/answer", json={"messages": THREAD}).status_code == 401
 
 
-def _events(client: TestClient, auth: dict[str, str], url: str = URL) -> list[tuple[str, object]]:
-    with client.stream("GET", url, headers=auth) as response:
-        assert response.status_code == 200, response.read()
-        assert response.headers["content-type"].startswith("text/event-stream")
-        body = response.read().decode()
-    events = []
-    for block in body.strip().split("\n\n"):
-        fields = dict(line.split(": ", 1) for line in block.splitlines())
-        events.append((fields["event"], json.loads(fields["data"])))
-    return events
+def test_answer_returns_cited_sources(client: TestClient, auth: dict[str, str]) -> None:
+    knowledge_id = _add_knowledge(client, auth)
+    model = ScriptedChatModel(
+        [
+            json.dumps({"action": "search", "query": "eduroam mac"}),
+            json.dumps(
+                {
+                    "action": "answer",
+                    "answer": "Supprimez le profil [K1] [W1]",
+                    "sources": ["K1", "W1"],
+                }
+            ),
+        ]
+    )
+    web = FakeWebSearch(
+        [WebResult("Configurer eduroam", "https://cat.eduroam.org", None, "Profil")]
+    )
+    _override(client, get_chat_model, model)
+    _override(client, get_web_search, web)
+
+    response = client.post("/api/v1/answer", json={"messages": THREAD}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "kind": "answer",
+        "answer": "Supprimez le profil [K1] [W1]",
+        "sources": [
+            {"ref": "K1", "type": "knowledge", "knowledge_id": knowledge_id, "question": QUESTION},
+            {
+                "ref": "W1",
+                "type": "web",
+                "url": "https://cat.eduroam.org",
+                "title": "Configurer eduroam",
+            },
+        ],
+        "memory": [{"knowledge_id": knowledge_id, "score": pytest.approx(0.9933, abs=1e-4)}],
+        "searches": ["eduroam mac"],
+        "steps": 2,
+        "usage": {"prompt_tokens": 200, "completion_tokens": 20},
+    }
+    first_user_message = model.calls[0][0][1]["content"]
+    assert f"[K1] Q : {QUESTION}" in first_user_message
+    assert "Utilisateur : Le wifi eduroam" in first_user_message
 
 
-def test_requires_api_key(client: TestClient, glpi: FakeGlpi) -> None:
-    assert client.get(URL).status_code == 401
+def test_answer_without_memory_says_so(client: TestClient, auth: dict[str, str]) -> None:
+    model = ScriptedChatModel([json.dumps({"action": "answer", "answer": "Je ne sais pas"})])
+    _override(client, get_chat_model, model)
+
+    response = client.post("/api/v1/answer", json={"messages": THREAD}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["memory"] == []
+    assert response.json()["sources"] == []
+    assert NO_MEMORY in model.calls[0][0][1]["content"]
 
 
-def test_unknown_ticket_is_404(client: TestClient, auth: dict[str, str], glpi: FakeGlpi) -> None:
-    _use_llm(client, FakeChatModel(["x"]))
-    assert client.get("/api/v1/tickets/999/answer/stream", headers=auth).status_code == 404
+class RecordingReranker:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    async def rerank(self, query: str, documents: list[str]) -> list[float]:
+        self.queries.append(query)
+        return [5.0] * len(documents)
 
 
-def test_glpi_not_configured_is_503(client: TestClient, auth: dict[str, str]) -> None:
-    # Les réglages de test n'ont pas de GLPI_USER_TOKEN.
-    assert client.get(URL, headers=auth).status_code == 503
-
-
-def test_streams_chunks_then_posts_followup(
-    client: TestClient, auth: dict[str, str], glpi: FakeGlpi
+def test_answer_retrieves_on_first_and_last_user_messages(
+    client: TestClient, auth: dict[str, str]
 ) -> None:
-    tokens = [f"t{i} " for i in range(13)]
-    _use_llm(client, FakeChatModel(tokens))
+    reranker = RecordingReranker()
+    _add_knowledge(client, auth)
+    _override(client, get_reranker, reranker)
+    thread = [
+        {"role": "user", "content": "Le wifi eduroam ne marche pas"},
+        {"role": "assistant", "content": "Sur quel appareil ?"},
+        {"role": "user", "content": "Un Mac"},
+        {"role": "assistant", "content": "Avez-vous redémarré ?"},
+        {"role": "user", "content": "Oui, toujours pareil"},
+    ]
 
-    events = _events(client, auth)
+    response = client.post("/api/v1/answer", json={"messages": thread}, headers=auth)
 
-    names = [name for name, _ in events]
-    assert names == ["sources", "token", "token", "token", "done"]
-    chunks = [data["text"] for name, data in events if name == "token"]
-    assert chunks == ["".join(tokens[0:6]), "".join(tokens[6:12]), tokens[12]]  # 6 par défaut
-    assert events[-1] == ("done", {"followup_id": 7})
-    assert glpi.followups == [(42, "".join(tokens).strip(), False)]
+    assert response.status_code == 200, response.text
+    assert reranker.queries == ["Le wifi eduroam ne marche pas\nOui, toujours pareil"]
 
 
-def test_memory_hits_are_in_prompt_and_sources(
-    client: TestClient, auth: dict[str, str], glpi: FakeGlpi
+def test_answer_splits_the_query_cap_between_first_and_last(
+    client: TestClient, auth: dict[str, str]
 ) -> None:
-    created = client.post(
-        "/api/v1/memory/knowledge",
-        json={"question": "Connexion au wifi eduroam impossible", "answer": "Réinstallez CAT."},
-        headers=auth,
-    ).json()
-    llm = _use_llm(client, FakeChatModel(["ok"]))
+    reranker = RecordingReranker()
+    _add_knowledge(client, auth)
+    _override(client, get_reranker, reranker)
+    thread = [
+        {"role": "user", "content": "wifi " + "a" * 5000},
+        {"role": "assistant", "content": "Lequel ?"},
+        {"role": "user", "content": "eduroam " + "b" * 5000},
+    ]
 
-    events = _events(client, auth)
+    response = client.post("/api/v1/answer", json={"messages": thread}, headers=auth)
 
-    name, sources = events[0]
-    assert name == "sources"
-    assert sources[0]["id"] == created["id"]
-    assert "Réinstallez CAT." in llm.messages[-1]["content"]
-    assert TICKET.content in llm.messages[-1]["content"]
+    assert response.status_code == 200, response.text
+    half = RETRIEVAL_QUERY_MAX_CHARS // 2
+    [query] = reranker.queries
+    assert query == f"{thread[0]['content'][:half]}\n{thread[2]['content'][:half]}"
 
 
-def test_llm_failure_sends_error_and_no_followup(
-    client: TestClient, auth: dict[str, str], glpi: FakeGlpi
+def test_answer_caps_the_retrieval_query(client: TestClient, auth: dict[str, str]) -> None:
+    class RecordingEmbedder(FakeEmbedder):
+        def __init__(self) -> None:
+            self.texts: list[str] = []
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            self.texts.extend(texts)
+            return await super().embed(texts)
+
+    _add_knowledge(client, auth)
+    embedder = RecordingEmbedder()
+    reranker = RecordingReranker()
+    _override(client, get_embedder, embedder)
+    _override(client, get_reranker, reranker)
+    pasted_log = "wifi eduroam " + "x" * 10_000
+
+    response = client.post(
+        "/api/v1/answer", json={"messages": [{"role": "user", "content": pasted_log}]}, headers=auth
+    )
+
+    assert response.status_code == 200, response.text
+    assert embedder.texts == [pasted_log[:RETRIEVAL_QUERY_MAX_CHARS]]
+    assert reranker.queries == [pasted_log[:RETRIEVAL_QUERY_MAX_CHARS]]
+
+
+@pytest.mark.parametrize(
+    "messages",
+    [
+        [],
+        [{"role": "user", "content": "wifi"}, {"role": "assistant", "content": "Lequel ?"}],
+        [{"role": "system", "content": "wifi"}],
+        [{"role": "user", "content": "   "}],
+        [{"role": "user", "content": "wifi"}] * 51,
+        [{"role": "user", "content": "x" * (THREAD_MESSAGE_MAX_CHARS + 1)}],
+    ],
+)
+def test_answer_validates_thread(
+    client: TestClient, auth: dict[str, str], messages: list[dict[str, str]]
 ) -> None:
-    _use_llm(client, FakeChatModel(["a", "b", "c"], fail_after=2))
-
-    events = _events(client, auth)
-
-    assert events[-1][0] == "error"
-    assert "done" not in [name for name, _ in events]
-    assert glpi.followups == []
+    response = client.post("/api/v1/answer", json={"messages": messages}, headers=auth)
+    assert response.status_code == 422
 
 
-def test_empty_answer_is_an_error(client: TestClient, auth: dict[str, str], glpi: FakeGlpi) -> None:
-    _use_llm(client, FakeChatModel(["  "]))
-    assert _events(client, auth)[-1][0] == "error"
-    assert glpi.followups == []
+class FailingEmbedder:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        raise EmbeddingError("embeddings down")
 
 
-def test_glpi_followup_failure_sends_error(client: TestClient, auth: dict[str, str]) -> None:
-    client.app.dependency_overrides[get_glpi] = lambda: FakeGlpi(fail_followup=True)
-    _use_llm(client, FakeChatModel(["réponse"]))
-    assert _events(client, auth)[-1][0] == "error"
+class FailingReranker:
+    async def rerank(self, query: str, documents: list[str]) -> list[float]:
+        raise RerankerError("reranker down")
+
+
+class FailingChatModel:
+    async def complete(self, messages: list[ChatMessage], schema: dict[str, object]) -> Completion:
+        raise LLMError("boom")
+
+
+@pytest.mark.parametrize(
+    ("dependency", "failing", "detail"),
+    [
+        (get_embedder, FailingEmbedder(), "Embeddings server unavailable"),
+        (get_reranker, FailingReranker(), "Reranker unavailable"),
+        (get_chat_model, FailingChatModel(), "Language model unavailable"),
+    ],
+)
+def test_answer_upstream_failures_return_502(
+    client: TestClient, auth: dict[str, str], dependency: object, failing: object, detail: str
+) -> None:
+    _add_knowledge(client, auth)
+    _override(client, dependency, failing)
+
+    response = client.post("/api/v1/answer", json={"messages": THREAD}, headers=auth)
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": detail}
+
+
+def test_answer_survives_web_search_failure(client: TestClient, auth: dict[str, str]) -> None:
+    model = ScriptedChatModel(
+        [
+            json.dumps({"action": "search", "query": "eduroam mac"}),
+            json.dumps({"action": "answer", "answer": "Avec la mémoire"}),
+        ]
+    )
+    _override(client, get_chat_model, model)
+    _override(client, get_web_search, FakeWebSearch(fail=True))
+
+    response = client.post("/api/v1/answer", json={"messages": THREAD}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["answer"] == "Avec la mémoire"
+
+
+def test_answer_releases_db_transaction_before_the_model(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    class ProbingChatModel:
+        idle_in_transaction = -1
+
+        async def complete(
+            self, messages: list[ChatMessage], schema: dict[str, object]
+        ) -> Completion:
+            engine = create_engine(settings.database_url)
+            async with engine.connect() as connection:
+                self.idle_in_transaction = await connection.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity WHERE state = 'idle in transaction'"
+                    )
+                )
+            await engine.dispose()
+            return Completion(json.dumps({"action": "answer", "answer": "ok"}), "stop", 1, 1)
+
+    model = ProbingChatModel()
+    _add_knowledge(client, auth)
+    _override(client, get_chat_model, model)
+
+    response = client.post("/api/v1/answer", json={"messages": THREAD}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert model.idle_in_transaction == 0

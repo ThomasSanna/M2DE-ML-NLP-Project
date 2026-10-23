@@ -18,10 +18,10 @@ class GlpiEventStatus(StrEnum):
 
 
 class GlpiEvent(Base):
-    """Boîte de réception des webhooks GLPI.
+    """Inbox of GLPI webhooks.
 
-    Le webhook est acquitté dès qu'il est enregistré ; la pipeline LLM consomme
-    ensuite les événements `received` (et rejoue les `failed`).
+    The webhook is acknowledged as soon as it is stored; the LLM pipeline then
+    consumes the `received` events (and replays the `failed` ones).
     """
 
     __tablename__ = "glpi_event"

@@ -1,4 +1,4 @@
-# Runbook — LDAP + GLPI + SMTP Brevo (ce qui a marché le 2026-09-09)
+# Runbook - LDAP + GLPI + SMTP Brevo (ce qui a marché le 2026-09-09)
 
 Archive factuelle de la mise en route qui fonctionne actuellement.
 Stack : `LDAP (osixia/openldap)` + `GLPI 11.0.8` + `MariaDB 11` via Docker.

@@ -1,7 +1,7 @@
 [project]
 name = "memoire-api"
 version = "0.1.0"
-description = "API du PoC chatbot avec mémoire : ingestion des tickets GLPI et mémoire vectorielle (pgvector)."
+description = "Chatbot PoC API with memory: GLPI ticket ingestion and vector memory (pgvector)."
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20.0",

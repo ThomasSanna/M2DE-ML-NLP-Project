@@ -1,13 +1,13 @@
-# Stack PoC — LDAP + GLPI + API mémoire
-# Usage : docker compose up -d
-# GLPI  : http://localhost:8080  (auto-install au premier démarrage)
-# PLA   : http://localhost:8081  (login DN : cn=admin,dc=example,dc=org)
-# LDAP  : ldap://localhost:389   (bind : cn=admin,dc=example,dc=org / mot de passe dans .env)
-# API   : http://localhost:8000/docs  (FastAPI ; mémoire vectorielle PostgreSQL + pgvector)
+# PoC stack - LDAP + GLPI + memory API
+# Usage: docker compose up -d
+# GLPI : http://localhost:8080  (auto-installs on first start)
+# PLA  : http://localhost:8081  (login DN: cn=admin,dc=example,dc=org)
+# LDAP : ldap://localhost:389   (bind: cn=admin,dc=example,dc=org / password in .env)
+# API  : http://localhost:8000/docs  (FastAPI; vector memory on PostgreSQL + pgvector)
 
 name: bisgambiglia-poc
 
-# Environnement commun à l'API et à son job de migration.
+# Environment shared by the API and its migration job.
 x-api-env: &api-env
   ENVIRONMENT: "${ENVIRONMENT:-dev}"
   LOG_LEVEL: "${LOG_LEVEL:-INFO}"
@@ -21,10 +21,20 @@ x-api-env: &api-env
   EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL}"
   EMBEDDING_API_KEY: "${EMBEDDING_API_KEY:-}"
   EMBEDDING_MODEL: "${EMBEDDING_MODEL:-BAAI/bge-multilingual-gemma2}"
-  LLM_BASE_URL: "${LLM_BASE_URL:-http://193.48.31.6:32297/v1}"
-  LLM_API_KEY: "${LLM_API_KEY:-}"
+  LLM_BASE_URL: "${LLM_BASE_URL}"
   LLM_MODEL: "${LLM_MODEL:-google/gemma3-12b-it}"
-  SSE_CHUNK_TOKENS: "${SSE_CHUNK_TOKENS:-6}"
+  LLM_MAX_TOKENS: "${LLM_MAX_TOKENS:-512}"
+  LLM_TIMEOUT_SECONDS: "${LLM_TIMEOUT_SECONDS:-60}"
+  RERANKER_BASE_URL: "${RERANKER_BASE_URL}"
+  RERANKER_TIMEOUT_SECONDS: "${RERANKER_TIMEOUT_SECONDS:-30}"
+  RETRIEVAL_CANDIDATES: "${RETRIEVAL_CANDIDATES:-20}"
+  RETRIEVAL_TOP_K: "${RETRIEVAL_TOP_K:-3}"
+  RERANK_THRESHOLD: "${RERANK_THRESHOLD:-0.95}"
+  EXA_API_KEY: "${EXA_API_KEY:-}"
+  EXA_INCLUDE_DOMAINS: "${EXA_INCLUDE_DOMAINS:-}"
+  EXA_NUM_RESULTS: "${EXA_NUM_RESULTS:-3}"
+  EXA_TIMEOUT_SECONDS: "${EXA_TIMEOUT_SECONDS:-15}"
+  AGENT_MAX_STEPS: "${AGENT_MAX_STEPS:-3}"
   GLPI_API_URL: "http://glpi/apirest.php/"
   GLPI_USER_TOKEN: "${GLPI_USER_TOKEN:-}"
   GLPI_APP_TOKEN: "${GLPI_APP_TOKEN:-}"
@@ -120,7 +130,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # ------------------------------------------- Mémoire (PostgreSQL + pgvector)
+  # ------------------------------------------- Memory (PostgreSQL + pgvector)
   postgres:
     image: pgvector/pgvector:0.8.0-pg17
     container_name: poc-postgres
@@ -131,7 +141,7 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
     ports:
-      # Exposé sur la machine hôte uniquement (dev local, tests, client SQL).
+      # Exposed on the host machine only (local dev, tests, SQL client).
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     networks:
       - poc_net
@@ -143,7 +153,7 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # --------------------------------------- Migrations du schéma (one-shot)
+  # --------------------------------------- Schema migrations (one-shot)
   migrate:
     build: ./api
     image: bisgambiglia-poc/api:latest

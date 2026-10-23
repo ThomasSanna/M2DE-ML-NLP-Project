@@ -1,4 +1,4 @@
-"""initial schema : mémoire (knowledge, feedback) et boîte de réception GLPI
+"""initial schema: memory (knowledge, feedback) and GLPI inbox
 
 Revision ID: 0001
 Revises:

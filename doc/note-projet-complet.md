@@ -1,7 +1,7 @@
-# Projet — Chatbot avec mémoire (PoC)
+# Projet - Chatbot avec mémoire (PoC)
 
-> Notes consolidées le 08/09/2026 — remplace `note_projet.md` (conservé en fin de fichier pour trace).
-> **Deadline : 6 octobre** — Livrables : **rapport, démonstration, présentation**.
+> Notes consolidées le 08/09/2026 - remplace `note_projet.md` (conservé en fin de fichier pour trace).
+> **Deadline : 6 octobre** - Livrables : **rapport, démonstration, présentation**.
 
 ---
 
@@ -49,7 +49,7 @@ Serveur mis à disposition :
 | Question | Décision |
 |---|---|
 | Données | **Aucune donnée réelle** → générer un jeu de données de base **avec une IA**, en **français** |
-| Mémoire | **Vrai mécanisme de pondération** (pas un simple RAG) — cœur de l'innovation |
+| Mémoire | **Vrai mécanisme de pondération** (pas un simple RAG) - cœur de l'innovation |
 | Feedback | Donné **par l'utilisateur final** par défaut ; possible d'innover (feedback technicien, implicite…) |
 | Recherche internet | **Dans le périmètre** du PoC |
 | Démonstration | Via une **API** (le PoC est exposé comme service) |
@@ -59,7 +59,7 @@ Serveur mis à disposition :
 | Feedback | Réponse user (webhook) → **note Gemma 3 4B** → embed + index de la paire Q/R avec score |
 | Base vectorielle | **PostgreSQL + pgvector** (API mémoire dans `api/`) |
 | Envoi réponse | Post **ticket GLPI** + **mail SMTP**, direct, sans validation tech |
-| Critères d'évaluation | Pas encore définis par le prof — on verra |
+| Critères d'évaluation | Pas encore définis par le prof - on verra |
 
 ## 5. Architecture envisagée
 
@@ -73,20 +73,20 @@ Composants techniques pressentis :
 - **API** : FastAPI + petite interface de chat pour la démo.
 - **Ingest temps réel** : endpoint FastAPI `POST /ingest/ticket` alimenté par le **webhook GLPI** (secret partagé + file de retry).
 
-### Pipeline LLM (détaillé — cf. Page-2 `doc/diagramme.drawio`)
-1. **Webhook GLPI** à la création du ticket — et à chaque réponse user dans le fil.
+### Pipeline LLM (détaillé - cf. Page-2 `doc/diagramme.drawio`)
+1. **Webhook GLPI** à la création du ticket - et à chaque réponse user dans le fil.
 2. **GET ticket** : question seule, ou **fil de discussion** complet si la question suit un ou plusieurs échanges Q/R du même ticket.
-3. **Garde-fou IN — ShieldStral 3B** (en attendant son déploiement : **Gemma 3 4B**, prompt de modération) : juge la discussion en insistant sur la nouvelle question (malveillante ? vaut-elle une réponse ?). Si bloqué → ticket **en attente**, un **technicien** répond.
+3. **Garde-fou IN - ShieldStral 3B** (en attendant son déploiement : **Gemma 3 4B**, prompt de modération) : juge la discussion en insistant sur la nouvelle question (malveillante ? vaut-elle une réponse ?). Si bloqué → ticket **en attente**, un **technicien** répond.
 4. **Embeddings bge-multilingual-gemma2** de la question / du fil.
 5. **Top-k + scores** des paires Q/R indexées, **reclassés par le reranker** bge-reranker-v2-gemma → injectés dans le **prompt initial**.
-6. **Appel LLM — Gemma 3 12B** (le cache KV est géré côté serveur par vLLM, pas par nous).
+6. **Appel LLM - Gemma 3 12B** (le cache KV est géré côté serveur par vLLM, pas par nous).
 7. **Actions LLM** : **répondre**, ou **websearch** (x recherches) → nouvel appel Gemma 3 avec contexte + résultats web → boucle jusqu'à réponse.
-8. **Garde-fou OUT — ShieldStral 3B** (en attendant : **Gemma 3 4B**) : pas de données sensibles dans la réponse (prompt système, etc.).
+8. **Garde-fou OUT - ShieldStral 3B** (en attendant : **Gemma 3 4B**) : pas de données sensibles dans la réponse (prompt système, etc.).
 9. **Post dans le ticket GLPI + mail SMTP** à la personne. Envoi direct, sans validation tech.
 10. **Feedback** : la réponse de l'user repasse par webhook et sert de feedback.
 11. **Gemma 3 4B** note l'échange → **embed + index** de la discussion/réponse LLM avec son score → la mémoire grandit.
 
-## 6. Mécanisme de mémoire & pondération — le cœur à innover
+## 6. Mécanisme de mémoire & pondération - le cœur à innover
 
 ### Score de chaque "connaissance" (paire Q/R validée)
 Score multi-facteurs, ex. :
@@ -95,7 +95,7 @@ Score multi-facteurs, ex. :
 score = w1·feedback_utilisateur      (note **Gemma 3 4B** sur la réponse user + utile/pas utile, stockée par paire Q/R)
       + w2·validation_technicien     (hors live : pas de validation avant envoi ; sert en révision différée si le tech corrige)
       + w3·taux_de_réutilisation     (nb de fois réutilisée avec succès)
-      + w4·fraîcheur                 (décroissance temporelle — une réponse de 2019 pèse moins)
+      + w4·fraîcheur                 (décroissance temporelle - une réponse de 2019 pèse moins)
       + w5·similarité_contextuelle   (même catégorie/même type de demande)
 ```
 
@@ -105,7 +105,7 @@ score = w1·feedback_utilisateur      (note **Gemma 3 4B** sur la réponse user 
 3. **Boucle de révision** : file de réponses dégradées que le technicien peut corriger ; la correction hérite du score historique.
 4. **Escalade honnête** : si le score de confiance (meilleure source trop faible, conflit de réponses) est trop bas → ne pas répondre, escalader au technicien. Mieux vaut ne pas répondre qu'inventer.
 5. **Traçabilité** : chaque réponse IA cite ses sources (tickets + liens web) → crédibilité en démo.
-6. **Détection de doublon/reluire** : "cette question a déjà été posée N fois" — gain de temps mis en avant.
+6. **Détection de doublon/reluire** : "cette question a déjà été posée N fois" - gain de temps mis en avant.
 7. **Dashboard mémoire** (bonus démo) : taux de résolution automatique, répartition par catégorie, évolution des scores.
 
 ## 7. Génération des données (français)
@@ -127,7 +127,7 @@ score = w1·feedback_utilisateur      (note **Gemma 3 4B** sur la réponse user 
 
 ## 9. Questions ouvertes / à trancher
 
-- [ ] Critères d'évaluation exacts du prof (rapport / démo / présentation) — à demander.
+- [ ] Critères d'évaluation exacts du prof (rapport / démo / présentation) - à demander.
 - [x] Choix des modèles → **imposés par ce que sert l'université** (`Projet M2.pdf`) : `google/gemma3-12b-it`, `google/gemma3-4b-it`, `BAAI/bge-multilingual-gemma2` (embeddings), `BAAI/bge-reranker-v2-gemma` (reranker). Remplace la liste du 17/09 (Gemma 4, BGE-M3), qui ne correspond à aucun modèle servi.
 - [ ] Garde-fous : **ShieldStral 3B** à venir sur le serveur de l'université ; **Gemma 3 4B en attendant** (garder le client du garde-fou interchangeable pour basculer sans toucher à la pipeline).
 - [ ] Annuaire : garder l'OpenLDAP simulé ou utiliser l'AD réel (`idcsrv-01.udcpp.priv`, via VPN) ?
@@ -139,7 +139,7 @@ score = w1·feedback_utilisateur      (note **Gemma 3 4B** sur la réponse user 
 
 ---
 
-## Annexe — note d'origine (verbatim)
+## Annexe - note d'origine (verbatim)
 
 > 6 octoble
 > l'univ utiliser ldap, outlook (mails), ...

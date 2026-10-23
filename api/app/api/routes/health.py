@@ -9,15 +9,15 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 @router.get("/live")
 async def live() -> dict[str, str]:
-    """Le processus répond."""
+    """The process responds."""
     return {"status": "ok"}
 
 
 @router.get("/ready")
 async def ready(session: SessionDep) -> dict[str, str]:
-    """L'API peut servir des requêtes : la base est joignable."""
+    """The API can serve requests: the database is reachable."""
     try:
         await session.execute(text("SELECT 1"))
     except (SQLAlchemyError, OSError) as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Base indisponible") from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Database unavailable") from exc
     return {"status": "ok"}

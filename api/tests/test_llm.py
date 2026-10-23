@@ -1,48 +1,73 @@
 import asyncio
 import json
+from collections.abc import Callable
 
 import httpx
 import pytest
 
-from app.services.llm import LLMError, OpenAIChatClient
+from app.services.llm import ChatMessage, Completion, LLMError, TGIChatClient
 
 BASE_URL = "http://llm.test/v1"
 MODEL = "google/gemma3-12b-it"
+MESSAGES: list[ChatMessage] = [
+    {"role": "system", "content": "Tu es l'assistant."},
+    {"role": "user", "content": "Le wifi ne marche pas"},
+]
+SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {"action": {"type": "string", "enum": ["answer"]}},
+    "required": ["action"],
+}
+USAGE = {"prompt_tokens": 10, "completion_tokens": 3}
 
 
-def _chunk(content: str | None) -> str:
-    delta = {} if content is None else {"content": content}
-    return "data: " + json.dumps({"choices": [{"index": 0, "delta": delta}]})
-
-
-def _stream(handler) -> list[str]:
-    async def _run() -> list[str]:
+def _complete(handler: Callable[[httpx.Request], httpx.Response]) -> Completion:
+    async def _run() -> Completion:
         transport = httpx.MockTransport(handler)
         async with httpx.AsyncClient(base_url=BASE_URL, transport=transport) as http:
-            client = OpenAIChatClient(http, MODEL)
-            return [token async for token in client.stream([{"role": "user", "content": "q"}])]
+            return await TGIChatClient(http, MODEL, 512).complete(MESSAGES, SCHEMA)
 
     return asyncio.run(_run())
 
 
-def test_yields_deltas_until_done() -> None:
+def test_sends_grammar_and_greedy_decoding() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url == f"{BASE_URL}/chat/completions"
-        body = json.loads(request.content)
-        assert body["model"] == MODEL
-        assert body["stream"] is True
-        lines = [_chunk(None), _chunk("Bon"), "", ": keep-alive", _chunk("jour"), "data: [DONE]"]
-        lines.append(_chunk("après la fin"))
-        return httpx.Response(200, text="\n".join(lines) + "\n")
+        assert json.loads(request.content) == {
+            "model": MODEL,
+            "messages": MESSAGES,
+            "max_tokens": 512,
+            "temperature": 0,
+            "response_format": {"type": "json", "value": SCHEMA},
+        }
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": '{"action":"answer"}'}, "finish_reason": "stop"}
+                ],
+                "usage": USAGE,
+            },
+        )
 
-    assert _stream(handler) == ["Bon", "jour"]
+    assert _complete(handler) == Completion('{"action":"answer"}', "stop", 10, 3)
 
 
 def test_http_error_raises_llm_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"error": "Input validation error"})
+
     with pytest.raises(LLMError):
-        _stream(lambda request: httpx.Response(503))
+        _complete(handler)
 
 
-def test_malformed_chunk_raises_llm_error() -> None:
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"choices": []},
+        {"choices": [{"message": {"content": None}, "finish_reason": "stop"}], "usage": USAGE},
+    ],
+)
+def test_missing_content_raises_llm_error(body: dict[str, object]) -> None:
     with pytest.raises(LLMError):
-        _stream(lambda request: httpx.Response(200, text="data: {pas du json}\n"))
+        _complete(lambda request: httpx.Response(200, json=body))

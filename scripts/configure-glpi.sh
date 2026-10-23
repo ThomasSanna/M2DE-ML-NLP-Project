@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Applique la configuration GLPI du PoC (API, LDAP, SMTP, notifications, enquête
-# de satisfaction, utilisateur bot, webhook) et crée l'utilisateur SQL en lecture seule. Idempotent : à relancer après chaque `docker compose down -v`.
-# Usage : ./scripts/configure-glpi.sh   (stack démarrée ; ENV_FILE=… pour un autre .env)
+# Apply the PoC GLPI configuration (API, LDAP, SMTP, notifications, satisfaction
+# survey, bot user, webhook) and create the read-only SQL user. Idempotent: rerun
+# after every `docker compose down -v`.
+# Usage: ./scripts/configure-glpi.sh   (stack started; ENV_FILE=... for another .env)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -23,18 +24,18 @@ for v in "${vars[@]}"; do
   env_args+=(-e "$v=${!v:-}")
 done
 
-echo "Attente de l'installation de GLPI..."
-# config_db.php est écrit dès le début de l'installation : on attend plutôt Apache,
-# que l'entrypoint ne lance qu'une fois l'installation (ou la mise à jour) terminée.
+echo "Waiting for the GLPI installation..."
+# config_db.php is written as soon as the installation starts: wait for Apache instead,
+# which the entrypoint only starts once the installation (or upgrade) is done.
 until docker compose exec -T glpi pgrep -x apache2 >/dev/null 2>&1; do
   sleep 5
 done
 
 docker compose exec -T -u www-data "${env_args[@]}" glpi php < glpi/init/configure.php
 
-# ------------------------------------------- Utilisateur SQL en lecture seule
-# Pour lire en masse l'historique et le feedback (constitution de la mémoire).
-# Les écritures passent toujours par l'API REST (notifications, historique, droits).
+# ------------------------------------------------------- Read-only SQL user
+# Bulk reads of the ticket history and feedback (to build the memory).
+# Writes always go through the REST API (notifications, history, rights).
 if [ -n "${GLPI_DB_RO_PASSWORD:-}" ]; then
   ro_user="${GLPI_DB_RO_USER:-memoire_ro}"
   ro_pass="${GLPI_DB_RO_PASSWORD//\'/\'\'}"
@@ -45,7 +46,7 @@ if [ -n "${GLPI_DB_RO_PASSWORD:-}" ]; then
     sql+=" GRANT SELECT ON glpi.${table} TO '${ro_user}'@'%';"
   done
   docker compose exec -T -e MYSQL_PWD="$MARIADB_ROOT_PASSWORD" db mariadb --skip-ssl -uroot -e "$sql"
-  echo "  - utilisateur SQL « ${ro_user} » : SELECT sur 7 tables GLPI (db:3306)"
+  echo "  - SQL user '${ro_user}': SELECT on 7 GLPI tables (db:3306)"
 else
-  echo "  - GLPI_DB_RO_PASSWORD vide : utilisateur SQL en lecture seule non créé"
+  echo "  - GLPI_DB_RO_PASSWORD is empty: read-only SQL user not created"
 fi

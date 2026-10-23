@@ -36,5 +36,5 @@ class SearchRequest(BaseModel):
 
 class SearchHit(BaseModel):
     knowledge: KnowledgeRead
-    # Similarité cosinus dans [-1, 1] (1 = identique).
+    # Cosine similarity in [-1, 1] (1 = identical).
     similarity: float

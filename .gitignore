@@ -2,8 +2,10 @@
 annuaire.ldif
 .playwright-mcp/
 rien.txt
+docs/superpowers/
+.superpowers/
 
-# Documents PDF (trop lourds pour le dépôt)
+# PDF documents (too heavy for the repository)
 doc/*.pdf
 
 opencode.json

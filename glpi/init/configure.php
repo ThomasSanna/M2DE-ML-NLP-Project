@@ -1,14 +1,14 @@
 <?php
 
 /**
- * Configuration reproductible de GLPI pour le PoC.
+ * Reproducible GLPI configuration for the PoC.
  *
- * Exécuté DANS le conteneur GLPI (via scripts/configure-glpi.sh), avec le noyau
- * GLPI chargé : les mots de passe (bind LDAP, SMTP) sont donc chiffrés par GLPI
- * lui-même (GLPIKey), exactement comme via l'interface.
+ * Run INSIDE the GLPI container (via scripts/configure-glpi.sh), with the GLPI
+ * kernel loaded: passwords (LDAP bind, SMTP) are therefore encrypted by GLPI
+ * itself (GLPIKey), exactly as through the interface.
  *
- * Idempotent : peut être relancé autant de fois que voulu. Une variable
- * d'environnement vide = réglage laissé tel quel (on n'écrase jamais avec du vide).
+ * Idempotent: can be rerun as many times as needed. An empty environment
+ * variable = setting left as is (an existing value is never overwritten with an empty one).
  */
 
 require '/var/www/glpi/vendor/autoload.php';
@@ -16,18 +16,18 @@ require '/var/www/glpi/vendor/autoload.php';
 $kernel = new \Glpi\Kernel\Kernel('production');
 $kernel->boot();
 
-// Le gestionnaire d'erreurs de GLPI affiche les exceptions mais laisse le code de
-// sortie à 0 : on force un échec visible pour le script appelant.
+// GLPI's error handler prints exceptions but leaves the exit code at 0: force a
+// visible failure for the calling script.
 set_exception_handler(static function (Throwable $e): void {
-    fwrite(STDERR, 'ERREUR : ' . $e->getMessage() . "\n");
+    fwrite(STDERR, 'ERROR: ' . $e->getMessage() . "\n");
     exit(1);
 });
 
 global $DB;
 
 $_SESSION['glpi_currenttime'] ??= date('Y-m-d H:i:s');
-// Contexte « cron » CLI : sans utilisateur connecté, Entity::update() filtre
-// sinon tous les champs faute de droits.
+// CLI "cron" context: without a logged-in user, Entity::update() otherwise
+// filters out every field for lack of rights.
 $_SESSION['glpicronuserrunning'] = 'poc-configure';
 
 function env(string $name, ?string $default = null): ?string
@@ -41,23 +41,23 @@ function step(string $message): void
     echo "  - {$message}\n";
 }
 
-/** N'écrit que les valeurs non nulles. */
+/** Only writes non-null values. */
 function setCoreConfig(array $values): void
 {
     Config::setConfigurationValues('core', array_filter($values, static fn($v) => $v !== null));
 }
 
-// ------------------------------------------------------------------ Général
-echo "[1/7] Général\n";
+// ------------------------------------------------------------------ General
+echo "[1/7] General\n";
 setCoreConfig([
-    // URL utilisée dans les liens des mails (http://localhost sans port = liens cassés)
+    // URL used in the links of the mails (http://localhost without a port = broken links)
     'url_base'     => env('GLPI_URL_BASE', 'http://localhost:8080'),
     'url_base_api' => env('GLPI_URL_BASE', 'http://localhost:8080') . '/apirest.php',
 ]);
 step('url_base = ' . env('GLPI_URL_BASE', 'http://localhost:8080'));
 
 // ---------------------------------------------------------------------- API
-echo "[2/7] API REST\n";
+echo "[2/7] REST API\n";
 setCoreConfig([
     'enable_api'                      => 1,
     'enable_api_login_credentials'    => 1,
@@ -68,19 +68,19 @@ $DB->update('glpi_apiclients', [
     'ipv4_range_start' => ip2long(env('GLPI_API_IP_START', '172.16.0.0')),
     'ipv4_range_end'   => ip2long(env('GLPI_API_IP_END', '172.31.255.255')),
 ], ['id' => 1]);
-step('API activée, client #1 : ' . env('GLPI_API_IP_START', '172.16.0.0') . ' → ' . env('GLPI_API_IP_END', '172.31.255.255'));
+step('API enabled, client #1: ' . env('GLPI_API_IP_START', '172.16.0.0') . ' → ' . env('GLPI_API_IP_END', '172.31.255.255'));
 if (env('GLPI_APP_TOKEN') !== null) {
-    // APIClient::prepareInputForUpdate chiffre le jeton (GLPIKey)
+    // APIClient::prepareInputForUpdate encrypts the token (GLPIKey)
     (new APIClient())->update(['id' => 1, 'app_token' => env('GLPI_APP_TOKEN')]);
-    step('App-Token du client #1 défini (GLPI_APP_TOKEN)');
+    step('App-Token of client #1 set (GLPI_APP_TOKEN)');
 }
 
 // --------------------------------------------------------------------- LDAP
-echo "[3/7] Annuaire LDAP\n";
+echo "[3/7] LDAP directory\n";
 $ldapName  = 'Univ Corse LDAP';
 $ldapInput = [
     'name'            => $ldapName,
-    'host'            => env('LDAP_HOST', 'ldap'),     // nom du service Docker
+    'host'            => env('LDAP_HOST', 'ldap'),     // Docker service name
     'port'            => (int) env('LDAP_PORT', '389'),
     'basedn'          => env('LDAP_BASE_DN', 'dc=example,dc=org'),
     'use_bind'        => 1,
@@ -90,7 +90,7 @@ $ldapInput = [
     'login_field'     => 'uid',
     'sync_field'      => 'entryuuid',
     'realname_field'  => 'sn',
-    'firstname_field' => 'givenname',   // en minuscules, sinon le prénom reste vide
+    'firstname_field' => 'givenname',   // lowercase, otherwise the first name stays empty
     'email1_field'    => 'mail',
     'is_default'      => 1,
     'is_active'       => 1,
@@ -98,20 +98,20 @@ $ldapInput = [
 $authldap = new AuthLDAP();
 if ($authldap->getFromDBByCrit(['name' => $ldapName])) {
     $authldap->update(['id' => $authldap->getID()] + $ldapInput);
-    step("source « {$ldapName} » mise à jour (id {$authldap->getID()})");
+    step("source \"{$ldapName}\" updated (id {$authldap->getID()})");
 } else {
     $authldap->add($ldapInput);
-    step("source « {$ldapName} » créée (id {$authldap->getID()})");
+    step("source \"{$ldapName}\" created (id {$authldap->getID()})");
 }
 setCoreConfig([
-    'is_users_auto_add'     => 1,   // import auto à la 1re connexion LDAP
-    'use_noright_users_add' => 1,   // même sans habilitation préalable
+    'is_users_auto_add'     => 1,   // automatic import on first LDAP login
+    'use_noright_users_add' => 1,   // even without prior authorization
 ]);
 $ok = AuthLDAP::testLDAPConnection($authldap->getID());
-step('test de connexion LDAP : ' . ($ok ? 'OK' : 'ÉCHEC'));
+step('LDAP connection test: ' . ($ok ? 'OK' : 'FAILED'));
 
 // ------------------------------------------------------ Notifications / SMTP
-echo "[4/7] Notifications e-mail\n";
+echo "[4/7] E-mail notifications\n";
 setCoreConfig([
     'use_notifications'     => 1,
     'notifications_mailing' => 1,
@@ -127,48 +127,48 @@ setCoreConfig([
 ]);
 if (env('SMTP_HOST') !== null) {
     setCoreConfig([
-        'smtp_mode'              => 1,   // SMTP (TLS négocié automatiquement sur 587)
+        'smtp_mode'              => 1,   // SMTP (TLS negotiated automatically on 587)
         'smtp_host'              => env('SMTP_HOST'),
         'smtp_port'              => (int) env('SMTP_PORT', '587'),
         'smtp_username'          => env('SMTP_USER'),
-        'smtp_passwd'            => env('SMTP_PASSWORD'),   // null = mot de passe existant conservé
+        'smtp_passwd'            => env('SMTP_PASSWORD'),   // null = existing password kept
         'smtp_check_certificate' => 1,
         'smtp_max_retries'       => 5,
         'smtp_retry_time'        => 5,
     ]);
-    step('SMTP : ' . env('SMTP_HOST') . ':' . env('SMTP_PORT', '587')
-        . (env('SMTP_PASSWORD') === null ? ' (mot de passe inchangé)' : ' (mot de passe mis à jour)'));
+    step('SMTP: ' . env('SMTP_HOST') . ':' . env('SMTP_PORT', '587')
+        . (env('SMTP_PASSWORD') === null ? ' (password unchanged)' : ' (password updated)'));
 } else {
-    step('SMTP_HOST vide : configuration SMTP laissée telle quelle');
+    step('SMTP_HOST empty: SMTP configuration left as is');
 }
 
-// ------------------------------------------- Feedback : enquête de satisfaction
-echo "[5/7] Enquête de satisfaction (source du feedback w1)\n";
+// ------------------------------------------- Feedback: satisfaction survey
+echo "[5/7] Satisfaction survey (source of the w1 feedback)\n";
 $entity = new Entity();
 $entity->update([
     'id'                        => 0,
-    'inquest_config'            => 1,   // enquête interne GLPI
-    'inquest_rate'              => (int) env('SURVEY_RATE', '100'),   // % de tickets clos enquêtés
-    'inquest_delay'             => 0,   // enquête créée dès la clôture
-    'inquest_duration'          => 0,   // pas d'expiration
-    'inquest_max_rate'          => 5,   // note de 0 à 5
+    'inquest_config'            => 1,   // GLPI internal survey
+    'inquest_rate'              => (int) env('SURVEY_RATE', '100'),   // % of closed tickets surveyed
+    'inquest_delay'             => 0,   // survey created as soon as the ticket is closed
+    'inquest_duration'          => 0,   // no expiration
+    'inquest_max_rate'          => 5,   // score from 0 to 5
     'inquest_default_rate'      => 3,
-    // commentaire obligatoire si note <= seuil : alimente la file « à réviser »
+    // comment mandatory if score <= threshold: feeds the "to review" queue
     'inquest_mandatory_comment' => (int) env('SURVEY_COMMENT_THRESHOLD', '2'),
-    // tickets résolus non approuvés clos automatiquement → l'enquête part quand même
+    // solved tickets left unapproved are closed automatically → the survey is still sent
     'autoclose_delay'           => (int) env('TICKET_AUTOCLOSE_DAYS', '7'),
 ]);
-step('enquête : ' . env('SURVEY_RATE', '100') . ' % des tickets clos, note 0–5, commentaire obligatoire si ≤ '
-    . env('SURVEY_COMMENT_THRESHOLD', '2') . ', clôture auto après ' . env('TICKET_AUTOCLOSE_DAYS', '7') . ' j');
+step('survey: ' . env('SURVEY_RATE', '100') . ' % of closed tickets, score 0–5, comment mandatory if ≤ '
+    . env('SURVEY_COMMENT_THRESHOLD', '2') . ', auto-close after ' . env('TICKET_AUTOCLOSE_DAYS', '7') . ' d');
 
 $DB->update('glpi_notifications', ['is_active' => 1], [
     'itemtype' => 'Ticket',
     'event'    => ['new', 'add_followup', 'solved', 'closed', 'satisfaction', 'replysatisfaction'],
 ]);
-step('notifications ticket actives : nouveau, suivi, résolu, clos, enquête, réponse à l\'enquête');
+step('ticket notifications enabled: new, follow-up, solved, closed, survey, survey reply');
 
-// Tâches exécutées par le cron CLI du conteneur (mode 2) au lieu du mode
-// « interne » qui n'avance que lorsqu'un utilisateur navigue dans GLPI.
+// Tasks run by the container's CLI cron (mode 2) instead of the "internal"
+// mode, which only advances when a user browses GLPI.
 $crons = [
     ['QueuedNotification', 'queuednotification', 60],
     ['Ticket', 'closeticket', 3600],
@@ -181,17 +181,17 @@ foreach ($crons as [$itemtype, $name, $frequency]) {
         'frequency' => $frequency,
     ], ['itemtype' => $itemtype, 'name' => $name]);
 }
-step('cron CLI : envoi des mails (1 min), clôture auto et création d\'enquêtes (1 h)');
-// Si l'horloge de la machine a reculé (veille, resynchro NTP), un `lastrun` dans le futur
-// bloque la tâche jusqu'à cette date : mails et webhooks ne partent plus.
+step('CLI cron: mail sending (1 min), auto-close and survey creation (1 h)');
+// If the machine clock went back (sleep, NTP resync), a `lastrun` in the future blocks
+// the task until that date: mails and webhooks are no longer sent.
 $DB->update('glpi_crontasks', ['lastrun' => null], [new \Glpi\DBAL\QueryExpression('`lastrun` > NOW()')]);
 
-// ------------------------------------------------- Utilisateur « bot » de l'API
-echo "[6/7] Utilisateur bot (API mémoire)\n";
+// ------------------------------------------------------------ API bot user
+echo "[6/7] Bot user (memory API)\n";
 $botName = env('GLPI_BOT_USER', 'chatbot');
 $bot     = new User();
 if (!$bot->getFromDBbyName($botName)) {
-    $password = bin2hex(random_bytes(24));   // jamais utilisé : le bot s'authentifie par jeton
+    $password = bin2hex(random_bytes(24));   // never used: the bot authenticates with a token
     $bot->add([
         'name'      => $botName,
         'realname'  => 'Assistant IA',
@@ -200,11 +200,11 @@ if (!$bot->getFromDBbyName($botName)) {
         'authtype'  => Auth::DB_GLPI,
         'is_active' => 1,
     ]);
-    step("utilisateur « {$botName} » créé (id {$bot->getID()})");
+    step("user \"{$botName}\" created (id {$bot->getID()})");
 } else {
-    step("utilisateur « {$botName} » existant (id {$bot->getID()})");
+    step("user \"{$botName}\" already exists (id {$bot->getID()})");
 }
-// Profil Technicien sur toute l'arborescence : lire les tickets et y ajouter des suivis.
+// Technician profile on the whole entity tree: read tickets and add followups to them.
 $technician = new Profile();
 $technician->getFromDBByCrit(['name' => 'Technician']);
 $profileUser = new Profile_User();
@@ -218,23 +218,23 @@ if (!$profileUser->getFromDBByCrit([
         'is_recursive' => 1,
     ]);
 }
-// Profil par défaut de la session API (sinon Self-Service, qui ne voit que ses tickets).
+// Default profile of the API session (otherwise Self-Service, which only sees its own tickets).
 $DB->update('glpi_users', ['profiles_id' => $technician->getID(), 'entities_id' => 0], ['id' => $bot->getID()]);
 if (env('GLPI_USER_TOKEN') !== null) {
-    // User::update() ignore api_token : on écrit directement la valeur chiffrée, comme GLPI.
+    // User::update() ignores api_token: write the encrypted value directly, as GLPI does.
     $DB->update('glpi_users', [
         'api_token'      => (new GLPIKey())->encrypt(env('GLPI_USER_TOKEN')),
         'api_token_date' => $_SESSION['glpi_currenttime'],
     ], ['id' => $bot->getID()]);
-    step('User-Token défini (GLPI_USER_TOKEN), profil Technician par défaut');
+    step('User-Token set (GLPI_USER_TOKEN), Technician as default profile');
 } else {
-    step('GLPI_USER_TOKEN vide : pas de jeton API pour le bot');
+    step('GLPI_USER_TOKEN empty: no API token for the bot');
 }
 
-// --------------------------------------------------- Webhook « nouveau ticket »
-echo "[7/7] Webhook nouveau ticket → API mémoire\n";
+// ------------------------------------------------------- New ticket webhook
+echo "[7/7] New ticket webhook → memory API\n";
 if (env('GLPI_WEBHOOK_SECRET') === null) {
-    step('GLPI_WEBHOOK_SECRET vide : webhook non créé (l\'API ne pourrait pas vérifier la signature)');
+    step('GLPI_WEBHOOK_SECRET empty: webhook not created (the API could not verify the signature)');
 } else {
     $webhookName  = 'API mémoire — nouveau ticket';
     $webhookInput = [
@@ -243,10 +243,10 @@ if (env('GLPI_WEBHOOK_SECRET') === null) {
         'is_recursive'        => 1,
         'itemtype'            => 'Ticket',
         'event'               => 'new',
-        // L'URL doit être autorisée par GLPI_SERVERSIDE_URL_ALLOWLIST (glpi/config/local_define.php)
+        // The URL must be allowed by GLPI_SERVERSIDE_URL_ALLOWLIST (glpi/config/local_define.php)
         'url'                 => env('GLPI_WEBHOOK_URL', 'http://api:8000/api/v1/ingest/ticket'),
         'http_method'         => 'post',
-        'secret'              => env('GLPI_WEBHOOK_SECRET'),   // chiffré par Webhook::handleInput
+        'secret'              => env('GLPI_WEBHOOK_SECRET'),   // encrypted by Webhook::handleInput
         'use_default_payload' => 1,
         'use_cra_challenge'   => 0,
         'sent_try'            => 5,
@@ -256,14 +256,14 @@ if (env('GLPI_WEBHOOK_SECRET') === null) {
     $webhook = new Webhook();
     if ($webhook->getFromDBByCrit(['name' => $webhookName])) {
         $webhook->update(['id' => $webhook->getID()] + $webhookInput);
-        step("webhook mis à jour (id {$webhook->getID()}) : {$webhookInput['url']}");
+        step("webhook updated (id {$webhook->getID()}): {$webhookInput['url']}");
     } else {
         $webhook->add($webhookInput);
-        step("webhook créé (id {$webhook->getID()}) : {$webhookInput['url']}");
+        step("webhook created (id {$webhook->getID()}): {$webhookInput['url']}");
     }
     if (!Toolbox::isUrlSafe($webhookInput['url'])) {
-        step('ATTENTION : URL refusée par GLPI_SERVERSIDE_URL_ALLOWLIST, le webhook ne partira pas');
+        step('WARNING: URL rejected by GLPI_SERVERSIDE_URL_ALLOWLIST, the webhook will not be sent');
     }
 }
 
-echo "Configuration GLPI terminée.\n";
+echo "GLPI configuration done.\n";

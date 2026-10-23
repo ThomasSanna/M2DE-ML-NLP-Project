@@ -1,43 +1,69 @@
-import json
-from collections.abc import AsyncIterator
-from typing import Protocol
+from dataclasses import dataclass
+from typing import Literal, Protocol, TypedDict
 
 import httpx
 
 
 class LLMError(RuntimeError):
-    """Le serveur LLM est injoignable ou a renvoyé un flux inattendu."""
+    """The language model server is unreachable or returned an unexpected response."""
+
+
+class ChatMessage(TypedDict):
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+@dataclass(frozen=True)
+class Completion:
+    content: str
+    finish_reason: str
+    prompt_tokens: int
+    completion_tokens: int
 
 
 class ChatModel(Protocol):
-    def stream(self, messages: list[dict[str, str]]) -> AsyncIterator[str]: ...
+    async def complete(
+        self, messages: list[ChatMessage], schema: dict[str, object]
+    ) -> Completion: ...
 
 
-class OpenAIChatClient:
-    """Client streaming de `POST /v1/chat/completions` (format OpenAI, `stream: true`).
+class TGIChatClient:
+    """Client for the university LLM, served by Hugging Face TGI 3.2 (`POST /v1/chat/completions`).
 
-    C'est l'API du vLLM de l'université (google/gemma3-12b-it). vLLM envoie un événement
-    SSE par token généré : chaque `delta.content` non vide est renvoyé tel quel.
+    The output is constrained by a JSON grammar through `response_format`
+    `{"type": "json", "value": schema}`: TGI rejects the OpenAI `json_schema` form.
     """
 
-    def __init__(self, http: httpx.AsyncClient, model: str) -> None:
+    def __init__(self, http: httpx.AsyncClient, model: str, max_tokens: int) -> None:
         self._http = http
         self._model = model
+        self._max_tokens = max_tokens
 
-    async def stream(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
-        body = {"model": self._model, "messages": messages, "stream": True}
+    async def complete(self, messages: list[ChatMessage], schema: dict[str, object]) -> Completion:
         try:
-            async with self._http.stream("POST", "chat/completions", json=body) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data = line.removeprefix("data:").strip()
-                    if data == "[DONE]":
-                        return
-                    choices = json.loads(data)["choices"]
-                    delta = choices[0]["delta"].get("content") if choices else None
-                    if delta:
-                        yield delta
-        except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
-            raise LLMError(f"Échec de l'appel au serveur LLM : {exc!r}") from exc
+            response = await self._http.post(
+                "chat/completions",
+                json={
+                    "model": self._model,
+                    "messages": messages,
+                    "max_tokens": self._max_tokens,
+                    "temperature": 0,
+                    "response_format": {"type": "json", "value": schema},
+                },
+            )
+            response.raise_for_status()
+            body = response.json()
+            choice = body["choices"][0]
+            content = choice["message"]["content"]
+            completion = Completion(
+                content=content,
+                finish_reason=choice["finish_reason"],
+                prompt_tokens=body["usage"]["prompt_tokens"],
+                completion_tokens=body["usage"]["completion_tokens"],
+            )
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+            raise LLMError(f"Language model call failed: {exc!r}") from exc
+
+        if not isinstance(content, str):
+            raise LLMError("Language model returned no text content")
+        return completion
