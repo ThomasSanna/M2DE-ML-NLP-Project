@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from app.services.llm import ChatMessage
 from app.services.websearch import WebResult
 
-# Caps keep the prompt near 2800 tokens with 3 memory entries and 2 searches, under the
+# Caps keep the prompt near 3000 tokens with 3 memory entries and 2 searches, under the
 # 4000-token input limit of the 4B server.
 MEMORY_ANSWER_MAX_CHARS = 800
 THREAD_MAX_CHARS = 2000
@@ -37,10 +37,11 @@ Applique la première règle qui correspond :
 3. Sinon, cherche sur le web avec les mots-clés précis de la demande, par exemple \
 « horaires bibliothèque Université de Corse ».
 
-Ta réponse est dans la langue de l'utilisateur, concise et concrète. \
-Chaque information vient d'une entrée [K] ou d'un résultat [W] : cite-les entre crochets \
-([K1], [W2]) et liste-les dans "sources". Si aucune source ne répond à la demande, \
-dis-le clairement : ne devine jamais une URL, une date, une procédure ni un contact.
+Ta réponse est concise et concrète, dans la langue du dernier message de l'utilisateur : \
+s'il écrit en anglais, réponds en anglais. Chaque information vient d'une entrée [K] \
+ou d'un résultat [W] : cite-les entre crochets ([K1], [W2]) et liste-les dans "sources". \
+Si aucune source ne répond à la demande, dis-le clairement : ne devine jamais une URL, \
+une date, une procédure ni un contact.
 
 À chaque tour, réponds par un seul objet JSON :
 - {"action": "search", "query": "<requête web>"} pour chercher sur le web ;
