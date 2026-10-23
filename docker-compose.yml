@@ -35,6 +35,10 @@ x-api-env: &api-env
   EXA_NUM_RESULTS: "${EXA_NUM_RESULTS:-3}"
   EXA_TIMEOUT_SECONDS: "${EXA_TIMEOUT_SECONDS:-15}"
   AGENT_MAX_STEPS: "${AGENT_MAX_STEPS:-3}"
+  GLPI_API_URL: "http://glpi/apirest.php/"
+  GLPI_USER_TOKEN: "${GLPI_USER_TOKEN:-}"
+  GLPI_APP_TOKEN: "${GLPI_APP_TOKEN:-}"
+  GLPI_FOLLOWUP_PRIVATE: "${GLPI_FOLLOWUP_PRIVATE:-false}"
 
 services:
   # ---------------------------------------------------------------- LDAP
@@ -115,6 +119,8 @@ services:
       - glpi_config:/var/glpi/config
       - glpi_files:/var/glpi/files
       - glpi_marketplace:/var/glpi/marketplace
+      # Allowlist des URL appelées par GLPI (webhook vers l'API mémoire)
+      - ./glpi/config/local_define.php:/var/www/glpi/config/local_define.php:ro
     ports:
       - "8080:80"
     networks:

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.services.embeddings import Embedder
+from app.services.glpi import Glpi
 from app.services.llm import ChatModel
 from app.services.reranker import Reranker
 from app.services.websearch import WebSearch
@@ -38,12 +39,20 @@ def get_web_search(request: Request) -> WebSearch | None:
     return request.app.state.web_search
 
 
+def get_glpi(request: Request) -> Glpi:
+    glpi = request.app.state.glpi
+    if glpi is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "GLPI_USER_TOKEN is not set")
+    return glpi
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 EmbedderDep = Annotated[Embedder, Depends(get_embedder)]
 RerankerDep = Annotated[Reranker, Depends(get_reranker)]
 ChatModelDep = Annotated[ChatModel, Depends(get_chat_model)]
 WebSearchDep = Annotated[WebSearch | None, Depends(get_web_search)]
+GlpiDep = Annotated[Glpi, Depends(get_glpi)]
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 

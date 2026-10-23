@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -6,11 +7,13 @@ import httpx
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-from app.api.routes import answer, health, ingest, memory
+from app.api.routes import answer, health, ingest, memory, tickets
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.db.session import create_engine, create_sessionmaker
 from app.services.embeddings import EmbeddingError, OpenAIEmbeddingClient
+from app.services.glpi import GlpiError, GlpiRestClient
+from app.services.glpi_worker import GlpiEventWorker
 from app.services.llm import LLMError, TGIChatClient
 from app.services.reranker import HttpRerankerClient, RerankerError
 from app.services.websearch import EXA_BASE_URL, ExaClient
@@ -68,6 +71,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.web_search = ExaClient(
                 exa_http, settings.exa_num_results, settings.exa_include_domains
             )
+        if settings.glpi_user_token is None:
+            logger.warning("GLPI_USER_TOKEN is empty: answering GLPI tickets is disabled")
+            app.state.glpi = None
+        else:
+            glpi_http = await stack.enter_async_context(
+                httpx.AsyncClient(base_url=str(settings.glpi_api_url), timeout=30.0)
+            )
+            app.state.glpi = GlpiRestClient(
+                glpi_http,
+                settings.glpi_user_token.get_secret_value(),
+                settings.glpi_app_token.get_secret_value() if settings.glpi_app_token else None,
+            )
+            worker = GlpiEventWorker(
+                app.state.sessionmaker,
+                app.state.embedder,
+                app.state.reranker,
+                app.state.chat_model,
+                app.state.web_search,
+                app.state.glpi,
+                settings,
+            )
+            # Registered after the clients: cancelled before they close. Also keeps the only
+            # strong reference to the task.
+            stack.callback(asyncio.create_task(worker.run()).cancel)
         yield
 
     await engine.dispose()
@@ -100,9 +127,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api_v1.include_router(ingest.router)
     api_v1.include_router(memory.router)
     api_v1.include_router(answer.router)
+    api_v1.include_router(tickets.router)
     app.include_router(health.router)
     app.include_router(api_v1)
     app.add_exception_handler(EmbeddingError, _bad_gateway("Embeddings server unavailable"))
     app.add_exception_handler(RerankerError, _bad_gateway("Reranker unavailable"))
     app.add_exception_handler(LLMError, _bad_gateway("Language model unavailable"))
+    app.add_exception_handler(GlpiError, _bad_gateway("GLPI unavailable"))
     return app

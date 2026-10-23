@@ -85,11 +85,21 @@ class Settings(DatabaseSettings):
     # Model calls per answer; the last one is forced to answer.
     agent_max_steps: int = Field(default=3, ge=1)
 
+    # GLPI REST API (Docker service name). Without a User-Token, the routes that write to
+    # GLPI return 503.
+    glpi_api_url: AnyHttpUrl = AnyHttpUrl("http://glpi/apirest.php/")
+    glpi_user_token: SecretStr | None = None
+    glpi_app_token: SecretStr | None = None
+    # Private followup = proposal a technician validates; public = sent directly (email).
+    glpi_followup_private: bool = False
+
     @field_validator(
         "glpi_webhook_secret",
         "embedding_api_key",
         "embedding_instruction",
         "exa_api_key",
+        "glpi_user_token",
+        "glpi_app_token",
         mode="before",
     )
     @classmethod

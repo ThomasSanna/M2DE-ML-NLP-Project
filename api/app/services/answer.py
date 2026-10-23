@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.schemas.answer import (
+    THREAD_MESSAGE_MAX_CHARS,
     AnswerRequest,
     AnswerResult,
     Citation,
@@ -15,8 +16,9 @@ from app.schemas.answer import (
 )
 from app.services import memory
 from app.services.agent import run_agent
-from app.services.agent_prompt import initial_messages, render_memory, render_thread
+from app.services.agent_prompt import initial_messages, render_memory, render_thread, strip_refs
 from app.services.embeddings import Embedder
+from app.services.glpi import Author, GlpiTicket
 from app.services.llm import ChatModel
 from app.services.reranker import Reranker
 from app.services.websearch import WebSearch
@@ -84,6 +86,44 @@ async def answer_thread(
         steps=run.steps,
         usage=Usage(prompt_tokens=run.prompt_tokens, completion_tokens=run.completion_tokens),
     )
+
+
+async def answer_ticket(
+    session: AsyncSession,
+    embedder: Embedder,
+    reranker: Reranker,
+    model: ChatModel,
+    web_search: WebSearch | None,
+    settings: Settings,
+    ticket: GlpiTicket,
+) -> AnswerResult | None:
+    """Answer a GLPI ticket's thread; None when the support side wrote last."""
+    messages = [
+        ThreadMessage(
+            role="user", content=f"{ticket.title}\n\n{ticket.content}"[:THREAD_MESSAGE_MAX_CHARS]
+        )
+    ] + [
+        ThreadMessage(
+            role="user" if followup.author is Author.REQUESTER else "assistant",
+            content=followup.content[:THREAD_MESSAGE_MAX_CHARS],
+        )
+        for followup in ticket.followups
+    ]
+    if messages[-1].role != "user":
+        return None
+    request = AnswerRequest(messages=messages)
+    return await answer_thread(session, embedder, reranker, model, web_search, settings, request)
+
+
+def followup_text(result: AnswerResult) -> str:
+    """The answer as the requester reads it: refs mean nothing to them, web pages can help."""
+    text = strip_refs(result.answer)
+    # Keyed by URL: two searches can return the same page under two refs.
+    pages = {s.url: s.title for s in result.sources if isinstance(s, WebCitation)}
+    if not pages:
+        return text
+    lines = "\n".join(f"- {title} : {url}" for url, title in pages.items())
+    return f"{text}\n\nSources :\n{lines}"
 
 
 def _retrieval_query(messages: list[ThreadMessage]) -> str:
