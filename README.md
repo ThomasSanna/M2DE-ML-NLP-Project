@@ -64,7 +64,7 @@ Compose runs it as three services: `postgres` (PostgreSQL 17 + pgvector), `migra
 | `GET` | `/api/v1/memory/knowledge/{id}` | `X-API-Key` | read a knowledge entry |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | top-k cosine similarity search over `active` entries |
 | `POST` | `/api/v1/answer` | `X-API-Key` | answer a ticket thread from memory and web search, with sources |
-| `POST` | `/api/v1/tickets/{id}/answer/stream` | `X-API-Key` | answer a GLPI ticket and post the answer as a followup (SSE) |
+| `POST` | `/api/v1/tickets/{id}/answer/stream` | `X-API-Key` | answer a GLPI ticket's thread and post the answer as a followup (SSE) |
 
 When `GLPI_WEBHOOK_SECRET` is set, the `X-GLPI-signature` header is verified (`HMAC-SHA256(body + X-GLPI-timestamp, secret)`, GLPI 11 format). When it is empty, every request is accepted and a warning is logged at startup.
 
@@ -134,7 +134,7 @@ docker exec poc-ldap sh -c 'ldapsearch -x -H ldap://localhost \
 - the "Univ Corse LDAP" directory: server `ldap`, base `dc=example,dc=org`, login field `uid`, bind `cn=admin,dc=example,dc=org`;
 - SMTP relay, notifications, ticket auto-close and the satisfaction survey (`MAIL_*`, `SMTP_*`, `SURVEY_*`, `TICKET_AUTOCLOSE_DAYS`);
 - the bot user `GLPI_BOT_USER` (default `chatbot`, Technician profile) with the User-Token `GLPI_USER_TOKEN`;
-- the "new ticket" webhook to the memory API, signed with `GLPI_WEBHOOK_SECRET` (not created when the secret is empty);
+- the "new ticket" and "new followup" webhooks to the memory API, signed with `GLPI_WEBHOOK_SECRET` (not created when the secret is empty);
 - a read-only MariaDB user `GLPI_DB_RO_USER` (`SELECT` on the ticket, followup, solution, survey, category and user tables), created only when `GLPI_DB_RO_PASSWORD` is set.
 
 An empty variable skips the step or leaves the corresponding setting unchanged. Generate the tokens with `openssl rand -hex 20` (`openssl rand -hex 32` for the webhook secret).
@@ -143,10 +143,10 @@ An empty variable skips the step or leaves the corresponding setting unchanged. 
 
 | Direction | Mechanism | Detail |
 |---|---|---|
-| GLPI → API | Webhook `Ticket / New` | `POST http://api:8000/api/v1/ingest/ticket`, HMAC-signed. Queued by GLPI and sent by the `queuedwebhook` task (within 60 s). An API worker then answers the ticket in a followup, as the SSE route does. |
+| GLPI → API | Webhooks `Ticket / New` and `ITILFollowup / New` | `POST http://api:8000/api/v1/ingest/ticket`, HMAC-signed. Queued by GLPI and sent by the `queuedwebhook` task (within 60 s). An API worker then answers the ticket or the requester's followup in a followup, as the SSE route does, until a technician writes a public followup. |
 | API → GLPI (read/write) | REST API `/apirest.php` as the bot user | `User-Token` + `App-Token`. Writes go through the REST API only, so GLPI keeps its notifications, history and rights. |
 | API → GLPI database (bulk read) | MariaDB user `memoire_ro` | `SELECT` only (`db:3306`). Never any SQL write. |
-| Client → API → GLPI | `POST /api/v1/tickets/{id}/answer/stream` (SSE) | Reads the ticket, answers it, then posts the answer as a followup through the REST API. |
+| Client → API → GLPI | `POST /api/v1/tickets/{id}/answer/stream` (SSE) | Reads the ticket and its public followups, answers the thread, then posts the answer as a followup through the REST API. |
 
 GLPI rejects any server-side URL with a port by default. `glpi/config/local_define.php` (mounted into the container) allows `http://api:8000/api/v1/`. It **replaces** the default allowlist, so external RSS feeds and calendars are blocked.
 

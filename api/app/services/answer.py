@@ -18,7 +18,7 @@ from app.services import memory
 from app.services.agent import run_agent
 from app.services.agent_prompt import initial_messages, render_memory, render_thread, strip_refs
 from app.services.embeddings import Embedder
-from app.services.glpi import Glpi
+from app.services.glpi import Author, GlpiTicket
 from app.services.llm import ChatModel
 from app.services.reranker import Reranker
 from app.services.websearch import WebSearch
@@ -94,17 +94,24 @@ async def answer_ticket(
     reranker: Reranker,
     model: ChatModel,
     web_search: WebSearch | None,
-    glpi: Glpi,
     settings: Settings,
-    ticket_id: int,
+    ticket: GlpiTicket,
 ) -> AnswerResult | None:
-    """Answer a GLPI ticket from its title and description; None if it does not exist."""
-    ticket = await glpi.get_ticket(ticket_id)
-    if ticket is None:
+    """Answer a GLPI ticket's thread; None when the support side wrote last."""
+    messages = [
+        ThreadMessage(
+            role="user", content=f"{ticket.title}\n\n{ticket.content}"[:THREAD_MESSAGE_MAX_CHARS]
+        )
+    ] + [
+        ThreadMessage(
+            role="user" if followup.author is Author.REQUESTER else "assistant",
+            content=followup.content[:THREAD_MESSAGE_MAX_CHARS],
+        )
+        for followup in ticket.followups
+    ]
+    if messages[-1].role != "user":
         return None
-    # A one-message thread: the ticket's followups are not read yet.
-    content = f"{ticket.title}\n\n{ticket.content}"[:THREAD_MESSAGE_MAX_CHARS]
-    request = AnswerRequest(messages=[ThreadMessage(role="user", content=content)])
+    request = AnswerRequest(messages=messages)
     return await answer_thread(session, embedder, reranker, model, web_search, settings, request)
 
 

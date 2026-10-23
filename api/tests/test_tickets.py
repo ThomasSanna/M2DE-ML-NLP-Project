@@ -1,9 +1,11 @@
 import json
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_chat_model, get_embedder, get_glpi, get_reranker, get_web_search
+from app.services.glpi import Author, GlpiFollowup
 from app.services.websearch import WebResult
 from tests.conftest import (
     TICKET,
@@ -52,6 +54,38 @@ def test_ticket_answer_streams_answer_then_posts_followup(
     prompt = model.calls[0][0][1]["content"]
     assert TICKET.title in prompt
     assert TICKET.content in prompt
+
+
+def test_ticket_answer_reads_the_followups_as_the_thread(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    followups = (
+        GlpiFollowup(1, Author.BOT, "Supprimez le profil"),
+        GlpiFollowup(2, Author.REQUESTER, "Toujours pas"),
+    )
+    glpi = FakeGlpi(replace(TICKET, followups=followups))
+    model = ScriptedChatModel([json.dumps({"action": "answer", "answer": "Réinstallez-le"})])
+    override(client, get_glpi, glpi)
+    override(client, get_chat_model, model)
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 200, response.text
+    prompt = model.calls[0][0][1]["content"]
+    assert "Support : Supprimez le profil\nUtilisateur : Toujours pas" in prompt
+    assert glpi.followups == [(TICKET.id, "Réinstallez-le", False)]
+
+
+def test_ticket_answer_after_the_support_returns_409(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    glpi = FakeGlpi(replace(TICKET, followups=(GlpiFollowup(1, Author.BOT, "Supprimez-le"),)))
+    override(client, get_glpi, glpi)
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 409
+    assert glpi.followups == []
 
 
 def _add_knowledge(client: TestClient, auth: dict[str, str]) -> None:

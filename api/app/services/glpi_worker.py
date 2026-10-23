@@ -11,7 +11,7 @@ from app.core.config import Settings
 from app.models import GlpiEvent, GlpiEventStatus
 from app.services import answer
 from app.services.embeddings import Embedder, EmbeddingError
-from app.services.glpi import Glpi, GlpiError
+from app.services.glpi import Author, Glpi, GlpiError, GlpiTicket
 from app.services.llm import ChatModel, LLMError
 from app.services.reranker import Reranker, RerankerError
 from app.services.websearch import WebSearch
@@ -26,7 +26,7 @@ RETRY_DELAY = timedelta(minutes=2)
 
 @dataclass(frozen=True)
 class GlpiEventWorker:
-    """Answers each new GLPI ticket stored by the webhook in a followup."""
+    """Answers in a followup each new GLPI ticket or requester followup stored by the webhook."""
 
     sessionmaker: async_sessionmaker[AsyncSession]
     embedder: Embedder
@@ -86,22 +86,30 @@ class GlpiEventWorker:
         """Post the answer to the event's ticket; the reason it was not posted, or None."""
         if event.event != "new":
             return None
-        ticket_id = _ticket_id(event.payload)
-        if ticket_id is None:
+        target = _target(event.payload)
+        if target is None:
             return "No ticket id in the payload"
+        ticket_id, trigger_id = target
         try:
-            result = await answer.answer_ticket(
-                session,
-                self.embedder,
-                self.reranker,
-                self.model,
-                self.web_search,
-                self.glpi,
-                self.settings,
-                ticket_id,
+            ticket = await self.glpi.get_ticket(ticket_id)
+            if ticket is None:
+                return "GLPI ticket not found"
+            result = (
+                await answer.answer_ticket(
+                    session,
+                    self.embedder,
+                    self.reranker,
+                    self.model,
+                    self.web_search,
+                    self.settings,
+                    ticket,
+                )
+                if _awaits_bot(ticket, trigger_id)
+                else None
             )
             if result is None:
-                return "GLPI ticket not found"
+                logger.info("GLPI event %d: nothing to answer on ticket %d", event.id, ticket_id)
+                return None
             followup_id = await self.glpi.add_followup(
                 ticket_id,
                 answer.followup_text(result),
@@ -114,7 +122,28 @@ class GlpiEventWorker:
         return None
 
 
-def _ticket_id(payload: dict[str, Any]) -> int | None:
+def _target(payload: dict[str, Any]) -> tuple[int, int | None] | None:
+    """The ticket id, with the followup id for a followup webhook; None without a ticket."""
     item = payload.get("item")
-    ticket_id = item.get("id") if isinstance(item, dict) else None
-    return ticket_id if isinstance(ticket_id, int) else None
+    if not isinstance(item, dict):
+        return None
+    if "itemtype" not in item:
+        ticket_id = item.get("id")
+        return (ticket_id, None) if isinstance(ticket_id, int) else None
+    # A followup webhook: the item is the followup, attached to the `items_id` ticket.
+    ticket_id, followup_id = item.get("items_id"), item.get("id")
+    if item["itemtype"] == "Ticket" and isinstance(ticket_id, int) and isinstance(followup_id, int):
+        return ticket_id, followup_id
+    return None
+
+
+def _awaits_bot(ticket: GlpiTicket, trigger_id: int | None) -> bool:
+    """Whether the event's message (the ticket itself when None) is the bot's to answer.
+
+    Not once anyone but the requesters and the bot wrote a public followup: a technician
+    took over. Not when a newer followup exists either: its own event answers the thread.
+    """
+    if any(followup.author is Author.OTHER for followup in ticket.followups):
+        return False
+    last_id = ticket.followups[-1].id if ticket.followups else None
+    return last_id == trigger_id

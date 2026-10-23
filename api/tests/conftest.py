@@ -84,9 +84,13 @@ class FakeWebSearch:
 
 
 class FakeGlpi:
-    """Serves TICKET and records the followups, without a GLPI server."""
+    """Serves one ticket (TICKET by default) and records the followups, without a GLPI
+    server."""
 
-    def __init__(self, fail_read: bool = False, fail_followup: bool = False) -> None:
+    def __init__(
+        self, ticket: GlpiTicket = TICKET, fail_read: bool = False, fail_followup: bool = False
+    ) -> None:
+        self._ticket = ticket
         self._fail_read = fail_read
         self._fail_followup = fail_followup
         self.followups: list[tuple[int, str, bool]] = []
@@ -94,7 +98,7 @@ class FakeGlpi:
     async def get_ticket(self, ticket_id: int) -> GlpiTicket | None:
         if self._fail_read:
             raise GlpiError("GLPI down")
-        return TICKET if ticket_id == TICKET.id else None
+        return self._ticket if ticket_id == self._ticket.id else None
 
     async def add_followup(self, ticket_id: int, text: str, *, private: bool) -> int:
         if self._fail_followup:

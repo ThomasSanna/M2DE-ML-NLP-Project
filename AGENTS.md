@@ -93,7 +93,9 @@ before parsing. Never let FastAPI parse the body into a model first: re-serializ
 not match GLPI's HMAC. The handler only stores the event and returns `202`; no GLPI call, no
 embedding there (`services/glpi_worker.py` consumes `glpi_event` rows; `/answer` does not).
 The worker commits `processing` before answering and never replays a `processing` event:
-a public followup is emailed, so a missed answer is better than a duplicate.
+a public followup is emailed, so a missed answer is better than a duplicate. The bot's own
+followups fire the followup webhook too: `_awaits_bot` must keep skipping them, or the bot
+answers itself in a loop.
 
 **Remote clients.** Each client turns every transport, format or dimension failure into its
 domain error (`EmbeddingError`, `RerankerError`, `LLMError`, `WebSearchError`); `main.py`

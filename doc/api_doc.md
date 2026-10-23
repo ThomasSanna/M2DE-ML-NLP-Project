@@ -17,7 +17,7 @@ Routes métier sous `/api/v1`.
 | `GET` | `/api/v1/memory/knowledge/{knowledge_id}` | `X-API-Key` | `200` | `401`, `404`, `422` |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | `200` | `401`, `422`, `502` |
 | `POST` | `/api/v1/answer` | `X-API-Key` | `200` | `401`, `422`, `502` |
-| `POST` | `/api/v1/tickets/{ticket_id}/answer/stream` | `X-API-Key` | `200` (SSE) | `401`, `404`, `422`, `502`, `503` |
+| `POST` | `/api/v1/tickets/{ticket_id}/answer/stream` | `X-API-Key` | `200` (SSE) | `401`, `404`, `409`, `422`, `502`, `503` |
 
 ### Conventions
 
@@ -46,7 +46,7 @@ Reçoit un webhook GLPI, l'enregistre dans `glpi_event` (statut `received`) et r
   2. `422` `Corps JSON invalide`.
   3. `422` `Objet JSON attendu` : JSON valide mais pas un objet.
 - **Signature** : `HMAC-SHA256(corps brut + timestamp, secret)`, format GLPI 11. Ne pas reparser ni re-sérialiser le corps avant vérification.
-- Pas de déduplication. Le ticket n'est pas lu dans GLPI ici : le worker s'en charge ensuite (voir « Automatic answer to new tickets »).
+- Pas de déduplication. Le ticket n'est pas lu dans GLPI ici : le worker s'en charge ensuite (voir « Automatic answer to tickets and followups »).
 - Secret vide = aucune vérification (un avertissement est loggé au démarrage).
 
 ### `POST /api/v1/memory/knowledge`
@@ -160,9 +160,10 @@ curl -X POST http://localhost:8000/api/v1/answer \
 
 ### `POST /api/v1/tickets/{ticket_id}/answer/stream`
 
-Answers a GLPI ticket, then posts the answer as a followup of the ticket through the GLPI
-REST API (bot user). The ticket's title and description form a one-message thread answered
-as by `POST /api/v1/answer`; its existing followups are not read.
+Answers a GLPI ticket's thread, then posts the answer as a followup of the ticket through
+the GLPI REST API (bot user). The thread, answered as by `POST /api/v1/answer`, is the ticket's
+title and description, then its latest 49 public followups: the requesters' as `user`, the
+others' (bot, technicians) as `assistant`. Private followups are never read.
 
 ```bash
 curl -N -X POST http://localhost:8000/api/v1/tickets/42/answer/stream -H "X-API-Key: $API_KEY"
@@ -186,7 +187,9 @@ data: {"followup_id": 1234}
   entries are never listed: they mean nothing to the requester.
 - `error` `{"detail": "GLPI unavailable"}` instead of `done` when GLPI rejects the followup.
   The status is already `200` at that point; the cause is only logged.
-- Errors before the stream opens are plain JSON: `404` `GLPI ticket not found`, `503` when
+- Errors before the stream opens are plain JSON: `404` `GLPI ticket not found`, `409`
+  `Nothing to answer: the support side wrote last` when the last public followup is not a
+  requester's, `503` when
   `GLPI_USER_TOKEN` is empty, `502` when GLPI (`GLPI unavailable`) or a model fails (same
   messages as `POST /api/v1/answer`).
 - `POST`, not `GET`: the route writes to GLPI and needs `X-API-Key`. A browser reads it with
@@ -194,15 +197,21 @@ data: {"followup_id": 1234}
   header, and its automatic reconnection would post duplicate followups.
 - Not idempotent: every call posts a new followup.
 
-### Automatic answer to new tickets
+### Automatic answer to tickets and followups
 
 When `GLPI_USER_TOKEN` is set, a worker started with the API polls `glpi_event` every 5 s and
-answers each `new` event like the route above: same followup, no stream. GLPI sends the webhook
-up to 60 s after the ticket is created, so the followup arrives within about a minute.
+answers each `new` ticket or followup event like the route above: same followup, no stream.
+GLPI sends the webhook up to 60 s after the ticket or followup is created, so the answer
+arrives within about a minute.
 
-- Status: `received` → `processing` → `done` (followup posted, or an event other than `new`) or
-  `failed` with the cause in `last_error` (model or GLPI failure, unknown ticket, no
-  `item.id` in the payload).
+- The bot answers each public followup of a requester, until someone else (a technician)
+  writes a public followup: from then on it stays silent on that ticket.
+- An event whose message is no longer the last public followup is skipped: the newer
+  followup's own event answers the whole thread. So are the events of the bot's own
+  followups, which GLPI sends too.
+- Status: `received` → `processing` → `done` (followup posted, nothing to answer, or an event
+  other than `new`) or `failed` with the cause in `last_error` (model or GLPI failure, unknown
+  ticket, no ticket id in the payload).
 - A `failed` event is retried 2 min later, up to 3 attempts in all (`attempts`).
 - An event left `processing` (API stopped mid-answer) is never retried: a ticket may miss
   its answer, but never gets two.
@@ -269,4 +278,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Garde-fous du pipeline LLM, lecture des suivis GLPI comme fil de discussion, routes de feedback, pondération de la recherche.
+Garde-fous du pipeline LLM, routes de feedback, pondération de la recherche.

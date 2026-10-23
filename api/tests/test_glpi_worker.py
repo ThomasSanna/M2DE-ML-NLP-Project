@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ from sqlalchemy import text
 
 from app.core.config import Settings
 from app.db.session import create_engine, create_sessionmaker
+from app.services.glpi import Author, GlpiFollowup
 from app.services.glpi_worker import MAX_ATTEMPTS, GlpiEventWorker
 from app.services.llm import ChatModel
 from tests.conftest import (
@@ -21,6 +23,13 @@ from tests.conftest import (
 )
 
 NEW_TICKET = {"event": "new", "item": {"id": TICKET.id, "name": TICKET.title}}
+BOT_ANSWER = GlpiFollowup(1, Author.BOT, "Supprimez le profil")
+REPLY = GlpiFollowup(2, Author.REQUESTER, "Toujours pas")
+
+
+def _new_followup(followup: GlpiFollowup) -> dict[str, object]:
+    item = {"id": followup.id, "itemtype": "Ticket", "items_id": TICKET.id}
+    return {"event": "new", "item": item, "parent_item": {"id": TICKET.id}}
 
 
 def _queue(client: TestClient, payload: dict[str, object]) -> None:
@@ -99,12 +108,68 @@ def test_failed_event_is_dropped_after_max_attempts(client: TestClient, settings
     assert not _process(settings, FakeGlpi())
 
 
+def test_requester_followup_is_answered_with_the_thread(
+    client: TestClient, settings: Settings
+) -> None:
+    glpi = FakeGlpi(replace(TICKET, followups=(BOT_ANSWER, REPLY)))
+    model = ScriptedChatModel([json.dumps({"action": "answer", "answer": "Réinstallez-le"})])
+    _queue(client, _new_followup(REPLY))
+
+    assert _process(settings, glpi, model)
+
+    prompt = model.calls[0][0][1]["content"]
+    assert "Support : Supprimez le profil\nUtilisateur : Toujours pas" in prompt
+    assert glpi.followups == [(TICKET.id, "Réinstallez-le", False)]
+    assert _event_state(settings) == ("done", 1, None)
+
+
+@pytest.mark.parametrize(
+    ("followups", "payload"),
+    [
+        # The bot's own followup: GLPI sends the webhook for it too.
+        ((BOT_ANSWER,), _new_followup(BOT_ANSWER)),
+        # A technician took over.
+        (
+            (
+                REPLY,
+                GlpiFollowup(3, Author.OTHER, "Je regarde"),
+                GlpiFollowup(4, Author.REQUESTER, "Merci"),
+            ),
+            _new_followup(GlpiFollowup(4, Author.REQUESTER, "Merci")),
+        ),
+        # A newer followup: its own event answers the thread.
+        ((REPLY, GlpiFollowup(3, Author.REQUESTER, "Sous Windows")), _new_followup(REPLY)),
+        ((REPLY,), NEW_TICKET),
+        # Private, or deleted before the worker read the ticket.
+        ((), _new_followup(REPLY)),
+    ],
+)
+def test_followup_the_bot_should_not_answer_posts_nothing(
+    client: TestClient,
+    settings: Settings,
+    followups: tuple[GlpiFollowup, ...],
+    payload: dict[str, object],
+) -> None:
+    glpi = FakeGlpi(replace(TICKET, followups=followups))
+    _queue(client, payload)
+
+    assert _process(settings, glpi, FailingChatModel())
+
+    assert glpi.followups == []
+    assert _event_state(settings) == ("done", 1, None)
+
+
 @pytest.mark.parametrize(
     ("payload", "status", "error"),
     [
         ({"event": "update", "item": {"id": TICKET.id}}, "done", None),
         ({"event": "new", "item": {"id": 999}}, "failed", "GLPI ticket not found"),
         ({"event": "new", "item": {"name": "Sans id"}}, "failed", "No ticket id in the payload"),
+        (
+            {"event": "new", "item": {"id": 5, "itemtype": "Change", "items_id": TICKET.id}},
+            "failed",
+            "No ticket id in the payload",
+        ),
     ],
 )
 def test_event_without_a_ticket_to_answer_posts_nothing(
