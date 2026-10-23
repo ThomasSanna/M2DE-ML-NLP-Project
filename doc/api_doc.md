@@ -181,6 +181,9 @@ data: {"followup_id": 1234}
 - `answer`: the `AnswerResult` of `POST /api/v1/answer`, sent before the followup is written.
 - `done`: the followup is in GLPI. Public by default, so GLPI emails the requester;
   `GLPI_FOLLOWUP_PRIVATE=true` makes it private, for a technician to validate.
+- The followup is the answer without its `[K1]`/`[W2]` refs, followed by a `Sources :` list
+  (title and URL, one line per page) when the answer cites at least one web result. Memory
+  entries are never listed: they mean nothing to the requester.
 - `error` `{"detail": "GLPI unavailable"}` instead of `done` when GLPI rejects the followup.
   The status is already `200` at that point; the cause is only logged.
 - Errors before the stream opens are plain JSON: `404` `GLPI ticket not found`, `503` when

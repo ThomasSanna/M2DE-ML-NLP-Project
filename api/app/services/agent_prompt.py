@@ -41,7 +41,8 @@ _ROLE_LABELS = {"user": "Utilisateur", "assistant": "Support"}
 # Refs cited the way the prompt asks, in brackets: "[K1]", "[K1, W2]". The 4B sometimes
 # escapes them as Markdown: "\[K1\]".
 REF_GROUP = re.compile(r"\\?\[\s*[KW]\d+(?:\s*[,;]\s*[KW]\d+)*\s*\\?\]", re.IGNORECASE)
-_STALE_REFS = re.compile(rf"\s*{REF_GROUP.pattern}", re.IGNORECASE)
+# With the space before the group, so "profil [K1]." becomes "profil.".
+_SPACED_REF_GROUP = re.compile(rf"\s*{REF_GROUP.pattern}", re.IGNORECASE)
 
 
 class SearchAction(BaseModel):
@@ -92,6 +93,10 @@ def parse_action(content: str) -> SearchAction | AnswerAction:
     return _ACTION.validate_json(content)
 
 
+def strip_refs(text: str) -> str:
+    return _SPACED_REF_GROUP.sub("", text).strip()
+
+
 def _truncate(text: str, max_chars: int) -> str:
     return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
 
@@ -110,7 +115,7 @@ def render_thread(messages: list[tuple[str, str]]) -> str:
     # The thread is text, not chat roles: GLPI threads can hold two consecutive user
     # messages, which the Gemma template rejects. Refs in earlier bot answers pointed to
     # that run's sources: left in, the model copies them onto this run's entries.
-    lines = [f"{_ROLE_LABELS[role]} : {_STALE_REFS.sub('', content)}" for role, content in messages]
+    lines = [f"{_ROLE_LABELS[role]} : {strip_refs(content)}" for role, content in messages]
     text = "\n".join(lines)
     if len(text) > THREAD_MAX_CHARS:
         # The first message states the problem and the tail holds the current request:

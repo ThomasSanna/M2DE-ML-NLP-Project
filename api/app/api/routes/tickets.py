@@ -59,7 +59,7 @@ async def stream_ticket_answer(
         yield _sse("answer", result.model_dump_json())
         try:
             followup_id = await glpi.add_followup(
-                ticket_id, result.answer, private=settings.glpi_followup_private
+                ticket_id, answer.followup_text(result), private=settings.glpi_followup_private
             )
         except GlpiError as exc:
             # The 200 status is already sent: the failure can only go in the stream.

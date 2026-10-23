@@ -3,12 +3,14 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_chat_model, get_embedder, get_glpi, get_reranker
+from app.api.deps import get_chat_model, get_embedder, get_glpi, get_reranker, get_web_search
 from app.services.glpi import GlpiError, GlpiTicket
+from app.services.websearch import WebResult
 from tests.conftest import (
     FailingChatModel,
     FailingEmbedder,
     FailingReranker,
+    FakeWebSearch,
     ScriptedChatModel,
     override,
 )
@@ -74,6 +76,64 @@ def test_ticket_answer_streams_answer_then_posts_followup(
     assert TICKET.content in prompt
 
 
+def _add_knowledge(client: TestClient, auth: dict[str, str]) -> None:
+    response = client.post(
+        "/api/v1/memory/knowledge",
+        json={"question": "Eduroam ne marche pas", "answer": "Réinstallez le profil"},
+        headers=auth,
+    )
+    assert response.status_code == 201, response.text
+
+
+def test_ticket_followup_drops_refs_and_lists_cited_web_pages(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    _add_knowledge(client, auth)
+    glpi = FakeGlpi()
+    answer = "Supprimez le profil [K1] [W1], puis reconnectez-vous [W1, W2]."
+    model = ScriptedChatModel(
+        [
+            json.dumps({"action": "search", "query": "eduroam mac"}),
+            json.dumps({"action": "search", "query": "profil eduroam"}),
+            json.dumps({"action": "answer", "answer": answer, "sources": ["K1", "W1", "W2"]}),
+        ]
+    )
+    # Both searches return the same page: W1 and W2 are one source for the requester.
+    page = WebResult("Configurer eduroam", "https://cat.eduroam.org", None, "Profil")
+    override(client, get_glpi, glpi)
+    override(client, get_chat_model, model)
+    override(client, get_web_search, FakeWebSearch([page]))
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 200, response.text
+    # The API keeps the refs: they map the answer to `sources`.
+    assert _events(response.text)[0][1]["answer"] == answer
+    assert glpi.followups == [
+        (
+            TICKET.id,
+            "Supprimez le profil, puis reconnectez-vous.\n\n"
+            "Sources :\n- Configurer eduroam : https://cat.eduroam.org",
+            False,
+        )
+    ]
+
+
+def test_ticket_followup_from_memory_only_has_no_sources(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    _add_knowledge(client, auth)
+    glpi = FakeGlpi()
+    answer = json.dumps({"action": "answer", "answer": "Réinstallez le profil. [K1]"})
+    override(client, get_glpi, glpi)
+    override(client, get_chat_model, ScriptedChatModel([answer]))
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert glpi.followups == [(TICKET.id, "Réinstallez le profil.", False)]
+
+
 def test_ticket_answer_reports_followup_failure_in_stream(
     client: TestClient, auth: dict[str, str]
 ) -> None:
@@ -126,11 +186,7 @@ def test_ticket_answer_without_glpi_token_returns_503(
 def test_ticket_answer_upstream_failures_return_502(
     client: TestClient, auth: dict[str, str], dependency: object, failing: object, detail: str
 ) -> None:
-    client.post(
-        "/api/v1/memory/knowledge",
-        json={"question": "Eduroam ne marche pas", "answer": "Réinstallez le profil"},
-        headers=auth,
-    )
+    _add_knowledge(client, auth)
     override(client, get_glpi, FakeGlpi())
     override(client, dependency, failing)
 
