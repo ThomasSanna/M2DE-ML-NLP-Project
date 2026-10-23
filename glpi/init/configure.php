@@ -231,38 +231,45 @@ if (env('GLPI_USER_TOKEN') !== null) {
     step('GLPI_USER_TOKEN empty: no API token for the bot');
 }
 
-// ------------------------------------------------------- New ticket webhook
-echo "[7/7] New ticket webhook → memory API\n";
+// ------------------------------------------- New ticket and followup webhooks
+echo "[7/7] New ticket and new followup webhooks → memory API\n";
 if (env('GLPI_WEBHOOK_SECRET') === null) {
-    step('GLPI_WEBHOOK_SECRET empty: webhook not created (the API could not verify the signature)');
+    step('GLPI_WEBHOOK_SECRET empty: webhooks not created (the API could not verify the signature)');
 } else {
-    $webhookName  = 'API mémoire — nouveau ticket';
-    $webhookInput = [
-        'name'                => $webhookName,
-        'entities_id'         => 0,
-        'is_recursive'        => 1,
-        'itemtype'            => 'Ticket',
-        'event'               => 'new',
-        // The URL must be allowed by GLPI_SERVERSIDE_URL_ALLOWLIST (glpi/config/local_define.php)
-        'url'                 => env('GLPI_WEBHOOK_URL', 'http://api:8000/api/v1/ingest/ticket'),
-        'http_method'         => 'post',
-        'secret'              => env('GLPI_WEBHOOK_SECRET'),   // encrypted by Webhook::handleInput
-        'use_default_payload' => 1,
-        'use_cra_challenge'   => 0,
-        'sent_try'            => 5,
-        'is_active'           => 1,
-        'log_in_item_history' => 1,
+    // The URL must be allowed by GLPI_SERVERSIDE_URL_ALLOWLIST (glpi/config/local_define.php)
+    $webhookUrl = env('GLPI_WEBHOOK_URL', 'http://api:8000/api/v1/ingest/ticket');
+    // Same URL for both: the API tells a followup from a ticket by its payload.
+    $webhooks = [
+        'API mémoire — nouveau ticket' => 'Ticket',
+        'API mémoire — nouveau suivi'  => 'ITILFollowup',
     ];
-    $webhook = new Webhook();
-    if ($webhook->getFromDBByCrit(['name' => $webhookName])) {
-        $webhook->update(['id' => $webhook->getID()] + $webhookInput);
-        step("webhook updated (id {$webhook->getID()}): {$webhookInput['url']}");
-    } else {
-        $webhook->add($webhookInput);
-        step("webhook created (id {$webhook->getID()}): {$webhookInput['url']}");
+    foreach ($webhooks as $webhookName => $itemtype) {
+        $webhookInput = [
+            'name'                => $webhookName,
+            'entities_id'         => 0,
+            'is_recursive'        => 1,
+            'itemtype'            => $itemtype,
+            'event'               => 'new',
+            'url'                 => $webhookUrl,
+            'http_method'         => 'post',
+            'secret'              => env('GLPI_WEBHOOK_SECRET'),   // encrypted by Webhook::handleInput
+            'use_default_payload' => 1,
+            'use_cra_challenge'   => 0,
+            'sent_try'            => 5,
+            'is_active'           => 1,
+            'log_in_item_history' => 1,
+        ];
+        $webhook = new Webhook();
+        if ($webhook->getFromDBByCrit(['name' => $webhookName])) {
+            $webhook->update(['id' => $webhook->getID()] + $webhookInput);
+            step("webhook updated (id {$webhook->getID()}, $itemtype): $webhookUrl");
+        } else {
+            $webhook->add($webhookInput);
+            step("webhook created (id {$webhook->getID()}, $itemtype): $webhookUrl");
+        }
     }
-    if (!Toolbox::isUrlSafe($webhookInput['url'])) {
-        step('WARNING: URL rejected by GLPI_SERVERSIDE_URL_ALLOWLIST, the webhook will not be sent');
+    if (!Toolbox::isUrlSafe($webhookUrl)) {
+        step('WARNING: URL rejected by GLPI_SERVERSIDE_URL_ALLOWLIST, the webhooks will not be sent');
     }
 }
 
