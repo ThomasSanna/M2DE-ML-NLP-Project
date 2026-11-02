@@ -6,4 +6,4 @@ cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091
 source .env
 docker compose exec -T -e MYSQL_PWD="$MARIADB_PASSWORD" db \
-  mariadb --batch -uglpi glpi < glpi/sql/feedback.sql
+  mariadb --skip-ssl --batch -uglpi glpi < glpi/sql/feedback.sql

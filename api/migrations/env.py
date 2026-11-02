@@ -5,7 +5,7 @@ from alembic import context
 from sqlalchemy.engine import Connection
 
 from app import models  # noqa: F401  (registers the tables in Base.metadata)
-from app.core.config import get_settings
+from app.core.config import get_database_settings
 from app.db.base import Base
 from app.db.session import create_engine
 
@@ -15,7 +15,7 @@ if config.config_file_name is not None and config.attributes.get("configure_logg
 
 target_metadata = Base.metadata
 # Tests inject their own Settings via `config.attributes["settings"]`.
-settings = config.attributes.get("settings") or get_settings()
+settings = config.attributes.get("settings") or get_database_settings()
 
 
 def run_migrations_offline() -> None:

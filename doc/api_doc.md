@@ -16,10 +16,12 @@ Routes métier sous `/api/v1`.
 | `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | `201` | `401`, `422`, `502` |
 | `GET` | `/api/v1/memory/knowledge/{knowledge_id}` | `X-API-Key` | `200` | `401`, `404`, `422` |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | `200` | `401`, `422`, `502` |
+| `POST` | `/api/v1/answer` | `X-API-Key` | `200` | `401`, `422`, `502` |
+| `POST` | `/api/v1/tickets/{ticket_id}/answer/stream` | `X-API-Key` | `200` (SSE) | `401`, `404`, `409`, `422`, `502`, `503` |
 
 ### Conventions
 
-- **Authentification** : en-tête `X-API-Key: <API_KEY>` sur toutes les routes `/api/v1/memory/*`. Absente ou fausse → `401` `{"detail": "Clé API absente ou invalide"}`.
+- **Authentification** : en-tête `X-API-Key: <API_KEY>` sur toutes les routes `/api/v1/memory/*` et `/api/v1/tickets/*` et sur `/api/v1/answer`. Absente ou fausse → `401` `{"detail": "Clé API absente ou invalide"}`.
 - **Validation** : champ invalide → `422` au format FastAPI standard.
 - **Embeddings indisponibles** : toute route qui embedde répond `502` `{"detail": "Serveur d'embeddings indisponible"}`. La cause n'est que dans les logs.
 
@@ -44,7 +46,7 @@ Reçoit un webhook GLPI, l'enregistre dans `glpi_event` (statut `received`) et r
   2. `422` `Corps JSON invalide`.
   3. `422` `Objet JSON attendu` : JSON valide mais pas un objet.
 - **Signature** : `HMAC-SHA256(corps brut + timestamp, secret)`, format GLPI 11. Ne pas reparser ni re-sérialiser le corps avant vérification.
-- Pas de déduplication. Le ticket n'est pas lu dans GLPI : c'est le rôle de la future pipeline.
+- Pas de déduplication. Le ticket n'est pas lu dans GLPI ici : le worker s'en charge ensuite (voir « Automatic answer to tickets and followups »).
 - Secret vide = aucune vérification (un avertissement est loggé au démarrage).
 
 ### `POST /api/v1/memory/knowledge`
@@ -97,13 +99,132 @@ curl -X POST http://localhost:8000/api/v1/memory/search \
 - **Aucun seuil** : le top-k renvoie toujours `k` résultats s'il en existe, même peu pertinents.
 - Lecture seule : `reuse_count` n'est pas incrémenté.
 
+### `POST /api/v1/answer`
+
+Answers a ticket thread. The first and last user messages (the problem and the current
+request, 1000 characters at most) are searched in the memory (vector candidates, then the
+reranker), and the model either answers from it or runs a web search
+(Exa) first, for at most `AGENT_MAX_STEPS` steps. Synchronous: about 1 to 15 s depending on
+the number of searches.
+
+**Body** (`AnswerRequest`)
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `messages` | list of `{"role", "content"}` | yes | 1 to 50 items, the last one from `user` |
+| `messages[].role` | `user` / `assistant` | yes | `assistant` is the support side (technician or bot) |
+| `messages[].content` | text | yes | 1 to 20,000 characters, not blank |
+
+```bash
+curl -X POST http://localhost:8000/api/v1/answer \
+  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+  -d '{"messages": [
+        {"role": "user", "content": "Le wifi eduroam ne marche pas sur mon Mac"},
+        {"role": "assistant", "content": "Quel message voyez-vous ?"},
+        {"role": "user", "content": "Il demande le mot de passe en boucle"}
+      ]}'
+```
+
+**Output**: `200`, `AnswerResult`:
+
+```json
+{
+  "kind": "answer",
+  "answer": "Supprimez le profil eduroam dans Réglages > Wi-Fi, puis ... [K1] [W2]",
+  "sources": [
+    {"ref": "K1", "type": "knowledge", "knowledge_id": "3f2a...", "question": "Eduroam refuse mon mot de passe"},
+    {"ref": "W2", "type": "web", "url": "https://...", "title": "Configurer eduroam sous macOS"}
+  ],
+  "memory": [{"knowledge_id": "3f2a...", "score": 0.94}],
+  "searches": ["eduroam macOS mot de passe en boucle"],
+  "steps": 2,
+  "usage": {"prompt_tokens": 3120, "completion_tokens": 210}
+}
+```
+
+- `sources`: the refs the answer cites that exist, in citation order. `K<n>` is a memory
+  entry, `W<n>` a web result; refs the model made up are dropped. In the answer text only
+  bracketed refs (`[K1]`, `[K1, W2]`) count, and refs left in earlier answers of the thread
+  are hidden from the model.
+- `memory`: every retrieved entry with its reranker score in [0, 1], cited or not. Entries
+  under `RERANK_THRESHOLD` are not retrieved.
+- `searches`: the queries Exa answered (duplicates are not resent; a failed call is not
+  listed and the model may retry it).
+- `502` with a generic `detail` when the embeddings server (`Embeddings server unavailable`),
+  the reranker (`Reranker unavailable`) or the language model (`Language model unavailable`)
+  fails, including a model that still returns invalid JSON at the last step. The cause is
+  only logged.
+- A failed web search does not fail the request: the model is told to answer from the
+  memory. Without `EXA_API_KEY`, web search is disabled and the model can only answer.
+- Read-only: `reuse_count` is not incremented.
+
+### `POST /api/v1/tickets/{ticket_id}/answer/stream`
+
+Answers a GLPI ticket's thread, then posts the answer as a followup of the ticket through
+the GLPI REST API (bot user). The thread, answered as by `POST /api/v1/answer`, is the ticket's
+title and description, then its latest 49 public followups: the requesters' as `user`, the
+others' (bot, technicians) as `assistant`. Private followups are never read.
+
+```bash
+curl -N -X POST http://localhost:8000/api/v1/tickets/42/answer/stream -H "X-API-Key: $API_KEY"
+```
+
+**Output**: `200`, `text/event-stream`, two events:
+
+```text
+event: answer
+data: {"kind": "answer", "answer": "Supprimez le profil eduroam ... [K1]", "sources": [...], ...}
+
+event: done
+data: {"followup_id": 1234}
+```
+
+- `answer`: the `AnswerResult` of `POST /api/v1/answer`, sent before the followup is written.
+- `done`: the followup is in GLPI. Public by default, so GLPI emails the requester;
+  `GLPI_FOLLOWUP_PRIVATE=true` makes it private, for a technician to validate.
+- The followup is the answer without its `[K1]`/`[W2]` refs, followed by a `Sources :` list
+  (title and URL, one line per page) when the answer cites at least one web result. Memory
+  entries are never listed: they mean nothing to the requester.
+- `error` `{"detail": "GLPI unavailable"}` instead of `done` when GLPI rejects the followup.
+  The status is already `200` at that point; the cause is only logged.
+- Errors before the stream opens are plain JSON: `404` `GLPI ticket not found`, `409`
+  `Nothing to answer: the support side wrote last` when the last public followup is not a
+  requester's, `503` when
+  `GLPI_USER_TOKEN` is empty, `502` when GLPI (`GLPI unavailable`) or a model fails (same
+  messages as `POST /api/v1/answer`).
+- `POST`, not `GET`: the route writes to GLPI and needs `X-API-Key`. A browser reads it with
+  `fetch()` and `response.body.getReader()`; `EventSource` sends neither the method nor the
+  header, and its automatic reconnection would post duplicate followups.
+- Not idempotent: every call posts a new followup.
+
+### Automatic answer to tickets and followups
+
+When `GLPI_USER_TOKEN` is set, a worker started with the API polls `glpi_event` every 5 s and
+answers each `new` ticket or followup event like the route above: same followup, no stream.
+GLPI sends the webhook up to 60 s after the ticket or followup is created, so the answer
+arrives within about a minute.
+
+- The bot answers each public followup of a requester, until someone else (a technician)
+  writes a public followup: from then on it stays silent on that ticket.
+- An event whose message is no longer the last public followup is skipped: the newer
+  followup's own event answers the whole thread. So are the events of the bot's own
+  followups, which GLPI sends too.
+- Status: `received` → `processing` → `done` (followup posted, nothing to answer, or an event
+  other than `new`) or `failed` with the cause in `last_error` (model or GLPI failure, unknown
+  ticket, no ticket id in the payload).
+- A `failed` event is retried 2 min later, up to 3 attempts in all (`attempts`).
+- An event left `processing` (API stopped mid-answer) is never retried: a ticket may miss
+  its answer, but never gets two.
+- Each event is locked while claimed (`FOR UPDATE SKIP LOCKED`): several API processes can poll
+  without answering a ticket twice.
+
 ## Schéma (résumé)
 
 **`knowledge`** : `id`, `question`, `answer`, `category`, `source`, `status` (`active` / `to_review` / `archived`), `glpi_ticket_id`, `reuse_count`, `embedding` (`halfvec(3584)`, embedding de la question, index HNSW cosinus), `created_at`, `updated_at`.
 
 **`feedback`** : un enregistrement par retour (`knowledge_id`, `source`, `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Non exposé par l'API pour l'instant.
 
-**`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par la future pipeline.
+**`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par le worker (`app/services/glpi_worker.py`).
 
 ## Configuration
 
@@ -116,6 +237,23 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `EMBEDDING_MODEL` | `BAAI/bge-multilingual-gemma2` | modèle demandé au serveur |
 | `EMBEDDING_API_KEY` | vide | si le serveur en exige une |
 | `GLPI_WEBHOOK_SECRET` | vide | secret du webhook GLPI ; vide = signature non vérifiée |
+| `LLM_BASE_URL` | **required** | university LLM URL (TGI, OpenAI-compatible), with `/v1` (VPN required) |
+| `LLM_MODEL` | `google/gemma3-12b-it` | model name sent to the server (TGI ignores it) |
+| `LLM_MAX_TOKENS` | `512` | max tokens generated per model call |
+| `LLM_TIMEOUT_SECONDS` | `60.0` | timeout of one model call |
+| `RERANKER_BASE_URL` | **required** | university reranker URL, without `/v1` (VPN required) |
+| `RERANKER_TIMEOUT_SECONDS` | `30.0` | timeout of one rerank call |
+| `RETRIEVAL_CANDIDATES` | `20` | vector-search candidates sent to the reranker |
+| `RETRIEVAL_TOP_K` | `3` | max memory entries given to the model |
+| `RERANK_THRESHOLD` | `0.95` | min reranker score (sigmoid of the logit, 0 to 1) to keep an entry; 0.95 is logit 2.9 |
+| `EXA_API_KEY` | empty | Exa key; empty = web search disabled |
+| `EXA_INCLUDE_DOMAINS` | empty | comma-separated domains web search is restricted to |
+| `EXA_NUM_RESULTS` | `3` | results per web search |
+| `EXA_TIMEOUT_SECONDS` | `15.0` | timeout of one web search |
+| `AGENT_MAX_STEPS` | `3` | model calls per answer; the last one must answer |
+| `GLPI_API_URL` | `http://glpi/apirest.php/` | GLPI REST API URL (Docker network); not in `.env.example`, set by docker-compose |
+| `GLPI_USER_TOKEN` / `GLPI_APP_TOKEN` | empty | tokens of the GLPI bot user; without a User-Token, routes that use GLPI answer `503` |
+| `GLPI_FOLLOWUP_PRIVATE` | `false` | `true` = private followup (a technician validates it) instead of a public one emailed to the requester |
 | `POSTGRES_USER` / `_PASSWORD` / `_DB` | `memoire` / - / `memoire` | base de la mémoire |
 | `POSTGRES_HOST` / `_PORT` | `localhost` / `5432` | forcé à `postgres:5432` dans Docker |
 | `ENVIRONMENT`, `LOG_LEVEL` | `dev`, `INFO` | `prod` désactive `/docs` |
@@ -140,4 +278,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Pipeline LLM (garde-fous, génération, reranker, websearch), réponse dans GLPI, routes de feedback, pondération de la recherche.
+Garde-fous du pipeline LLM, routes de feedback, pondération de la recherche.
