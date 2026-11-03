@@ -9,8 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from app.services.llm import ChatMessage
 from app.services.websearch import WebResult
 
-# Caps keep the prompt near 3000 tokens with 3 memory entries and 2 searches, under the
-# 4000-token input limit of the 4B server.
+# Caps keep the prompt near 3000 tokens with 3 memory entries and 2 searches. They are no longer
+# forced by the context (the 12B server has 32768 tokens, so about 29000 of margin): they stay
+# because nothing shows that a longer prompt gives better answers, and they bound the cost and
+# latency of each agent step.
 MEMORY_ANSWER_MAX_CHARS = 800
 THREAD_MAX_CHARS = 2000
 THREAD_HEAD_MAX_CHARS = 600
