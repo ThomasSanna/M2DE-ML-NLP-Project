@@ -6,7 +6,7 @@ breaks something specific. User-facing docs live in `README.md` and `doc/api_doc
 PoC of a GLPI support chatbot. The part under active development is the API in `api/`:
 the memory and the answer engine (`POST /api/v1/answer`). FastAPI 0.147 / Starlette 1.9,
 SQLAlchemy 2.1 async + asyncpg, Alembic 1.20, pgvector 0.8 (PG 17), Python 3.12, `uv`.
-Embeddings, reranker and LLM (TGI) are remote servers on the university network (VPN); web
+Embeddings, reranker and LLM (vLLM) are remote servers on the university network (VPN); web
 search is Exa. Guardrails (input and output filtering) are **not implemented**; do not
 build them unless asked.
 

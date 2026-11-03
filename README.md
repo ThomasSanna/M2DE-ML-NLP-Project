@@ -82,7 +82,7 @@ Models available on the university server (VPN required):
 |---|---|---|
 | Embeddings | `BAAI/bge-multilingual-gemma2` | `http://193.48.31.6:31550/v1/embeddings` |
 | Reranker | `BAAI/bge-reranker-v2-gemma` | `http://193.48.31.6:31127/rerank` |
-| LLM | `google/gemma3-12b-it` | `http://193.48.31.6:32297/v1/chat/completions` |
+| LLM | `google/gemma-4-12B-it` | `http://193.48.31.6:31887/v1/chat/completions` |
 | LLM (light) | `google/gemma3-4b-it` | `http://193.48.31.6:30091/v1/chat/completions` |
 
 ### Local development

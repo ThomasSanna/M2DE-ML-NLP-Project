@@ -57,10 +57,10 @@ class Settings(DatabaseSettings):
     )
     embedding_timeout_seconds: float = 30.0
 
-    # University LLM (Hugging Face TGI, OpenAI-compatible), URL including `/v1`.
+    # University LLM (vLLM, OpenAI-compatible), URL including `/v1`.
     llm_base_url: AnyHttpUrl
-    # TGI serves a single model and ignores this field; kept for logs and portability.
-    llm_model: str = "google/gemma3-12b-it"
+    # vLLM checks this field: a name the server does not serve gets a 404.
+    llm_model: str = "google/gemma-4-12B-it"
     llm_max_tokens: int = Field(default=512, ge=1)
     llm_timeout_seconds: float = 60.0
 

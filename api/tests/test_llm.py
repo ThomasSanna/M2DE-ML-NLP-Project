@@ -5,10 +5,10 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from app.services.llm import ChatMessage, Completion, LLMError, TGIChatClient
+from app.services.llm import ChatMessage, Completion, LLMError, VLLMChatClient
 
 BASE_URL = "http://llm.test/v1"
-MODEL = "google/gemma3-12b-it"
+MODEL = "google/gemma-4-12B-it"
 MESSAGES: list[ChatMessage] = [
     {"role": "system", "content": "Tu es l'assistant."},
     {"role": "user", "content": "Le wifi ne marche pas"},
@@ -25,7 +25,7 @@ def _complete(handler: Callable[[httpx.Request], httpx.Response]) -> Completion:
     async def _run() -> Completion:
         transport = httpx.MockTransport(handler)
         async with httpx.AsyncClient(base_url=BASE_URL, transport=transport) as http:
-            return await TGIChatClient(http, MODEL, 512).complete(MESSAGES, SCHEMA)
+            return await VLLMChatClient(http, MODEL, 512).complete(MESSAGES, SCHEMA)
 
     return asyncio.run(_run())
 
@@ -38,7 +38,10 @@ def test_sends_grammar_and_greedy_decoding() -> None:
             "messages": MESSAGES,
             "max_tokens": 512,
             "temperature": 0,
-            "response_format": {"type": "json", "value": SCHEMA},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "agent_step", "schema": SCHEMA},
+            },
         }
         return httpx.Response(
             200,
