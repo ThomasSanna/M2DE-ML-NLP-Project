@@ -237,8 +237,8 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `EMBEDDING_MODEL` | `BAAI/bge-multilingual-gemma2` | modèle demandé au serveur |
 | `EMBEDDING_API_KEY` | vide | si le serveur en exige une |
 | `GLPI_WEBHOOK_SECRET` | vide | secret du webhook GLPI ; vide = signature non vérifiée |
-| `LLM_BASE_URL` | **required** | university LLM URL (TGI, OpenAI-compatible), with `/v1` (VPN required) |
-| `LLM_MODEL` | `google/gemma3-12b-it` | model name sent to the server (TGI ignores it) |
+| `LLM_BASE_URL` | **required** | university LLM URL (vLLM, OpenAI-compatible), with `/v1` (VPN required) |
+| `LLM_MODEL` | `google/gemma-4-12B-it` | model name sent to the server (vLLM rejects an unknown name with a 404) |
 | `LLM_MAX_TOKENS` | `512` | max tokens generated per model call |
 | `LLM_TIMEOUT_SECONDS` | `60.0` | timeout of one model call |
 | `RERANKER_BASE_URL` | **required** | university reranker URL, without `/v1` (VPN required) |

@@ -14,7 +14,7 @@ from app.db.session import create_engine, create_sessionmaker
 from app.services.embeddings import EmbeddingError, OpenAIEmbeddingClient
 from app.services.glpi import GlpiError, GlpiRestClient
 from app.services.glpi_worker import GlpiEventWorker
-from app.services.llm import LLMError, TGIChatClient
+from app.services.llm import LLMError, VLLMChatClient
 from app.services.reranker import HttpRerankerClient, RerankerError
 from app.services.websearch import EXA_BASE_URL, ExaClient
 
@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 base_url=str(settings.llm_base_url), timeout=settings.llm_timeout_seconds
             )
         )
-        app.state.chat_model = TGIChatClient(llm_http, settings.llm_model, settings.llm_max_tokens)
+        app.state.chat_model = VLLMChatClient(llm_http, settings.llm_model, settings.llm_max_tokens)
         reranker_http = await stack.enter_async_context(
             httpx.AsyncClient(
                 base_url=str(settings.reranker_base_url),
