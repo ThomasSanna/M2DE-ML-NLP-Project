@@ -251,7 +251,7 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `EXA_NUM_RESULTS` | `3` | results per web search |
 | `EXA_TIMEOUT_SECONDS` | `15.0` | timeout of one web search |
 | `AGENT_MAX_STEPS` | `3` | model calls per answer; the last one must answer |
-| `METRICS_DIR` | empty | directory of the metrics CSV files (`runs.v1.csv`, `calls.v1.csv`); empty = disabled; `/app/metrics` in Docker, mounted from `./metrics` |
+| `METRICS_DIR` | empty | directory of the metrics CSV files (`runs.v1.csv`, `calls.v1.csv`); empty = disabled; in Docker, any value writes to `/app/metrics`, mounted from `./metrics` |
 | `METRICS_LABEL` | empty | tag written on every run row, to tell comparison campaigns apart |
 | `GLPI_API_URL` | `http://glpi/apirest.php/` | GLPI REST API URL (Docker network); not in `.env.example`, set by docker-compose |
 | `GLPI_USER_TOKEN` / `GLPI_APP_TOKEN` | empty | tokens of the GLPI bot user; without a User-Token, routes that use GLPI answer `503` |
@@ -269,8 +269,9 @@ to `runs.v1.csv` and one row per remote call to `calls.v1.csv`, joined by `run_i
 hold no text from the thread, the answer or the searches. They are meant for offline
 comparison of configurations: set `METRICS_LABEL` to name each campaign.
 
-- **Location**: `METRICS_DIR`; empty disables the metrics. In Docker, `/app/metrics` is
-  mounted from `./metrics/` at the repo root. Locally, a relative path resolves from `api/`.
+- **Location**: `METRICS_DIR`; empty (the default) disables the metrics. Locally, a
+  relative path resolves from `api/`. In Docker, any value turns them on and the container
+  writes to `/app/metrics`, mounted from `./metrics/` at the repo root.
 - **Startup**: the API creates the directory and both files with their header, and refuses
   to start when it cannot (a file in the way, no write permission). The container runs as
   the `app` user (uid 10001): on Linux, the bind-mounted `./metrics/` must be writable by

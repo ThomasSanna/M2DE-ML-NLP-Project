@@ -198,6 +198,15 @@ docker exec poc-ldap sh -c 'ldapadd -x -c -H ldap://localhost \
 
 **Configuring LDAP in GLPI by hand.** Without the script, use `Setup > Authentication > LDAP directories`, then enable the source in `Setup > Authentication > Configuration > Advanced`. The first name field must be `givenname` (lowercase), otherwise it stays empty.
 
+**The API restarts in a loop after enabling `METRICS_DIR` (Linux).** Docker creates
+`./metrics` as root and the API runs as uid 10001, so it cannot write the metrics files and
+refuses to start. Give that uid the directory once:
+
+```bash
+mkdir -p metrics && sudo chown 10001 metrics
+docker compose restart api
+```
+
 **Embedding routes return `502`.** The university VPN is not connected, or `EMBEDDING_BASE_URL` is wrong.
 
 ## Repository layout
