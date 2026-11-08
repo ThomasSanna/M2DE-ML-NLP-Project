@@ -11,6 +11,9 @@ doc/*.pdf
 opencode.json
 .codegraph/
 
+# AI metrics CSV (METRICS_DIR)
+metrics/
+
 # Python (api/)
 .venv/
 __pycache__/

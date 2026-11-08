@@ -175,6 +175,8 @@ services:
     image: bisgambiglia-poc/api:latest
     container_name: poc-api
     environment: *api-env
+    volumes:
+      - ./metrics:/app/metrics
     ports:
       - "${API_PORT:-8000}:8000"
     networks:

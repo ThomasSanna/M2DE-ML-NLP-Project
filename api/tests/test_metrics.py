@@ -2,8 +2,10 @@ import logging
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from app.main import create_app
 from app.schemas.answer import ThreadMessage
 from app.services.embeddings import EmbeddingError
 from app.services.llm import LLMError
@@ -206,3 +208,24 @@ def test_writer_logs_write_errors_without_raising(
     writer.write(row, [])
 
     assert any(record.levelno == logging.ERROR for record in caplog.records)
+
+
+def test_startup_creates_the_metrics_files(settings: Settings, tmp_path: Path) -> None:
+    directory = tmp_path / "metrics"
+
+    with TestClient(create_app(settings.model_copy(update={"metrics_dir": directory}))):
+        pass
+
+    runs = (directory / "runs.v1.csv").read_text(encoding="utf-8")
+    assert runs.startswith("run_id,started_at,source,")
+    calls = (directory / "calls.v1.csv").read_text(encoding="utf-8")
+    assert calls.startswith("run_id,seq,kind,")
+
+
+def test_startup_fails_when_the_metrics_dir_is_a_file(settings: Settings, tmp_path: Path) -> None:
+    blocker = tmp_path / "metrics"
+    blocker.write_text("")
+    app = create_app(settings.model_copy(update={"metrics_dir": blocker}))
+
+    with pytest.raises(OSError), TestClient(app):
+        pass

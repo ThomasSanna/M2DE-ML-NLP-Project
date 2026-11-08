@@ -15,6 +15,7 @@ from app.services.embeddings import EmbeddingError, OpenAIEmbeddingClient
 from app.services.glpi import GlpiError, GlpiRestClient
 from app.services.glpi_worker import GlpiEventWorker
 from app.services.llm import LLMError, VLLMChatClient
+from app.services.metrics import CsvMetricsWriter
 from app.services.reranker import HttpRerankerClient, RerankerError
 from app.services.websearch import EXA_BASE_URL, ExaClient
 
@@ -26,6 +27,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     if settings.glpi_webhook_secret is None:
         logger.warning("GLPI_WEBHOOK_SECRET is empty: GLPI webhook signatures are not verified")
+    app.state.metrics = (
+        CsvMetricsWriter(settings.metrics_dir) if settings.metrics_dir is not None else None
+    )
 
     engine = create_engine(settings.database_url)
     app.state.sessionmaker = create_sessionmaker(engine)
