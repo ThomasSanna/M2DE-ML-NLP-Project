@@ -71,6 +71,8 @@ _CALL_TYPES: dict[str, str] = {
 
 RUN_COLUMNS = tuple(_RUN_TYPES)
 CALL_COLUMNS = tuple(_CALL_TYPES)
+# Remote call kinds, in the order a run makes them.
+KINDS = ("embed", "vector_search", "rerank", "llm", "web_search")
 
 
 class DataError(Exception):
@@ -147,6 +149,20 @@ def _derive_runs(runs: pd.DataFrame, calls: pd.DataFrame) -> pd.DataFrame:
 
 def answered(runs: pd.DataFrame) -> pd.DataFrame:
     return runs[runs["outcome"] == "answered"]
+
+
+def spent_by_kind(done: pd.DataFrame, calls: pd.DataFrame) -> pd.DataFrame:
+    """Milliseconds each run spent per call kind, plus "other": each row sums to total_ms."""
+    spent = (
+        calls[calls["run_id"].isin(done["run_id"])]
+        .pivot_table(index="run_id", columns="kind", values="duration_ms", aggfunc="sum")
+        .reindex(
+            index=done["run_id"], columns=[kind for kind in KINDS if kind in set(calls["kind"])]
+        )
+        .fillna(0.0)
+    )
+    spent["other"] = done.set_index("run_id")["overhead_ms"]
+    return spent
 
 
 def _config_ids(runs: pd.DataFrame) -> dict[str, str]:

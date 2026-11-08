@@ -53,6 +53,26 @@ class Tabs:
 
 
 @dataclass(frozen=True)
+class Criterion:
+    """One way to narrow the runs: a key in the explorer data and its labeled choices."""
+
+    key: str
+    label: str
+    options: list[tuple[str, str]]
+
+
+@dataclass(frozen=True)
+class Explorer:
+    """Runs the reader filters in the browser by combining criteria; page.py draws it."""
+
+    caption: str
+    reading: str
+    criteria: list[Criterion]
+    # Read by explorer.js: numbers, colors and translated texts, all JSON-serializable.
+    data: dict[str, object]
+
+
+@dataclass(frozen=True)
 class Table:
     caption: str
     frame: pd.DataFrame
@@ -62,7 +82,7 @@ class Table:
 class Section:
     title: str
     findings: list[str]
-    charts: list[Chart | Tabs] = field(default_factory=list)
+    charts: list[Chart | Tabs | Explorer] = field(default_factory=list)
     tables: list[Table] = field(default_factory=list)
 
     def all_charts(self) -> list[Chart]:
@@ -70,7 +90,13 @@ class Section:
         return [
             chart
             for item in self.charts
-            for chart in ([c for _, c in item.options] if isinstance(item, Tabs) else [item])
+            for chart in (
+                [c for _, c in item.options]
+                if isinstance(item, Tabs)
+                else [item]
+                if isinstance(item, Chart)
+                else []
+            )
         ]
 
 
@@ -131,14 +157,10 @@ def histogram(
 ) -> Chart:
     """Distribution of one measure; markers draw labeled reference lines such as a threshold."""
     data = values.astype(float)
-    low, high = float(data.min()), float(data.max())
-    # Float noise around one value leaves numpy no room for distinct bin edges: widen it.
-    spread = None if high - low > 1e-9 * max(1.0, abs(high)) else (low - 0.5, high + 0.5)
     fig, ax = canvas(height=2.6)
     ax.hist(
         data,
-        bins=bins if bins is not None else min(30, max(5, len(values))),
-        range=None if bins is not None else spread,
+        bins=bins if bins is not None else bin_edges(data),
         color=color,
         edgecolor=SURFACE,
         linewidth=0.8,
@@ -160,6 +182,16 @@ def histogram(
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     return chart(fig, caption, reading)
+
+
+def bin_edges(values: pd.Series) -> list[float]:
+    """Equal-width bin edges: one bin per value up to 30 bins, at least 5."""
+    low, high = float(values.min()), float(values.max())
+    # Float noise around one value leaves no room for distinct edges: widen the range.
+    if high - low <= 1e-9 * max(1.0, abs(high)):
+        low, high = low - 0.5, high + 0.5
+    count = min(30, max(5, len(values)))
+    return [low + (high - low) * i / count for i in range(count + 1)]
 
 
 def bars(

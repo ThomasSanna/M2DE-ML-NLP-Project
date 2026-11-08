@@ -2,14 +2,16 @@
 
 import pandas as pd
 
+import explorer
 from i18n import number, t
-from load import Metrics, answered
+from load import KINDS, Metrics, answered, spent_by_kind
 from render import (
     INK,
     KIND_COLORS,
     NEUTRAL,
     SURFACE,
     Chart,
+    Explorer,
     Section,
     Table,
     Tabs,
@@ -21,13 +23,14 @@ from render import (
 )
 from stats import cell_ms, fmt_ms, fmt_p95, fmt_pct, note
 
-KINDS = ("embed", "vector_search", "rerank", "llm", "web_search")
-
 
 def build(metrics: Metrics) -> Section:
     calls = metrics.calls
     done = answered(metrics.runs)
-    charts: list[Chart | Tabs] = []
+    charts: list[Chart | Tabs | Explorer] = []
+    durations = explorer.build(metrics)
+    if durations is not None:
+        charts.append(durations)
     if not done.empty:
         charts.append(_breakdown(done, calls))
         typical = _typical(done)
@@ -208,13 +211,7 @@ def _per_kind(calls: pd.DataFrame) -> pd.DataFrame:
 
 
 def _breakdown(done: pd.DataFrame, calls: pd.DataFrame) -> Chart:
-    per_run = (
-        calls[calls["run_id"].isin(done["run_id"])]
-        .pivot_table(index="run_id", columns="kind", values="duration_ms", aggfunc="sum")
-        .reindex(done["run_id"])
-        .fillna(0.0)
-    )
-    per_run["other"] = done.set_index("run_id")["overhead_ms"]
+    per_run = spent_by_kind(done, calls)
     means = per_run.groupby(done.set_index("run_id")["config_id"]).mean() / 1000
     means = means.sort_index(key=lambda ids: ids.str[1:].astype(int))
     fig, ax = canvas(height=0.5 * len(means) + 1.4, grid="x")

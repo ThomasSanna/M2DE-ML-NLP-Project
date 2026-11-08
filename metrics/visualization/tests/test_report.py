@@ -43,7 +43,11 @@ def test_main_writes_a_self_contained_report(tmp_path: Path) -> None:
     assert "<h1>Rapport des métriques IA</h1>" in html
     assert all(f">{escape(title)}<" in html for title in TITLES["fr"])
     assert 'src="data:image/png;base64,' in html
-    assert "<script" not in html
+    # Nothing loaded from elsewhere: the explorer script is inline.
+    assert re.findall(r"<script[^>]*>", html) == [
+        '<script type="application/json" class="explorer-data">',
+        "<script>",
+    ]
     assert "<link" not in html
 
 

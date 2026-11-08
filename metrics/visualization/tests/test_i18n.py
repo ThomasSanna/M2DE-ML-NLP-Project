@@ -8,7 +8,7 @@ import pytest
 import overview
 from i18n import CATALOG_FR, language
 from load import load
-from render import Tabs, canvas, chart
+from render import Explorer, Tabs, canvas, chart
 from report import SECTIONS
 from stats import cell_num, fmt_ms, fmt_p95, fmt_pct, note
 from tests.conftest import write
@@ -83,9 +83,22 @@ def test_every_sentence_and_caption_is_translated(tmp_path: Path, name: str) -> 
             for item in section.charts
             if isinstance(item, Tabs)
         ]
+        explorers = [
+            text
+            for section in sections
+            for item in section.charts
+            if isinstance(item, Explorer)
+            for text in (
+                item.caption,
+                item.reading,
+                *(criterion.label for criterion in item.criteria),
+                *(label for criterion in item.criteria for _, label in criterion.options),
+            )
+        ]
         return (
             tiles
             + first_options
+            + explorers
             + [
                 text
                 for section in sections

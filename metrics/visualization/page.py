@@ -1,6 +1,6 @@
 """The HTML page: a filter over the views, headline tiles, and one card per section.
 
-Filters and tabs are radio buttons styled by CSS, so the page needs no script.
+Filters and tabs are radio buttons styled by CSS; only the explorer runs a script.
 """
 
 import html
@@ -10,8 +10,21 @@ from pathlib import Path
 
 import pandas as pd
 
+import explorer
 from i18n import current, t
-from render import GRID, INK, INK_MUTED, SERIES, SURFACE, Chart, Section, Table, Tabs, View
+from render import (
+    GRID,
+    INK,
+    INK_MUTED,
+    SERIES,
+    SURFACE,
+    Chart,
+    Explorer,
+    Section,
+    Table,
+    Tabs,
+    View,
+)
 
 # One number as stats.py writes it, optionally with a unit and a tag: "2 924", "67 %", "3,5 s
 # (indicatif)". \s also matches the no-break spaces of French typography.
@@ -40,10 +53,17 @@ def render(
         ),
         default=0,
     )
+    explores = any(
+        isinstance(item, Explorer)
+        for view in views
+        for section in view.sections
+        for item in section.charts
+    )
     return _PAGE.format(
         lang=current(),
         title=html.escape(t("AI metrics report")),
-        style=_STYLE + _selection(len(views), tab_options),
+        style=_STYLE + (explorer.STYLE if explores else "") + _selection(len(views), tab_options),
+        script=f"<script>{explorer.SCRIPT}</script>" if explores else "",
         filter=_filter(views),
         navs="".join(_nav(index, view) for index, view in enumerate(views)),
         meta=html.escape(f"{generated} {sample}"),
@@ -97,7 +117,11 @@ def _section(index: int, section: Section) -> str:
     anchor = _anchor(index, section)
     findings = "".join(f"<li>{html.escape(text)}</li>" for text in section.findings)
     charts = "".join(
-        _tabs(f"{anchor}-{position}", item) if isinstance(item, Tabs) else _figure(item)
+        _tabs(f"{anchor}-{position}", item)
+        if isinstance(item, Tabs)
+        else explorer.markup(f"{anchor}-{position}", item)
+        if isinstance(item, Explorer)
+        else _figure(item)
         for position, item in enumerate(section.charts)
     )
     tables = "".join(_table(table) for table in section.tables)
@@ -261,6 +285,7 @@ _PAGE = """<!doctype html>
 <p class="meta">{meta}</p>
 <div class="views">{views}</div>
 </main>
+{script}
 </body>
 </html>
 """
