@@ -2,7 +2,9 @@ from pathlib import Path
 
 import agent
 import configs
+import errors
 import latency
+import memory
 import overview
 import tokens
 from load import Metrics, load
@@ -149,3 +151,54 @@ def test_agent_model_calls(tmp_path: Path) -> None:
 def test_agent_without_web_search(tmp_path: Path) -> None:
     findings = agent.build(load(write(tmp_path, [run()], calls_of("r1")))).findings
     assert "No web search in the data." in findings
+
+
+def test_memory_findings(tmp_path: Path) -> None:
+    runs = [
+        run(),
+        run(
+            run_id="r2",
+            memory_kept=0,
+            memory_top_score=0.93,
+            cited_knowledge=0,
+            prior_replies=1,
+            total_ms=4000.0,
+        ),
+        run(run_id="r3", memory_kept=0, memory_top_score=0.5, cited_knowledge=0),
+    ]
+    assert memory.build(load(write(tmp_path, runs, []))).findings == [
+        "2 of 3 runs kept no memory entry (67%, n=3, indicative).",
+        "1 run scored within 0.05 below the threshold: a lower threshold would admit its"
+        " best entry.",
+        "Answers grounded in memory 33%, web 0%, both 0%, none 67% (n=3, indicative).",
+        "Median total: 3.0 s for first questions (n=2, indicative),"
+        " 4.0 s for follow-ups (n=1, indicative).",
+    ]
+
+
+def test_memory_without_follow_ups_or_near_misses(tmp_path: Path) -> None:
+    findings = memory.build(load(write(tmp_path, [run()], []))).findings
+    assert "No run scored within 0.05 below the threshold." in findings
+    assert "No follow-up question in the data." in findings
+
+
+def test_errors_findings(tmp_path: Path) -> None:
+    runs = [
+        run(),
+        run(run_id="r2", outcome="llm_error"),
+        run(run_id="r3", outcome="embedding_error"),
+    ]
+    calls = [
+        *calls_of("r2")[:3],
+        call("r2", 4, "llm", 1, 1010.0, 5.0, status="LLMError"),
+        call("r3", 1, "embed", None, 0.0, 5.0, status="EmbeddingError"),
+    ]
+    assert errors.build(load(write(tmp_path, runs, calls))).findings == [
+        "2 of 3 runs failed (67%): embedding_error 1, llm_error 1.",
+        "Failed calls: embed EmbeddingError 1, llm LLMError 1.",
+    ]
+
+
+def test_errors_without_failures(tmp_path: Path) -> None:
+    findings = errors.build(load(write(tmp_path, [run()], calls_of("r1")))).findings
+    assert findings == ["No failed run."]

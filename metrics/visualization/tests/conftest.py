@@ -42,6 +42,22 @@ _RUN: Row = {
     "answer_chars": 500,
 }
 
+# The columns a run that ended on a remote error leaves empty or at zero.
+EMPTY_RESULT: Row = {
+    "agent_ms": None,
+    "llm_ms": 0.0,
+    "steps": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "memory_candidates": None,
+    "memory_kept": None,
+    "memory_top_score": None,
+    "cited_knowledge": None,
+    "cited_web": None,
+    "dropped_refs": None,
+    "answer_chars": None,
+}
+
 
 def run(**overrides: object) -> Row:
     return {**_RUN, **overrides}

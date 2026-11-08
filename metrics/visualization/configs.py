@@ -3,7 +3,7 @@
 import pandas as pd
 
 from load import Metrics, answered
-from render import INK, SERIES, Chart, Section, Table, canvas, chart
+from render import Chart, Section, Table, boxes
 from stats import MIN_GROUP, cell_ms, cell_num, cell_pct, fmt_ms, fmt_p95, note
 
 TITLE = "Configurations"
@@ -82,21 +82,8 @@ def _table(summary: pd.DataFrame) -> pd.DataFrame:
 
 def _totals(done: pd.DataFrame) -> Chart:
     groups = sorted(done.groupby("config_id"), key=lambda group: int(group[0][1:]))
-    fig, ax = canvas(height=0.5 * len(groups) + 1.2, grid="x")
-    ax.boxplot(
-        [group["total_ms"].astype(float).to_numpy() for _, group in groups],
-        orientation="horizontal",
-        tick_labels=[config_id for config_id, _ in groups],
-        widths=0.5,
-        patch_artist=True,
-        boxprops={"facecolor": "#cde2fb", "edgecolor": SERIES[0]},
-        whiskerprops={"color": SERIES[0]},
-        capprops={"color": SERIES[0]},
-        medianprops={"color": INK},
-        flierprops={"markeredgecolor": SERIES[0], "markersize": 4},
+    return boxes(
+        [(str(config_id), group["total_ms"]) for config_id, group in groups],
+        xlabel="total ms per answered run",
+        caption="Total duration per configuration",
     )
-    ax.invert_yaxis()
-    # From zero, so a small spread does not look like a large difference between configs.
-    ax.set_xlim(left=0)
-    ax.set_xlabel("total ms per answered run")
-    return chart(fig, "Total duration per configuration (box: quartiles, line: median)")

@@ -90,12 +90,13 @@ def histogram(
     caption: str,
     color: str = SERIES[0],
     markers: tuple[float, ...] = (),
+    bins: list[float] | None = None,
 ) -> Chart:
     """Distribution of one measure; markers draw reference lines such as a threshold."""
     fig, ax = canvas(height=2.6)
     ax.hist(
         values.astype(float),
-        bins=min(30, max(5, len(values))),
+        bins=bins if bins is not None else min(30, max(5, len(values))),
         color=color,
         edgecolor=SURFACE,
         linewidth=0.8,
@@ -121,6 +122,36 @@ def bars(
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     return chart(fig, caption)
+
+
+def boxes(
+    groups: list[tuple[str, pd.Series]], *, xlabel: str, caption: str, ylabel: str = ""
+) -> Chart:
+    """Horizontal box plots, one per labeled group, on an axis that starts at zero."""
+    fig, ax = canvas(height=0.5 * len(groups) + 1.2, grid="x")
+    ax.boxplot(
+        [values.astype(float).to_numpy() for _, values in groups],
+        orientation="horizontal",
+        tick_labels=[label for label, _ in groups],
+        widths=0.5,
+        patch_artist=True,
+        boxprops={"facecolor": "#cde2fb", "edgecolor": SERIES[0]},
+        whiskerprops={"color": SERIES[0]},
+        capprops={"color": SERIES[0]},
+        medianprops={"color": INK},
+        flierprops={"markeredgecolor": SERIES[0], "markersize": 4},
+    )
+    # Every value as a dot: with a handful of runs the box alone hides the data.
+    for row, (_, values) in enumerate(groups, start=1):
+        ax.scatter(
+            values.astype(float), [row] * len(values), s=14, color=SERIES[0], alpha=0.6, zorder=3
+        )
+    ax.invert_yaxis()
+    # From zero, so a small spread does not look like a large difference between groups.
+    ax.set_xlim(left=0)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    return chart(fig, f"{caption} (box: quartiles, line: median)")
 
 
 def scatter(x: pd.Series, y: pd.Series, *, xlabel: str, ylabel: str, caption: str) -> Chart:

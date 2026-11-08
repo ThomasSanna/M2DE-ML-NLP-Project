@@ -11,7 +11,9 @@ from pathlib import Path
 
 import agent
 import configs
+import errors
 import latency
+import memory
 import overview
 import tokens
 from load import DataError, Metrics, load
@@ -23,6 +25,8 @@ SECTIONS: tuple[Callable[[Metrics], Section], ...] = (
     latency.build,
     tokens.build,
     agent.build,
+    memory.build,
+    errors.build,
 )
 
 _HERE = Path(__file__).resolve().parent
