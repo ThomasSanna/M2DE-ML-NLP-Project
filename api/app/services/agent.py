@@ -23,6 +23,7 @@ from app.services.agent_prompt import (
     render_web_results,
 )
 from app.services.llm import ChatMessage, ChatModel, Completion, LLMError
+from app.services.metrics import RunRecorder
 from app.services.websearch import WebResult, WebSearch, WebSearchError
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ async def run_agent(
     messages: list[ChatMessage],
     memory_refs: set[str],
     max_steps: int,
+    recorder: RunRecorder,
 ) -> AgentRun:
     messages = list(messages)
     searches: list[str] = []
@@ -77,13 +79,19 @@ async def run_agent(
                 "content": f"{final['content']}\n\n{MAX_STEPS_NOTICE}",
             }
         known = memory_refs | web_results.keys()
-        completion = await model.complete(
-            messages, decision_schema(web_search is not None and not last, sorted(known))
-        )
+        with recorder.call("llm", step) as llm_call:
+            completion = await model.complete(
+                messages, decision_schema(web_search is not None and not last, sorted(known))
+            )
+        llm_call.prompt_tokens = completion.prompt_tokens
+        llm_call.completion_tokens = completion.completion_tokens
+        llm_call.cached_tokens = completion.cached_tokens
+        llm_call.finish_reason = completion.finish_reason
         prompt_tokens += completion.prompt_tokens
         completion_tokens += completion.completion_tokens
         messages.append({"role": "assistant", "content": completion.content})
         action = _parse(completion)
+        llm_call.action = "invalid" if isinstance(action, str) else action.action
 
         if isinstance(action, str):
             logger.info("agent step %d: invalid output (%s)", step, action)
@@ -102,7 +110,9 @@ async def run_agent(
             # is Windows, not a source.
             inline = " ".join(REF_GROUP.findall(action.answer))
             refs = [ref.upper() for ref in _REF.findall(" ".join([*action.sources, inline]))]
-            if unknown := set(refs) - known:
+            unknown = set(refs) - known
+            recorder.dropped_refs = len(unknown)
+            if unknown:
                 logger.info("agent dropped unknown refs %s", sorted(unknown))
             return AgentRun(
                 answer=action.answer,
@@ -125,17 +135,23 @@ async def run_agent(
                 raise LLMError("Model searched at the last step despite the grammar")
             key = action.query.casefold()
             if web_search is None:
+                recorder.searches_unavailable += 1
                 feedback = SEARCH_UNAVAILABLE
             elif key in searched:
+                recorder.searches_duplicate += 1
                 feedback = DUPLICATE_SEARCH
             else:
                 try:
-                    results = (await web_search.search(action.query)).results
+                    with recorder.call("web_search", step) as web_call:
+                        response = await web_search.search(action.query)
                 except WebSearchError as exc:
                     # Not recorded: the model may retry the query, nothing was shown.
                     logger.warning("Web search failed: %s", exc)
                     feedback = SEARCH_UNAVAILABLE
                 else:
+                    results = response.results
+                    web_call.items = len(results)
+                    web_call.cost_usd = response.cost_usd
                     searched.add(key)
                     searches.append(action.query)
                     first_ref = len(web_results) + 1

@@ -20,6 +20,7 @@ from app.services.agent_prompt import initial_messages, render_memory, render_th
 from app.services.embeddings import Embedder
 from app.services.glpi import Author, GlpiTicket
 from app.services.llm import ChatModel
+from app.services.metrics import RunRecorder
 from app.services.reranker import Reranker
 from app.services.websearch import WebSearch
 
@@ -40,6 +41,7 @@ async def answer_thread(
     request: AnswerRequest,
 ) -> AnswerResult:
     """Answer the thread's last user message from the memory, then the web if needed."""
+    recorder = RunRecorder()
     text = _retrieval_query(request.messages)
     hits = await memory.retrieve(
         session,
@@ -49,6 +51,7 @@ async def answer_thread(
         settings.retrieval_candidates,
         settings.retrieval_top_k,
         settings.rerank_threshold,
+        recorder,
     )
     # Ends the read-only transaction so the pooled connection is not held through the
     # model and web calls. Not rollback(): it would expire the loaded entries.
@@ -66,6 +69,7 @@ async def answer_thread(
         ),
         set(knowledge),
         settings.agent_max_steps,
+        recorder,
     )
 
     sources: list[Citation] = []
