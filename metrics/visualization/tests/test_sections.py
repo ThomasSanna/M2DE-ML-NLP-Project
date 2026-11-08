@@ -9,6 +9,7 @@ import latency
 import memory
 import overview
 import tokens
+from i18n import language
 from load import Metrics, load
 from render import histogram
 from stats import fmt_ms, fmt_pct, note
@@ -36,6 +37,26 @@ def test_overview_findings(tmp_path: Path) -> None:
         "2 of 3 runs answered (67%).",
         "Sources: api 2, worker 1.",
     ]
+
+
+def test_overview_findings_in_french(tmp_path: Path) -> None:
+    data = _overview_data(tmp_path)
+    with language("fr"):
+        findings = overview.build(data).findings
+    assert findings == [
+        "3 exécutions du 2026-11-08 10:00 au 2026-11-08 12:00 UTC.",
+        "Exécutions ayant répondu : 2 sur 3 (67\u00a0%).",
+        "Sources : api 2, worker 1.",
+    ]
+
+
+def test_configuration_label_in_french(tmp_path: Path) -> None:
+    with language("fr"):
+        findings = configs.build(load(write(tmp_path, [run()], []))).findings
+    assert findings[0] == (
+        "Référence : (sans label) · google/gemma-4-12B-it · étapes 3 · max_tokens 512"
+        " · candidats 20 · top_k 3 · seuil 0,95 · web activé (n=1, indicatif)."
+    )
 
 
 def test_overview_of_a_single_run(tmp_path: Path) -> None:

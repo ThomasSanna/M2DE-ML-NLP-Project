@@ -11,7 +11,9 @@ from typing import Literal
 import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import MaxNLocator, ScalarFormatter
+
+from i18n import current, localize, t
 
 # Validated categorical palette for a light surface. Each entity keeps its color in every
 # chart: colors follow the entity, never its rank.
@@ -110,7 +112,7 @@ def histogram(
         ax.axvline(marker, color=INK, linewidth=1, linestyle="--")
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     ax.set_xlabel(xlabel)
-    ax.set_ylabel("count")
+    ax.set_ylabel(t("count"))
     return chart(fig, caption)
 
 
@@ -156,7 +158,7 @@ def boxes(
     ax.set_xlim(left=0)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    return chart(fig, f"{caption} (box: quartiles, line: median)")
+    return chart(fig, t("{caption} (box: quartiles, line: median)", caption=caption))
 
 
 def scatter(x: pd.Series, y: pd.Series, *, xlabel: str, ylabel: str, caption: str) -> Chart:
@@ -169,7 +171,19 @@ def scatter(x: pd.Series, y: pd.Series, *, xlabel: str, ylabel: str, caption: st
     return chart(fig, caption)
 
 
+class _LocalizedFormatter(ScalarFormatter):
+    """Numeric tick labels with the decimal separator of the report language."""
+
+    def __call__(self, x: float, pos: int | None = None) -> str:
+        return localize(super().__call__(x, pos))
+
+
 def chart(fig: Figure, caption: str) -> Chart:
+    for ax in fig.axes:
+        for axis in (ax.xaxis, ax.yaxis):
+            # Only numeric axes: category and fixed tick labels are words, not numbers.
+            if type(axis.get_major_formatter()) is ScalarFormatter:
+                axis.set_major_formatter(_LocalizedFormatter())
     buffer = io.BytesIO()
     fig.savefig(buffer, format="png", dpi=110, facecolor=SURFACE)
     return Chart(caption=caption, png_base64=base64.b64encode(buffer.getvalue()).decode())
@@ -181,12 +195,20 @@ def render(
     toc = "".join(
         f'<li><a href="#{_anchor(s.title)}">{html.escape(s.title)}</a></li>' for s in sections
     )
-    return _PAGE.format(
-        style=_STYLE,
+    generated = t(
+        "Generated {generated} from {source}: {runs} runs, {calls} calls.",
         generated=f"{generated_at:%Y-%m-%d %H:%M} UTC",
-        source=html.escape(str(source)),
+        source=source,
         runs=runs,
         calls=calls,
+    )
+    sample = t('Every number shows its sample size; "indicative" marks fewer than 20 runs.')
+    return _PAGE.format(
+        lang=current(),
+        title=html.escape(t("AI metrics report")),
+        style=_STYLE,
+        generated=html.escape(generated),
+        sample=html.escape(sample),
         toc=toc,
         body="".join(_section(section) for section in sections),
     )
@@ -204,9 +226,9 @@ def _section(section: Section) -> str:
         for c in section.charts
     )
     tables = "".join(
-        f'<div class="table"><h3>{html.escape(t.caption)}</h3>'
-        f"{t.frame.to_html(index=False, escape=True, border=0, na_rep='-')}</div>"
-        for t in section.tables
+        f'<div class="table"><h3>{html.escape(table.caption)}</h3>'
+        f"{table.frame.to_html(index=False, escape=True, border=0, na_rep='-')}</div>"
+        for table in section.tables
     )
     return (
         f'<section><h2 id="{_anchor(section.title)}">{html.escape(section.title)}</h2>'
@@ -236,18 +258,18 @@ th {{ color: {INK_MUTED}; font-weight: 600; }}
 """
 
 _PAGE = """<!doctype html>
-<html lang="en">
+<html lang="{lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI metrics report</title>
+<title>{title}</title>
 <style>{style}</style>
 </head>
 <body>
 <main>
-<h1>AI metrics report</h1>
-<p class="meta">Generated {generated} from {source}: {runs} runs, {calls} calls.
-Every number shows its sample size; "indicative" marks fewer than 20 runs.</p>
+<h1>{title}</h1>
+<p class="meta">{generated}
+{sample}</p>
 <nav><ul>{toc}</ul></nav>
 {body}
 </main>

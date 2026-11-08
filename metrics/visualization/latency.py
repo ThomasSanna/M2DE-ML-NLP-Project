@@ -2,6 +2,7 @@
 
 import pandas as pd
 
+from i18n import number, t
 from load import Metrics, answered
 from render import (
     INK,
@@ -35,8 +36,8 @@ def build(metrics: Metrics) -> Section:
         charts.append(
             histogram(
                 gaps,
-                xlabel="ms from the end of a call to the start of the next",
-                caption="Gaps between consecutive calls of a run (prompt building, DB, parsing)",
+                xlabel=t("ms from the end of a call to the start of the next"),
+                caption=t("Gaps between consecutive calls of a run (prompt building, DB, parsing)"),
             )
         )
     speed = calls["tokens_per_s"].dropna()
@@ -44,16 +45,16 @@ def build(metrics: Metrics) -> Section:
         charts.append(
             histogram(
                 speed,
-                xlabel="completion tokens per second, prefill included",
-                caption="Generation speed of successful model calls",
+                xlabel=t("completion tokens per second, prefill included"),
+                caption=t("Generation speed of successful model calls"),
                 color=KIND_COLORS["llm"],
             )
         )
     return Section(
-        "Latency",
+        t("Latency"),
         [_shares(done, calls), _slowest(calls), _gap(gaps), _speed(speed)],
         charts,
-        [Table("Duration per call kind", _per_kind(calls))],
+        [Table(t("Duration per call kind"), _per_kind(calls))],
     )
 
 
@@ -65,39 +66,53 @@ def _typical(done: pd.DataFrame) -> pd.Series:
 
 def _shares(done: pd.DataFrame, calls: pd.DataFrame) -> str:
     if done.empty:
-        return "No answered run: no latency breakdown."
+        return t("No answered run: no latency breakdown.")
     run = _typical(done)
     total = float(run["total_ms"])
     spent = calls[calls["run_id"] == run["run_id"]].groupby("kind")["duration_ms"].sum()
     shares = sorted(((str(k), float(v) / total) for k, v in spent.items()), key=lambda p: -p[1])
     parts = [f"{kind} {fmt_pct(share)}" for kind, share in shares]
-    parts.append(f"other {fmt_pct(float(run['overhead_ms']) / total)}")
+    parts.append(f"{t('other')} {fmt_pct(float(run['overhead_ms']) / total)}")
     median = float(done["total_ms"].median())
-    return f"The run closest to the median total ({fmt_ms(median)}) spends: {', '.join(parts)}."
+    return t(
+        "The run closest to the median total ({total}) spends: {shares}.",
+        total=fmt_ms(median),
+        shares=", ".join(parts),
+    )
 
 
 def _slowest(calls: pd.DataFrame) -> str:
     ok = calls[calls["status"] == "ok"]
     if ok.empty:
-        return "No successful call in the data."
+        return t("No successful call in the data.")
     medians = ok.groupby("kind")["duration_ms"].median()
     kind = str(medians.idxmax())
     n = int((ok["kind"] == kind).sum())
-    return f"Slowest call kind by median duration: {kind}, {fmt_ms(medians[kind])} ({note(n)})."
+    return t(
+        "Slowest call kind by median duration: {kind}, {duration} ({note}).",
+        kind=kind,
+        duration=fmt_ms(medians[kind]),
+        note=note(n),
+    )
 
 
 def _gap(gaps: pd.Series) -> str:
     if gaps.empty:
-        return "No consecutive calls in the data."
-    return f"Median gap between consecutive calls: {fmt_ms(gaps.median())} ({note(len(gaps))})."
+        return t("No consecutive calls in the data.")
+    return t(
+        "Median gap between consecutive calls: {gap} ({note}).",
+        gap=fmt_ms(gaps.median()),
+        note=note(len(gaps)),
+    )
 
 
 def _speed(speed: pd.Series) -> str:
     if speed.empty:
-        return "No successful model call in the data."
-    return (
-        f"Median generation speed: {speed.median():.0f} tokens/s, prefill included"
-        f" ({note(len(speed))})."
+        return t("No successful model call in the data.")
+    return t(
+        "Median generation speed: {speed} tokens/s, prefill included ({note}).",
+        speed=number(speed.median()),
+        note=note(len(speed)),
     )
 
 
@@ -109,16 +124,17 @@ def _per_kind(calls: pd.DataFrame) -> pd.DataFrame:
             continue
         ok = of_kind.loc[of_kind["status"] == "ok", "duration_ms"]
         rows.append(
-            {
-                "kind": kind,
-                "calls": len(of_kind),
-                "failed": int((of_kind["status"] != "ok").sum()),
-                "median": cell_ms(ok.median()) if not ok.empty else "-",
-                "p95": fmt_p95(ok.quantile(0.95) if not ok.empty else float("nan"), len(ok)),
-                "max": cell_ms(ok.max()) if not ok.empty else "-",
-            }
+            (
+                kind,
+                len(of_kind),
+                int((of_kind["status"] != "ok").sum()),
+                cell_ms(ok.median()) if not ok.empty else "-",
+                fmt_p95(ok.quantile(0.95) if not ok.empty else float("nan"), len(ok)),
+                cell_ms(ok.max()) if not ok.empty else "-",
+            )
         )
-    return pd.DataFrame(rows, columns=["kind", "calls", "failed", "median", "p95", "max"])
+    columns = [t("kind"), t("calls"), t("failed"), t("median"), t("p95"), t("max")]
+    return pd.DataFrame(rows, columns=columns)
 
 
 def _breakdown(done: pd.DataFrame, calls: pd.DataFrame) -> Chart:
@@ -140,17 +156,18 @@ def _breakdown(done: pd.DataFrame, calls: pd.DataFrame) -> Chart:
                 means[kind],
                 left=left,
                 color=KIND_COLORS[kind],
-                label=kind,
+                label=t("other") if kind == "other" else kind,
                 height=0.6,
                 edgecolor=SURFACE,
                 linewidth=1.2,
             )
             left = left + means[kind]
     ax.invert_yaxis()
-    ax.set_xlabel("ms per answered run (mean)")
+    ax.set_xlabel(t("ms per answered run (mean)"))
     legend(ax)
     return chart(
-        fig, "Mean time per answered run by call kind, per configuration (sums to the mean total)"
+        fig,
+        t("Mean time per answered run by call kind, per configuration (sums to the mean total)"),
     )
 
 
@@ -166,11 +183,19 @@ def _timeline(run: pd.Series, calls: pd.DataFrame) -> Chart:
             color=KIND_COLORS.get(str(call.kind), NEUTRAL),
             height=0.6,
         )
-        labels.append(str(call.kind) if pd.isna(call.step) else f"{call.kind} (step {call.step})")
+        labels.append(
+            str(call.kind)
+            if pd.isna(call.step)
+            else t("{kind} (step {step})", kind=call.kind, step=call.step)
+        )
     ax.axvline(float(run["total_ms"]), color=INK, linewidth=1, linestyle="--")
     ax.set_yticks(range(len(labels)), labels)
     ax.invert_yaxis()
-    ax.set_xlabel("ms since the run started (dashed line: end of run)")
+    ax.set_xlabel(t("ms since the run started (dashed line: end of run)"))
     return chart(
-        fig, f"Timeline of the run closest to the median total ({fmt_ms(run['total_ms'])})"
+        fig,
+        t(
+            "Timeline of the run closest to the median total ({total})",
+            total=fmt_ms(run["total_ms"]),
+        ),
     )

@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from i18n import number, t
+
 RUNS_FILE = "runs.v1.csv"
 CALLS_FILE = "calls.v1.csv"
 
@@ -154,11 +156,15 @@ def _config_ids(runs: pd.DataFrame) -> dict[str, str]:
 
 
 def _config(run: pd.Series) -> str:
-    label = run["label"] if pd.notna(run["label"]) else "(no label)"
-    web = "on" if run["web_search_enabled"] else "off"
-    return (
-        f"{label} · {run['llm_model']} · steps {run['agent_max_steps']}"
-        f" · max_tokens {run['llm_max_tokens']} · candidates {run['retrieval_candidates']}"
-        f" · top_k {run['retrieval_top_k']} · threshold {run['rerank_threshold']:g}"
-        f" · web {web}"
+    return t(
+        "{label} · {model} · steps {steps} · max_tokens {max_tokens} · candidates {candidates}"
+        " · top_k {top_k} · threshold {threshold} · web {web}",
+        label=run["label"] if pd.notna(run["label"]) else t("(no label)"),
+        model=run["llm_model"],
+        steps=run["agent_max_steps"],
+        max_tokens=run["llm_max_tokens"],
+        candidates=run["retrieval_candidates"],
+        top_k=run["retrieval_top_k"],
+        threshold=number(run["rerank_threshold"], "g"),
+        web=t("on") if run["web_search_enabled"] else t("off"),
     )

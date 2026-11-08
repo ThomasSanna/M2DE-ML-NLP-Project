@@ -2,6 +2,7 @@
 
 import pandas as pd
 
+from i18n import number, t
 from load import Metrics, answered
 from render import Section, Table, bars, boxes, histogram
 from stats import cell_ms, cell_num, fmt_ms, fmt_pct, note
@@ -24,19 +25,19 @@ def build(metrics: Metrics) -> Section:
             bars(
                 [str(k) for k in kept.index],
                 [int(n) for n in kept],
-                xlabel="memory entries kept after the rerank threshold",
-                ylabel="runs",
-                caption="Memory entries kept per run",
+                xlabel=t("memory entries kept after the rerank threshold"),
+                ylabel=t("runs"),
+                caption=t("Memory entries kept per run"),
             )
         )
     scores = runs["memory_top_score"].dropna()
     if not scores.empty:
-        thresholds = tuple(float(t) for t in runs["rerank_threshold"].dropna().unique())
+        thresholds = tuple(float(value) for value in runs["rerank_threshold"].dropna().unique())
         charts.append(
             histogram(
                 scores,
-                xlabel="best rerank score of the run (dashed: rerank threshold)",
-                caption="Best rerank score per run against the threshold",
+                xlabel=t("best rerank score of the run (dashed: rerank threshold)"),
+                caption=t("Best rerank score per run against the threshold"),
                 markers=thresholds,
                 # Fixed 0.025-wide bins over [0, 1]: scores near 1 stay visible.
                 bins=[i / 40 for i in range(41)],
@@ -44,72 +45,93 @@ def build(metrics: Metrics) -> Section:
         )
     if not done.empty:
         shares = done["grounding"].value_counts().reindex(_GROUNDING, fill_value=0)
+        names = {
+            "memory": t("memory"),
+            "web": t("web"),
+            "memory+web": t("memory+web"),
+            "none": t("none"),
+        }
         charts.append(
             bars(
-                list(_GROUNDING),
+                [names[grounding] for grounding in _GROUNDING],
                 [int(n) for n in shares],
-                xlabel="sources cited by the answer",
-                ylabel="answered runs",
-                caption="What answers are grounded in",
+                xlabel=t("sources cited by the answer"),
+                ylabel=t("answered runs"),
+                caption=t("What answers are grounded in"),
             )
         )
         by_replies = _by_replies(done)
         charts.append(
             boxes(
                 [(label, group["total_ms"]) for label, group in by_replies],
-                xlabel="total ms per answered run",
-                caption="Total duration by replies already in the thread",
-                ylabel="prior replies",
+                xlabel=t("total ms per answered run"),
+                caption=t("Total duration by replies already in the thread"),
+                ylabel=t("prior replies"),
             )
         )
         charts.append(
             boxes(
                 [(label, group["prompt_tokens"]) for label, group in by_replies],
-                xlabel="prompt tokens per answered run",
-                caption="Prompt tokens by replies already in the thread",
-                ylabel="prior replies",
+                xlabel=t("prompt tokens per answered run"),
+                caption=t("Prompt tokens by replies already in the thread"),
+                ylabel=t("prior replies"),
             )
         )
     return Section(
-        "Memory and thread",
+        t("Memory and thread"),
         findings,
         charts,
-        [Table("Answered runs by replies already in the thread", _replies_table(done))],
+        [Table(t("Answered runs by replies already in the thread"), _replies_table(done))],
     )
 
 
 def _kept(retrieved: pd.DataFrame) -> str:
     if retrieved.empty:
-        return "No memory retrieval in the data."
+        return t("No memory retrieval in the data.")
     none = int((retrieved["memory_kept"] == 0).sum())
     n = len(retrieved)
-    return f"{none} of {n} runs kept no memory entry ({fmt_pct(none / n)}, {note(n)})."
+    return t(
+        "{none} of {runs} runs kept no memory entry ({pct}, {note}).",
+        none=none,
+        runs=n,
+        pct=fmt_pct(none / n),
+        note=note(n),
+    )
 
 
 def _near(runs: pd.DataFrame) -> str:
     score, threshold = runs["memory_top_score"], runs["rerank_threshold"]
     near = int(((score >= threshold - NEAR_THRESHOLD) & (score < threshold)).fillna(False).sum())
+    margin = number(NEAR_THRESHOLD, "g")
     if near == 0:
-        return f"No run scored within {NEAR_THRESHOLD} below the threshold."
+        return t("No run scored within {margin} below the threshold.", margin=margin)
     if near == 1:
-        return (
-            f"1 run scored within {NEAR_THRESHOLD} below the threshold: a lower threshold would"
-            " admit its best entry."
+        return t(
+            "1 run scored within {margin} below the threshold: a lower threshold would"
+            " admit its best entry.",
+            margin=margin,
         )
-    return (
-        f"{near} runs scored within {NEAR_THRESHOLD} below the threshold: a lower threshold"
-        " would admit their best entries."
+    return t(
+        "{runs} runs scored within {margin} below the threshold: a lower threshold"
+        " would admit their best entries.",
+        runs=near,
+        margin=margin,
     )
 
 
 def _grounding(done: pd.DataFrame) -> list[str]:
     if done.empty:
-        return ["No answered run: no grounding figures."]
+        return [t("No answered run: no grounding figures.")]
     share = done["grounding"].value_counts(normalize=True).reindex(_GROUNDING, fill_value=0.0)
     return [
-        f"Answers grounded in memory {fmt_pct(share['memory'])}, web {fmt_pct(share['web'])},"
-        f" both {fmt_pct(share['memory+web'])}, none {fmt_pct(share['none'])}"
-        f" ({note(len(done))})."
+        t(
+            "Answers grounded in memory {memory}, web {web}, both {both}, none {none} ({note}).",
+            memory=fmt_pct(share["memory"]),
+            web=fmt_pct(share["web"]),
+            both=fmt_pct(share["memory+web"]),
+            none=fmt_pct(share["none"]),
+            note=note(len(done)),
+        )
     ]
 
 
@@ -119,13 +141,24 @@ def _follow_ups(done: pd.DataFrame) -> list[str]:
     first = done[done["prior_replies"] == 0]
     follow = done[done["prior_replies"] > 0]
     if follow.empty:
-        return ["No follow-up question in the data."]
-    parts = [
-        f"{fmt_ms(group['total_ms'].median())} for {name} ({note(len(group))})"
-        for name, group in (("first questions", first), ("follow-ups", follow))
-        if not group.empty
-    ]
-    return [f"Median total: {', '.join(parts)}."]
+        return [t("No follow-up question in the data.")]
+    parts = []
+    if not first.empty:
+        parts.append(
+            t(
+                "{total} for first questions ({note})",
+                total=fmt_ms(first["total_ms"].median()),
+                note=note(len(first)),
+            )
+        )
+    parts.append(
+        t(
+            "{total} for follow-ups ({note})",
+            total=fmt_ms(follow["total_ms"].median()),
+            note=note(len(follow)),
+        )
+    )
+    return [t("Median total: {parts}.", parts=", ".join(parts))]
 
 
 def _by_replies(done: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
@@ -138,22 +171,22 @@ def _by_replies(done: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
 
 def _replies_table(done: pd.DataFrame) -> pd.DataFrame:
     rows = [
-        {
-            "prior replies": label,
-            "runs": len(group),
-            "median total": cell_ms(group["total_ms"].median()),
-            "mean prompt tokens": cell_num(group["prompt_tokens"].mean()),
-            "median thread chars": cell_num(group["thread_chars"].median()),
-            "grounded in memory": fmt_pct(group["grounding"].isin(["memory", "memory+web"]).mean()),
-        }
+        (
+            label,
+            len(group),
+            cell_ms(group["total_ms"].median()),
+            cell_num(group["prompt_tokens"].mean()),
+            cell_num(group["thread_chars"].median()),
+            fmt_pct(group["grounding"].isin(["memory", "memory+web"]).mean()),
+        )
         for label, group in _by_replies(done)
     ]
     columns = [
-        "prior replies",
-        "runs",
-        "median total",
-        "mean prompt tokens",
-        "median thread chars",
-        "grounded in memory",
+        t("prior replies"),
+        t("runs"),
+        t("median total"),
+        t("mean prompt tokens"),
+        t("median thread chars"),
+        t("grounded in memory"),
     ]
     return pd.DataFrame(rows, columns=columns)

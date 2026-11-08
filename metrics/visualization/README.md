@@ -11,7 +11,12 @@ network, and every sentence is computed from the current files.
 cd metrics/visualization
 uv run report.py                       # reads ../*.v1.csv, writes report.html here
 uv run report.py --dir /path/to/csv --out /tmp/report.html
+uv run report.py --lang en             # English report; French is the default
 ```
+
+The report is written in French by default, numbers included (`3,5 s`, `67 %`); `--lang en`
+writes it in English. Data codes such as outcomes (`answered`, `llm_error`) and call kinds
+(`embed`, `llm`) keep their CSV spelling in both languages.
 
 Collect data first: set `METRICS_DIR` (and optionally `METRICS_LABEL`) in `.env`, then
 `docker compose up -d --build api`. `report.html` holds your data and is gitignored.
@@ -51,3 +56,7 @@ uv run pytest -q
 Tests write synthetic CSV files with the `v1` header (`tests/conftest.py`) and check the
 exact sentences of each section, plus a whole report on edge cases: a single run, error-only
 runs, a run without call rows, a failed configuration next to a healthy one.
+
+Texts are written in English in the code, wrapped in `t()` (`i18n.py`), and translated in
+`locales/fr.toml`. A new or changed text needs its French entry there: `tests/test_i18n.py`
+fails on a missing, unused or mismatched translation, and on a sentence left untranslated.

@@ -1,27 +1,42 @@
+from html import escape
 from pathlib import Path
 
 import pytest
 
+from i18n import LANGUAGES
 from load import load
 from report import SECTIONS, main
 from tests.conftest import EMPTY_RESULT, Row, call, calls_of, run, write
 
-TITLES = (
-    "Overview",
-    "Configurations",
-    "Latency",
-    "Tokens and cache",
-    "Agent",
-    "Memory and thread",
-    "Errors",
-)
+TITLES = {
+    "en": (
+        "Overview",
+        "Configurations",
+        "Latency",
+        "Tokens and cache",
+        "Agent",
+        "Memory and thread",
+        "Errors",
+    ),
+    "fr": (
+        "Vue d'ensemble",
+        "Configurations",
+        "Latence",
+        "Tokens et cache",
+        "Agent",
+        "Mémoire et fil",
+        "Erreurs",
+    ),
+}
 
 
 def test_main_writes_a_self_contained_report(tmp_path: Path) -> None:
     out = tmp_path / "report.html"
     assert main(["--dir", str(write(tmp_path, [run()], calls_of("r1"))), "--out", str(out)]) == 0
     html = out.read_text(encoding="utf-8")
-    assert all(f">{title}<" in html for title in TITLES)
+    assert '<html lang="fr">' in html
+    assert "<h1>Rapport des métriques IA</h1>" in html
+    assert all(f">{escape(title)}<" in html for title in TITLES["fr"])
     assert 'src="data:image/png;base64,' in html
     assert "<script" not in html
     assert "<link" not in html
@@ -57,19 +72,22 @@ DATASETS: dict[str, tuple[list[Row], list[Row]]] = {
 }
 
 
+@pytest.mark.parametrize("lang", LANGUAGES)
 @pytest.mark.parametrize("name", DATASETS)
-def test_every_section_renders(tmp_path: Path, name: str) -> None:
+def test_every_section_renders(tmp_path: Path, name: str, lang: str) -> None:
     runs, calls = DATASETS[name]
     out = tmp_path / "report.html"
-    assert main(["--dir", str(write(tmp_path, runs, calls)), "--out", str(out)]) == 0
+    data = str(write(tmp_path, runs, calls))
+    assert main(["--dir", data, "--out", str(out), "--lang", lang]) == 0
     html = out.read_text(encoding="utf-8")
-    for title in TITLES:
-        assert f">{title}<" in html
+    assert f'<html lang="{lang}">' in html
+    for title in TITLES[lang]:
+        assert f">{escape(title)}<" in html
 
 
 def test_sections_are_in_report_order(tmp_path: Path) -> None:
     metrics = load(write(tmp_path, [run()], calls_of("r1")))
-    assert tuple(build(metrics).title for build in SECTIONS) == TITLES
+    assert tuple(build(metrics).title for build in SECTIONS) == TITLES["en"]
 
 
 def test_chart_count_does_not_grow_with_the_data(tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
 """Write the AI metrics report: one self-contained HTML file.
 
-Usage: uv run report.py [--dir DIR] [--out FILE]
+Usage: uv run report.py [--dir DIR] [--out FILE] [--lang {fr,en}]
 """
 
 import argparse
@@ -16,6 +16,7 @@ import latency
 import memory
 import overview
 import tokens
+from i18n import LANGUAGES, language
 from load import DataError, Metrics, load
 from render import Section, render
 
@@ -43,19 +44,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--out", type=Path, default=_HERE / "report.html", help="HTML file to write"
     )
-    args = parser.parse_args(argv)
-    try:
-        metrics = load(args.dir)
-    except DataError as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 1
-    page = render(
-        [build(metrics) for build in SECTIONS],
-        source=args.dir.resolve(),
-        runs=len(metrics.runs),
-        calls=len(metrics.calls),
-        generated_at=datetime.now(UTC),
+    parser.add_argument(
+        "--lang", choices=LANGUAGES, default="fr", help="report language (default: fr)"
     )
+    args = parser.parse_args(argv)
+    # Loading is inside the block too: it writes the configuration labels.
+    with language(args.lang):
+        try:
+            metrics = load(args.dir)
+        except DataError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        page = render(
+            [build(metrics) for build in SECTIONS],
+            source=args.dir.resolve(),
+            runs=len(metrics.runs),
+            calls=len(metrics.calls),
+            generated_at=datetime.now(UTC),
+        )
     args.out.write_text(page, encoding="utf-8")
     print(args.out.resolve())
     return 0
