@@ -348,6 +348,10 @@ calls["gap_ms"] = calls.groupby("run_id")["start_ms"].shift(-1) - (calls["start_
 runs.groupby(["label", "llm_model"])[["total_ms", "prompt_tokens", "completion_tokens"]].mean()
 ```
 
+For a full report with charts and interpreted results, run
+`cd metrics/visualization && uv run report.py`
+(see [`metrics/visualization/README.md`](../metrics/visualization/README.md)).
+
 ## Invariants à respecter
 
 - **Changer `EMBEDDING_MODEL` ou l'instruction d'embedding rend les vecteurs stockés incompatibles** : il faut ré-embedder toute la table `knowledge`. Le même préfixe d'instruction s'applique aux questions stockées et aux requêtes (`core/config.py`).

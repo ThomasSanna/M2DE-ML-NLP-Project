@@ -225,8 +225,8 @@ figure {{ margin: 16px 0; }}
 img {{ max-width: 100%; height: auto; }}
 .table {{ overflow-x: auto; }}
 table {{ border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }}
-th, td {{ padding: 4px 10px; text-align: right; border-bottom: 1px solid {GRID}; }}
-th:first-child, td:first-child {{ text-align: left; }}
+th, td {{ padding: 4px 10px; text-align: left; vertical-align: top;
+  border-bottom: 1px solid {GRID}; }}
 th {{ color: {INK_MUTED}; font-weight: 600; }}
 """
 
