@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import csv
 import hashlib
 import hmac
 import json
@@ -138,6 +139,11 @@ def glpi_headers(body: bytes, timestamp: str = "1760000000") -> dict[str, str]:
         "X-GLPI-signature": signature.hexdigest(),
         "X-GLPI-timestamp": timestamp,
     }
+
+
+def csv_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as file:
+        return list(csv.DictReader(file))
 
 
 def run_sql(settings: Settings, statement: str) -> None:

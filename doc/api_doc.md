@@ -251,6 +251,8 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `EXA_NUM_RESULTS` | `3` | results per web search |
 | `EXA_TIMEOUT_SECONDS` | `15.0` | timeout of one web search |
 | `AGENT_MAX_STEPS` | `3` | model calls per answer; the last one must answer |
+| `METRICS_DIR` | empty | directory of the metrics CSV files (`runs.v1.csv`, `calls.v1.csv`); empty = disabled; `/app/metrics` in Docker, mounted from `./metrics` |
+| `METRICS_LABEL` | empty | tag written on every run row, to tell comparison campaigns apart |
 | `GLPI_API_URL` | `http://glpi/apirest.php/` | GLPI REST API URL (Docker network); not in `.env.example`, set by docker-compose |
 | `GLPI_USER_TOKEN` / `GLPI_APP_TOKEN` | empty | tokens of the GLPI bot user; without a User-Token, routes that use GLPI answer `503` |
 | `GLPI_FOLLOWUP_PRIVATE` | `false` | `true` = private followup (a technician validates it) instead of a public one emailed to the requester |
