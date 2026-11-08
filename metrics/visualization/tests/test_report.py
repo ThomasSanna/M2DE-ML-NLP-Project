@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from page import render
 
 from i18n import LANGUAGES
 from load import load
+from page import render
 from render import Chart, Section, Table, Tabs, View
 from report import SECTIONS, main
 from tests.conftest import EMPTY_RESULT, Row, call, calls_of, run, write
