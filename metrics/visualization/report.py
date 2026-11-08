@@ -9,11 +9,17 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
+import configs
+import latency
 import overview
 from load import DataError, Metrics, load
 from render import Section, render
 
-SECTIONS: tuple[Callable[[Metrics], Section], ...] = (overview.build,)
+SECTIONS: tuple[Callable[[Metrics], Section], ...] = (
+    overview.build,
+    configs.build,
+    latency.build,
+)
 
 _HERE = Path(__file__).resolve().parent
 

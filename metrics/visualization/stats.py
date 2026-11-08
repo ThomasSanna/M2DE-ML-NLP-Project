@@ -28,3 +28,21 @@ def counts(values: pd.Series) -> list[tuple[str, int]]:
 
 def listing(pairs: list[tuple[str, int]]) -> str:
     return ", ".join(f"{name} {n}" for name, n in pairs)
+
+
+def fmt_p95(value: float, n: int) -> str:
+    if n == 0 or pd.isna(value):
+        return "-"
+    return fmt_ms(value) if n >= INDICATIVE_BELOW else f"{fmt_ms(value)} (indicative)"
+
+
+def cell_ms(value: float) -> str:
+    return "-" if pd.isna(value) else fmt_ms(value)
+
+
+def cell_num(value: float, digits: int = 0) -> str:
+    return "-" if pd.isna(value) else f"{value:,.{digits}f}"
+
+
+def cell_pct(value: float) -> str:
+    return "-" if pd.isna(value) else fmt_pct(value)

@@ -127,6 +127,7 @@ def _derive_runs(runs: pd.DataFrame, calls: pd.DataFrame) -> pd.DataFrame:
         runs["prompt_tokens"] > 0
     )
     runs["config"] = runs.apply(_config, axis=1).astype("string")
+    runs["config_id"] = runs["config"].map(_config_ids(runs)).astype("string")
     knowledge = runs["cited_knowledge"].fillna(0) > 0
     web = runs["cited_web"].fillna(0) > 0
     grounding = pd.Series("none", index=runs.index, dtype="string")
@@ -135,6 +136,21 @@ def _derive_runs(runs: pd.DataFrame, calls: pd.DataFrame) -> pd.DataFrame:
     grounding[knowledge & web] = "memory+web"
     runs["grounding"] = grounding.where(runs["outcome"] == "answered")
     return runs
+
+
+def answered(runs: pd.DataFrame) -> pd.DataFrame:
+    return runs[runs["outcome"] == "answered"]
+
+
+def _config_ids(runs: pd.DataFrame) -> dict[str, str]:
+    """C1 is the configuration with the most answered runs: the baseline of comparisons."""
+    order = (
+        runs.assign(answered=runs["outcome"] == "answered")
+        .groupby("config", as_index=False)
+        .agg(answered=("answered", "sum"), first=("started_at", "min"))
+        .sort_values(["answered", "first", "config"], ascending=[False, True, True])
+    )
+    return {config: f"C{i}" for i, config in enumerate(order["config"], start=1)}
 
 
 def _config(run: pd.Series) -> str:

@@ -1,0 +1,102 @@
+"""Configurations: each set of settings and METRICS_LABEL against the baseline (C1)."""
+
+import pandas as pd
+
+from load import Metrics, answered
+from render import INK, SERIES, Chart, Section, Table, canvas, chart
+from stats import MIN_GROUP, cell_ms, cell_num, cell_pct, fmt_ms, fmt_p95, note
+
+TITLE = "Configurations"
+_MEMORY = ("memory", "memory+web")
+
+
+def build(metrics: Metrics) -> Section:
+    summary = _summary(metrics.runs)
+    table = Table("Answered runs per configuration (C1 is the baseline)", _table(summary))
+    done = answered(metrics.runs)
+    if done.empty:
+        findings = ["No answered run: configurations cannot be compared."]
+        return Section(TITLE, findings, tables=[table])
+    return Section(TITLE, _findings(summary), charts=[_totals(done)], tables=[table])
+
+
+def _summary(runs: pd.DataFrame) -> pd.DataFrame:
+    summary = runs.groupby("config_id").agg(
+        config=("config", "first"), errors=("outcome", lambda o: int((o != "answered").sum()))
+    )
+    groups = answered(runs).groupby("config_id")
+    summary["answered"] = groups.size().reindex(summary.index, fill_value=0)
+    summary["median_ms"] = groups["total_ms"].median()
+    summary["p95_ms"] = groups["total_ms"].quantile(0.95)
+    summary["prompt"] = groups["prompt_tokens"].mean()
+    summary["completion"] = groups["completion_tokens"].mean()
+    summary["steps"] = groups["steps"].mean()
+    summary["memory"] = groups["grounding"].agg(lambda g: g.isin(_MEMORY).mean())
+    return summary.sort_index(key=lambda ids: ids.str[1:].astype(int))
+
+
+def _findings(summary: pd.DataFrame) -> list[str]:
+    base = summary.iloc[0]
+    findings = [f"Baseline: {base['config']} ({note(int(base['answered']))})."]
+    others = summary.iloc[1:]
+    if others.empty:
+        return [*findings, "Only one configuration in the data: nothing to compare."]
+    compared = others[others["answered"] >= MIN_GROUP]
+    if compared.empty:
+        return [
+            *findings,
+            f"No configuration other than the baseline has {MIN_GROUP} answered runs:"
+            " differences are not interpreted.",
+        ]
+    base_tokens = base["prompt"] + base["completion"]
+    for _, row in compared.iterrows():
+        tokens = row["prompt"] + row["completion"]
+        findings.append(
+            f"{row['config']}: median total {fmt_ms(row['median_ms'])}"
+            f" ({row['median_ms'] / base['median_ms'] - 1:+.0%} vs baseline),"
+            f" mean tokens {tokens:.0f} ({tokens / base_tokens - 1:+.0%})"
+            f" ({note(int(row['answered']))})."
+        )
+    return findings
+
+
+def _table(summary: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "id": summary.index,
+            "configuration": summary["config"],
+            "answered": summary["answered"],
+            "errors": summary["errors"],
+            "median total": summary["median_ms"].map(cell_ms),
+            "p95 total": [
+                fmt_p95(p95, n)
+                for p95, n in zip(summary["p95_ms"], summary["answered"], strict=True)
+            ],
+            "prompt tokens": summary["prompt"].map(cell_num),
+            "completion tokens": summary["completion"].map(cell_num),
+            "steps": summary["steps"].map(lambda v: cell_num(v, 2)),
+            "grounded in memory": summary["memory"].map(cell_pct),
+        }
+    )
+
+
+def _totals(done: pd.DataFrame) -> Chart:
+    groups = sorted(done.groupby("config_id"), key=lambda group: int(group[0][1:]))
+    fig, ax = canvas(height=0.5 * len(groups) + 1.2, grid="x")
+    ax.boxplot(
+        [group["total_ms"].astype(float).to_numpy() for _, group in groups],
+        orientation="horizontal",
+        tick_labels=[config_id for config_id, _ in groups],
+        widths=0.5,
+        patch_artist=True,
+        boxprops={"facecolor": "#cde2fb", "edgecolor": SERIES[0]},
+        whiskerprops={"color": SERIES[0]},
+        capprops={"color": SERIES[0]},
+        medianprops={"color": INK},
+        flierprops={"markeredgecolor": SERIES[0], "markersize": 4},
+    )
+    ax.invert_yaxis()
+    # From zero, so a small spread does not look like a large difference between configs.
+    ax.set_xlim(left=0)
+    ax.set_xlabel("total ms per answered run")
+    return chart(fig, "Total duration per configuration (box: quartiles, line: median)")

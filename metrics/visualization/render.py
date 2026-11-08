@@ -11,6 +11,7 @@ from typing import Literal
 import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.ticker import MaxNLocator
 
 # Validated categorical palette for a light surface. Each entity keeps its color in every
 # chart: colors follow the entity, never its rank.
@@ -79,6 +80,31 @@ def legend(ax: Axes) -> None:
     ax.legend(
         frameon=False, fontsize=9, labelcolor=INK_MUTED, loc="upper left", bbox_to_anchor=(1, 1)
     )
+
+
+def histogram(
+    values: pd.Series,
+    *,
+    xlabel: str,
+    caption: str,
+    color: str = SERIES[0],
+    markers: tuple[float, ...] = (),
+) -> Chart:
+    """Distribution of one measure; markers draw reference lines such as a threshold."""
+    fig, ax = canvas(height=2.6)
+    ax.hist(
+        values.astype(float),
+        bins=min(30, max(5, len(values))),
+        color=color,
+        edgecolor=SURFACE,
+        linewidth=0.8,
+    )
+    for marker in markers:
+        ax.axvline(marker, color=INK, linewidth=1, linestyle="--")
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("count")
+    return chart(fig, caption)
 
 
 def chart(fig: Figure, caption: str) -> Chart:

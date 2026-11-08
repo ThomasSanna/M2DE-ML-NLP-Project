@@ -90,3 +90,19 @@ def test_load_rejects_bad_files(tmp_path: Path, setup: str, message: str) -> Non
     _break(write(tmp_path, [run()], calls_of("r1")), setup)
     with pytest.raises(DataError, match=message):
         load(tmp_path)
+
+
+def test_config_ids_follow_answered_runs(tmp_path: Path) -> None:
+    runs = [
+        run(run_id="a1", label="a", outcome="llm_error"),
+        run(run_id="b1", label="b"),
+        run(run_id="a2", label="a"),
+        run(run_id="b2", label="b"),
+    ]
+    metrics = load(write(tmp_path, runs, []))
+    assert dict(zip(metrics.runs["run_id"], metrics.runs["config_id"], strict=True)) == {
+        "a1": "C2",
+        "b1": "C1",
+        "a2": "C2",
+        "b2": "C1",
+    }
