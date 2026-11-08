@@ -27,6 +27,7 @@ OUTCOME_COLORS = {
     "reranker_error": SERIES[2],
     "llm_error": SERIES[3],
 }
+ACTION_COLORS = {"answer": SERIES[0], "search": SERIES[1], "invalid": SERIES[3]}
 KIND_COLORS = {
     "embed": SERIES[0],
     "vector_search": SERIES[1],
@@ -104,6 +105,31 @@ def histogram(
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     ax.set_xlabel(xlabel)
     ax.set_ylabel("count")
+    return chart(fig, caption)
+
+
+def bars(
+    labels: list[str], values: list[float], *, xlabel: str, ylabel: str, caption: str
+) -> Chart:
+    """One series of vertical bars, each labeled with its value."""
+    fig, ax = canvas(height=2.6)
+    drawn = ax.bar(labels, values, color=SERIES[0], width=0.6)
+    ax.bar_label(drawn, fmt="{:g}", color=INK_MUTED, fontsize=9, padding=2)
+    # Keep bars narrow when there are only a few categories.
+    ax.set_xlim(-0.5, max(len(labels), 4) - 0.5)
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    return chart(fig, caption)
+
+
+def scatter(x: pd.Series, y: pd.Series, *, xlabel: str, ylabel: str, caption: str) -> Chart:
+    fig, ax = canvas(height=3.0)
+    ax.scatter(
+        x.astype(float), y.astype(float), s=28, color=SERIES[0], edgecolors=SURFACE, linewidths=1
+    )
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
     return chart(fig, caption)
 
 

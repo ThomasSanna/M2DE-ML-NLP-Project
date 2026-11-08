@@ -1,11 +1,13 @@
 from pathlib import Path
 
+import agent
 import configs
 import latency
 import overview
+import tokens
 from load import Metrics, load
 from stats import fmt_ms, fmt_pct, note
-from tests.conftest import calls_of, run, write
+from tests.conftest import call, calls_of, run, write
 
 
 def test_formats() -> None:
@@ -80,3 +82,70 @@ def test_indicative_tag_stops_at_twenty_runs(tmp_path: Path) -> None:
     calls = [c for i in range(20) for c in calls_of(f"r{i}")]
     findings = latency.build(load(write(tmp_path, runs, calls))).findings
     assert findings[1] == "Slowest call kind by median duration: llm, 2.0 s (n=20)."
+
+
+def test_tokens_findings_without_cache(tmp_path: Path) -> None:
+    assert tokens.build(load(write(tmp_path, [run()], calls_of("r1")))).findings == [
+        "Mean per answered run: 900 prompt and 100 completion tokens (n=1, indicative).",
+        "Cached tokens are not reported: start vLLM with --enable-prompt-tokens-details"
+        " to measure the prefix cache.",
+    ]
+
+
+def test_tokens_cache_rate_and_prompt_growth(tmp_path: Path) -> None:
+    calls = [
+        *calls_of("r1")[:3],
+        call(
+            "r1",
+            4,
+            "llm",
+            1,
+            1010.0,
+            900.0,
+            prompt_tokens=900,
+            completion_tokens=10,
+            action="search",
+        ),
+        call(
+            "r1",
+            5,
+            "llm",
+            2,
+            1910.0,
+            1090.0,
+            prompt_tokens=1300,
+            completion_tokens=90,
+            action="answer",
+        ),
+    ]
+    data = load(write(tmp_path, [run(steps=2, cached_tokens=1100, prompt_tokens=2200)], calls))
+    findings = tokens.build(data).findings
+    assert "Cache rate: 50% of prompt tokens (n=1, indicative)." in findings
+    assert "Mean prompt tokens grow from 900 at step 1 to 1300 at step 2." in findings
+
+
+def test_agent_findings(tmp_path: Path) -> None:
+    runs = [run(), run(run_id="r2", steps=2, searches=1, web_cost_usd=0.005)]
+    findings = agent.build(load(write(tmp_path, runs, []))).findings
+    assert "1 of 2 answered runs answered at step 1 (50%, n=2, indicative)." in findings
+    assert (
+        "Web searches: 1 ok, 0 failed, 0 duplicate, 0 unavailable, 0.50 per run (n=2, indicative)."
+    ) in findings
+    assert "Exa cost: $0.0050 in total, $0.0050 per run with a search." in findings
+    assert "No model call in the data." in findings
+
+
+def test_agent_model_calls(tmp_path: Path) -> None:
+    calls = [
+        *calls_of("r1")[:3],
+        call("r1", 4, "llm", 1, 1010.0, 900.0, action="invalid", finish_reason="length"),
+        call("r1", 5, "llm", 2, 1910.0, 1090.0, action="answer", finish_reason="stop"),
+    ]
+    findings = agent.build(load(write(tmp_path, [run(steps=2, invalid_outputs=1)], calls))).findings
+    assert "Invalid model outputs: 1 of 2 model calls (50%)." in findings
+    assert "Responses cut by max_tokens: 1 of 2 model calls." in findings
+
+
+def test_agent_without_web_search(tmp_path: Path) -> None:
+    findings = agent.build(load(write(tmp_path, [run()], calls_of("r1")))).findings
+    assert "No web search in the data." in findings
