@@ -1,11 +1,20 @@
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_chat_model, get_embedder, get_glpi, get_reranker, get_web_search
+from app.api.deps import (
+    get_chat_model,
+    get_embedder,
+    get_glpi,
+    get_metrics,
+    get_reranker,
+    get_web_search,
+)
 from app.services.glpi import Author, GlpiFollowup
+from app.services.metrics import CsvMetricsWriter
 from app.services.websearch import WebResult
 from tests.conftest import (
     TICKET,
@@ -15,6 +24,7 @@ from tests.conftest import (
     FakeGlpi,
     FakeWebSearch,
     ScriptedChatModel,
+    csv_rows,
     override,
 )
 
@@ -206,3 +216,15 @@ def test_ticket_answer_upstream_failures_return_502(
 
     assert response.status_code == 502
     assert response.json() == {"detail": detail}
+
+
+def test_ticket_answer_writes_metrics(
+    client: TestClient, auth: dict[str, str], tmp_path: Path
+) -> None:
+    override(client, get_glpi, FakeGlpi())
+    override(client, get_metrics, CsvMetricsWriter(tmp_path))
+
+    assert client.post(URL, headers=auth).status_code == 200
+
+    [run] = csv_rows(tmp_path / "runs.v1.csv")
+    assert (run["source"], run["ticket_id"]) == ("ticket_stream", "42")

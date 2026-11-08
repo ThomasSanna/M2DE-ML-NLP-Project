@@ -262,6 +262,91 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 
 Une variable obligatoire manquante empêche le démarrage.
 
+## Metrics
+
+Every answer run (`POST /api/v1/answer`, the ticket stream, the GLPI worker) appends one row
+to `runs.v1.csv` and one row per remote call to `calls.v1.csv`, joined by `run_id`. The files
+hold no text from the thread, the answer or the searches. They are meant for offline
+comparison of configurations: set `METRICS_LABEL` to name each campaign.
+
+- **Location**: `METRICS_DIR`; empty disables the metrics. In Docker, `/app/metrics` is
+  mounted from `./metrics/` at the repo root. Locally, a relative path resolves from `api/`.
+- **Startup**: the API creates the directory and both files with their header, and refuses
+  to start when it cannot (a file in the way, no write permission). The container runs as
+  the `app` user (uid 10001): on Linux, the bind-mounted `./metrics/` must be writable by
+  that uid, e.g. `mkdir -p metrics && sudo chown 10001 metrics`.
+- **Runtime**: a failed append is logged at ERROR and the answer is still returned (or
+  posted to GLPI): metrics never fail a run.
+- **Versioning**: the version is in the file name. A change of columns starts new files
+  (`runs.v2.csv`, …); the old ones stay readable as they are.
+- **Format**: comma separator, `.` decimal, UTF-8, header on the first line, empty cell for
+  a missing value. Durations in milliseconds rounded to 0.1, `started_at` in ISO 8601 UTC.
+- **Errors**: a run ending on `EmbeddingError`, `RerankerError` or `LLMError` is written
+  with the matching `outcome` and the calls made so far; the call that raised has the
+  exception class as `status`. A failed web search has `status = WebSearchError` and the run
+  goes on.
+
+### `runs.v1.csv`
+
+| Column | Meaning |
+|---|---|
+| `run_id` | uuid4 hex, joins `calls.v1.csv` |
+| `started_at` | run start, ISO 8601 UTC |
+| `source` | `api`, `ticket_stream`, `worker` |
+| `ticket_id` | GLPI ticket id, empty for `api` |
+| `label` | `METRICS_LABEL`, empty if unset |
+| `query_hash` | first 16 hex chars of the SHA-256 of the retrieval query |
+| `outcome` | `answered`, `embedding_error`, `reranker_error`, `llm_error` |
+| `llm_model`, `agent_max_steps`, `llm_max_tokens`, `retrieval_candidates`, `retrieval_top_k`, `rerank_threshold` | settings of the run |
+| `web_search_enabled` | `True` when a web search client is configured, else `False` |
+| `total_ms` | `answer_thread` entry to row assembly |
+| `retrieval_ms` | `memory.retrieve` duration, until it returns or raises |
+| `agent_ms` | `run_agent` duration, until it returns or raises; empty if not reached |
+| `llm_ms`, `web_ms` | sums of `llm` and `web_search` call durations |
+| `steps` | number of `llm` calls |
+| `invalid_outputs` | `llm` calls with `action = invalid` |
+| `searches` | `web_search` calls with `status = ok` |
+| `searches_failed` | `web_search` calls with `status = WebSearchError` |
+| `searches_duplicate`, `searches_unavailable` | searches the model asked for that sent no request: a repeat of an earlier query (case-insensitive), or web search disabled |
+| `prompt_tokens`, `completion_tokens`, `cached_tokens` | sums over `llm` calls; `cached_tokens` empty if no call reported it |
+| `memory_candidates` | rows returned by the vector search |
+| `memory_kept` | entries above the threshold, after `top_k` |
+| `memory_top_score` | best rerank score before the threshold, empty without candidates |
+| `cited_knowledge`, `cited_web` | `K` and `W` refs in the citations, empty if not answered |
+| `dropped_refs` | unknown refs dropped by the agent, empty if not answered |
+| `thread_messages` | messages in the thread |
+| `prior_replies` | `assistant` messages in the thread: 0 = first question, 1 = the support side answered once and the user replied, … The support side is the bot or a technician: `POST /answer` cannot tell them apart, and `answer_ticket` maps both to `assistant` |
+| `thread_chars` | characters in the thread |
+| `answer_chars` | answer length, empty if not answered |
+| `web_cost_usd` | sum of `cost_usd`, empty if no search reported a cost |
+
+### `calls.v1.csv`
+
+| Column | Meaning |
+|---|---|
+| `run_id` | joins `runs.v1.csv` |
+| `seq` | 1-based order of the call in the run |
+| `kind` | `embed`, `vector_search`, `rerank`, `llm`, `web_search` |
+| `step` | agent step, empty for retrieval calls |
+| `start_ms` | offset from the run start |
+| `duration_ms` | call duration |
+| `status` | `ok` or the exception class name |
+| `items` | `embed`: texts sent (1); `vector_search`: rows returned; `rerank`: documents sent; `web_search`: results returned; empty for `llm` |
+| `prompt_tokens`, `completion_tokens`, `cached_tokens`, `finish_reason`, `action` | `llm` only |
+| `cost_usd` | `web_search` only |
+
+Ratios are not stored: derive them from the raw columns. The time between two calls of a run
+(model thinking, prompt building) is `start_ms[n+1] - (start_ms[n] + duration_ms[n])`:
+
+```python
+import pandas as pd
+
+runs = pd.read_csv("metrics/runs.v1.csv")
+calls = pd.read_csv("metrics/calls.v1.csv")
+calls["gap_ms"] = calls.groupby("run_id")["start_ms"].shift(-1) - (calls["start_ms"] + calls["duration_ms"])
+runs.groupby(["label", "llm_model"])[["total_ms", "prompt_tokens", "completion_tokens"]].mean()
+```
+
 ## Invariants à respecter
 
 - **Changer `EMBEDDING_MODEL` ou l'instruction d'embedding rend les vecteurs stockés incompatibles** : il faut ré-embedder toute la table `knowledge`. Le même préfixe d'instruction s'applique aux questions stockées et aux requêtes (`core/config.py`).

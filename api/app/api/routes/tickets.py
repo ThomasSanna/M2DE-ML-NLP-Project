@@ -10,6 +10,7 @@ from app.api.deps import (
     ChatModelDep,
     EmbedderDep,
     GlpiDep,
+    MetricsDep,
     RerankerDep,
     SessionDep,
     SettingsDep,
@@ -41,6 +42,7 @@ async def stream_ticket_answer(
     model: ChatModelDep,
     web_search: WebSearchDep,
     glpi: GlpiDep,
+    metrics: MetricsDep,
     settings: SettingsDep,
 ) -> StreamingResponse:
     """Answer a GLPI ticket's thread, then post the answer as a followup of the ticket.
@@ -53,7 +55,15 @@ async def stream_ticket_answer(
     if ticket is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "GLPI ticket not found")
     result = await answer.answer_ticket(
-        session, embedder, reranker, model, web_search, settings, ticket
+        session,
+        embedder,
+        reranker,
+        model,
+        web_search,
+        metrics,
+        settings,
+        ticket,
+        source="ticket_stream",
     )
     if result is None:
         raise HTTPException(

@@ -93,6 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 app.state.reranker,
                 app.state.chat_model,
                 app.state.web_search,
+                app.state.metrics,
                 app.state.glpi,
                 settings,
             )

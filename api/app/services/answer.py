@@ -17,11 +17,17 @@ from app.schemas.answer import (
 from app.services import memory
 from app.services.agent import run_agent
 from app.services.agent_prompt import initial_messages, render_memory, render_thread, strip_refs
-from app.services.embeddings import Embedder
+from app.services.embeddings import Embedder, EmbeddingError
 from app.services.glpi import Author, GlpiTicket
-from app.services.llm import ChatModel
-from app.services.metrics import RunRecorder
-from app.services.reranker import Reranker
+from app.services.llm import ChatModel, LLMError
+from app.services.metrics import (
+    CsvMetricsWriter,
+    Outcome,
+    RunRecorder,
+    Source,
+    build_run_row,
+)
+from app.services.reranker import Reranker, RerankerError
 from app.services.websearch import WebSearch
 
 logger = logging.getLogger(__name__)
@@ -30,6 +36,13 @@ logger = logging.getLogger(__name__)
 # must be cut, not fail the request. The model still reads the thread (truncated too).
 RETRIEVAL_QUERY_MAX_CHARS = 1000
 
+# Remote failures a run can end on. Any other exception is a bug: no metrics row.
+_OUTCOMES: dict[type[RuntimeError], Outcome] = {
+    EmbeddingError: "embedding_error",
+    RerankerError: "reranker_error",
+    LLMError: "llm_error",
+}
+
 
 async def answer_thread(
     session: AsyncSession,
@@ -37,40 +50,69 @@ async def answer_thread(
     reranker: Reranker,
     model: ChatModel,
     web_search: WebSearch | None,
+    metrics: CsvMetricsWriter | None,
     settings: Settings,
     request: AnswerRequest,
+    *,
+    source: Source,
+    ticket_id: int | None = None,
 ) -> AnswerResult:
     """Answer the thread's last user message from the memory, then the web if needed."""
     recorder = RunRecorder()
     text = _retrieval_query(request.messages)
-    hits = await memory.retrieve(
-        session,
-        embedder,
-        reranker,
-        text,
-        settings.retrieval_candidates,
-        settings.retrieval_top_k,
-        settings.rerank_threshold,
-        recorder,
-    )
-    # Ends the read-only transaction so the pooled connection is not held through the
-    # model and web calls. Not rollback(): it would expire the loaded entries.
-    await session.commit()
-    knowledge = {f"K{index}": entry for index, (entry, _) in enumerate(hits, start=1)}
-    thread = [(message.role, message.content) for message in request.messages]
-    logger.debug("answering thread %r", thread)
 
-    run = await run_agent(
-        model,
-        web_search,
-        initial_messages(
-            render_memory([(entry.question, entry.answer) for entry in knowledge.values()]),
-            render_thread(thread),
-        ),
-        set(knowledge),
-        settings.agent_max_steps,
-        recorder,
-    )
+    def record(outcome: Outcome, answer: str | None, cited_refs: list[str] | None) -> None:
+        if metrics is None:
+            return
+        row = build_run_row(
+            recorder,
+            settings,
+            source=source,
+            ticket_id=ticket_id,
+            query=text,
+            messages=request.messages,
+            web_search_enabled=web_search is not None,
+            outcome=outcome,
+            answer=answer,
+            cited_refs=cited_refs,
+        )
+        metrics.write(row, recorder.calls)
+
+    try:
+        with recorder.phase("retrieval"):
+            hits = await memory.retrieve(
+                session,
+                embedder,
+                reranker,
+                text,
+                settings.retrieval_candidates,
+                settings.retrieval_top_k,
+                settings.rerank_threshold,
+                recorder,
+            )
+        # Ends the read-only transaction so the pooled connection is not held through the
+        # model and web calls. Not rollback(): it would expire the loaded entries.
+        await session.commit()
+        knowledge = {f"K{index}": entry for index, (entry, _) in enumerate(hits, start=1)}
+        thread = [(message.role, message.content) for message in request.messages]
+        logger.debug("answering thread %r", thread)
+
+        with recorder.phase("agent"):
+            run = await run_agent(
+                model,
+                web_search,
+                initial_messages(
+                    render_memory([(entry.question, entry.answer) for entry in knowledge.values()]),
+                    render_thread(thread),
+                ),
+                set(knowledge),
+                settings.agent_max_steps,
+                recorder,
+            )
+    except tuple(_OUTCOMES) as exc:
+        record(next(o for error, o in _OUTCOMES.items() if isinstance(exc, error)), None, None)
+        raise
+    record("answered", run.answer, run.cited_refs)
 
     sources: list[Citation] = []
     for ref in run.cited_refs:
@@ -98,8 +140,11 @@ async def answer_ticket(
     reranker: Reranker,
     model: ChatModel,
     web_search: WebSearch | None,
+    metrics: CsvMetricsWriter | None,
     settings: Settings,
     ticket: GlpiTicket,
+    *,
+    source: Source,
 ) -> AnswerResult | None:
     """Answer a GLPI ticket's thread; None when the support side wrote last."""
     messages = [
@@ -116,7 +161,18 @@ async def answer_ticket(
     if messages[-1].role != "user":
         return None
     request = AnswerRequest(messages=messages)
-    return await answer_thread(session, embedder, reranker, model, web_search, settings, request)
+    return await answer_thread(
+        session,
+        embedder,
+        reranker,
+        model,
+        web_search,
+        metrics,
+        settings,
+        request,
+        source=source,
+        ticket_id=ticket.id,
+    )
 
 
 def followup_text(result: AnswerResult) -> str:

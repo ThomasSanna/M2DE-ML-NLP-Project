@@ -1,17 +1,47 @@
+import json
 import logging
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.deps import get_chat_model, get_embedder, get_metrics, get_reranker, get_web_search
 from app.core.config import Settings
 from app.main import create_app
 from app.schemas.answer import ThreadMessage
 from app.services.embeddings import EmbeddingError
 from app.services.llm import LLMError
 from app.services.metrics import CsvMetricsWriter, RunRecorder, RunRow, build_run_row
-from app.services.websearch import WebSearchError
-from tests.conftest import csv_rows
+from app.services.websearch import WebResult, WebSearchError
+from tests.conftest import (
+    FailingChatModel,
+    FailingEmbedder,
+    FailingReranker,
+    FakeWebSearch,
+    ScriptedChatModel,
+    csv_rows,
+    override,
+)
+
+THREAD = [{"role": "user", "content": "Le wifi eduroam ne marche pas sur mon Mac"}]
+EXPECTED_RUN = {
+    "source": "api",
+    "ticket_id": "",
+    "outcome": "answered",
+    "steps": "2",
+    "searches": "1",
+    "prompt_tokens": "200",
+    "completion_tokens": "20",
+    "cached_tokens": "",
+    "memory_candidates": "1",
+    "memory_kept": "1",
+    "cited_knowledge": "1",
+    "cited_web": "1",
+    "web_search_enabled": "True",
+    "web_cost_usd": "0.005",
+    "thread_messages": "1",
+    "prior_replies": "0",
+}
 
 
 def _llm(
@@ -229,3 +259,89 @@ def test_startup_fails_when_the_metrics_dir_is_a_file(settings: Settings, tmp_pa
 
     with pytest.raises(OSError), TestClient(app):
         pass
+
+
+def _add_knowledge(client: TestClient, auth: dict[str, str]) -> None:
+    response = client.post(
+        "/api/v1/memory/knowledge",
+        json={"question": "Le wifi eduroam ne marche pas", "answer": "Réinstallez le profil"},
+        headers=auth,
+    )
+    assert response.status_code == 201, response.text
+
+
+def test_answer_writes_the_run_and_its_calls(
+    client: TestClient, auth: dict[str, str], settings: Settings, tmp_path: Path
+) -> None:
+    _add_knowledge(client, auth)
+    model = ScriptedChatModel(
+        [
+            json.dumps({"action": "search", "query": "eduroam mac"}),
+            json.dumps(
+                {
+                    "action": "answer",
+                    "answer": "Supprimez le profil [K1] [W1]",
+                    "sources": ["K1", "W1"],
+                }
+            ),
+        ]
+    )
+    web = FakeWebSearch(
+        [WebResult("Configurer eduroam", "https://cat.eduroam.org", None, "Profil")], cost=0.005
+    )
+    override(client, get_chat_model, model)
+    override(client, get_web_search, web)
+    override(client, get_metrics, CsvMetricsWriter(tmp_path))
+
+    response = client.post("/api/v1/answer", json={"messages": THREAD}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    [run] = csv_rows(tmp_path / "runs.v1.csv")
+    calls = csv_rows(tmp_path / "calls.v1.csv")
+    assert {key: run[key] for key in EXPECTED_RUN} == EXPECTED_RUN
+    assert (run["llm_model"], run["agent_max_steps"]) == (
+        settings.llm_model,
+        str(settings.agent_max_steps),
+    )
+    assert [(c["kind"], c["step"]) for c in calls] == [
+        ("embed", ""),
+        ("vector_search", ""),
+        ("rerank", ""),
+        ("llm", "1"),
+        ("web_search", "1"),
+        ("llm", "2"),
+    ]
+    assert {c["run_id"] for c in calls} == {run["run_id"]}
+    starts = [float(c["start_ms"]) for c in calls]
+    assert starts == sorted(starts)
+    assert all(float(c["duration_ms"]) >= 0 for c in calls)
+
+
+@pytest.mark.parametrize(
+    ("dependency", "failing", "outcome", "status"),
+    [
+        (get_embedder, FailingEmbedder(), "embedding_error", "EmbeddingError"),
+        (get_reranker, FailingReranker(), "reranker_error", "RerankerError"),
+        (get_chat_model, FailingChatModel(), "llm_error", "LLMError"),
+    ],
+)
+def test_failed_answer_writes_its_outcome(
+    client: TestClient,
+    auth: dict[str, str],
+    tmp_path: Path,
+    dependency: object,
+    failing: object,
+    outcome: str,
+    status: str,
+) -> None:
+    _add_knowledge(client, auth)
+    override(client, get_metrics, CsvMetricsWriter(tmp_path))
+    override(client, dependency, failing)
+
+    response = client.post("/api/v1/answer", json={"messages": THREAD}, headers=auth)
+
+    assert response.status_code == 502
+    [run] = csv_rows(tmp_path / "runs.v1.csv")
+    assert run["outcome"] == outcome
+    assert run["retrieval_ms"] != ""
+    assert csv_rows(tmp_path / "calls.v1.csv")[-1]["status"] == status

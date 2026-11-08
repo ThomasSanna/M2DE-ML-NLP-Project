@@ -13,6 +13,7 @@ from app.services import answer
 from app.services.embeddings import Embedder, EmbeddingError
 from app.services.glpi import Author, Glpi, GlpiError, GlpiTicket
 from app.services.llm import ChatModel, LLMError
+from app.services.metrics import CsvMetricsWriter
 from app.services.reranker import Reranker, RerankerError
 from app.services.websearch import WebSearch
 
@@ -33,6 +34,7 @@ class GlpiEventWorker:
     reranker: Reranker
     model: ChatModel
     web_search: WebSearch | None
+    metrics: CsvMetricsWriter | None
     glpi: Glpi
     settings: Settings
 
@@ -101,8 +103,10 @@ class GlpiEventWorker:
                     self.reranker,
                     self.model,
                     self.web_search,
+                    self.metrics,
                     self.settings,
                     ticket,
+                    source="worker",
                 )
                 if _awaits_bot(ticket, trigger_id)
                 else None
