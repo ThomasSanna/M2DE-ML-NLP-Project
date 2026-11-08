@@ -95,4 +95,12 @@ def _per_day(runs: pd.DataFrame) -> Chart:
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     ax.set_ylabel(t("runs"))
     legend(ax)
-    return chart(fig, t("Runs per day, by outcome"))
+    return chart(
+        fig,
+        t("Runs per day, by outcome"),
+        t(
+            "One bar per day (UTC), split by outcome. answered: the bot replied;"
+            " embedding_error, reranker_error, llm_error: the run stopped because the embeddings"
+            " server, the reranker or the language model failed."
+        ),
+    )

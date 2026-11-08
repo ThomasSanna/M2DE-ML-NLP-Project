@@ -231,4 +231,25 @@ def test_errors_without_failures(tmp_path: Path) -> None:
 def test_histogram_of_nearly_equal_values() -> None:
     # Float noise around one value (60 tokens/s from every call) must not break the bins.
     values = pd.Series([59.99999999999999, 60.0, 60.000000000000014], dtype="Float64")
-    assert histogram(values, xlabel="x", caption="c").png_base64
+    assert histogram(values, xlabel="x", ylabel="y", caption="c", reading="r").png_base64
+
+
+def test_threshold_lines_name_their_configurations(tmp_path: Path) -> None:
+    runs = [
+        *(run(run_id=f"a{i}") for i in range(3)),
+        *(run(run_id=f"b{i}", label="b", rerank_threshold=0.9) for i in range(2)),
+        run(run_id="c0", label="c"),
+    ]
+    data = load(write(tmp_path, runs, []))
+    assert memory.thresholds(data.runs) == [(0.9, "C2: 0.9"), (0.95, "C1, C3: 0.95")]
+    with language("fr"):
+        assert memory.thresholds(data.runs) == [(0.9, "C2 : 0,9"), (0.95, "C1, C3 : 0,95")]
+
+
+def test_timeline_names_the_run_it_shows(tmp_path: Path) -> None:
+    captions = [
+        c.caption for c in latency.build(load(write(tmp_path, [run()], calls_of("r1")))).charts
+    ]
+    assert "Timeline of the run closest to the median total (3.0 s): C1, 2026-11-08 10:00 UTC" in (
+        captions
+    )

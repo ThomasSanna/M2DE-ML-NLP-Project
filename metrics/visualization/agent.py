@@ -41,6 +41,10 @@ def build(metrics: Metrics) -> Section:
                 xlabel=t("model calls in the run"),
                 ylabel=t("answered runs"),
                 caption=t("Steps per answered run"),
+                reading=t(
+                    "Number of model calls an answered run needed. The agent stops at its step"
+                    " limit (agent_max_steps): a tall last bar means runs used every step allowed."
+                ),
             )
         )
     if not model_calls.empty:
@@ -59,6 +63,11 @@ def build(metrics: Metrics) -> Section:
                 xlabel=t("web search"),
                 ylabel=t("searches"),
                 caption=t("Web searches asked by the model, by outcome"),
+                reading=t(
+                    "Searches the model asked for. ok: sent to Exa and answered; failed: sent but"
+                    " Exa returned an error; duplicate: same query as earlier in the run, not sent"
+                    " again; unavailable: web search disabled, nothing sent."
+                ),
             )
         )
     table = Table(t("Model calls by step and action"), _action_table(model_calls))
@@ -157,7 +166,15 @@ def _actions(model_calls: pd.DataFrame) -> Chart:
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     ax.set_ylabel(t("model calls"))
     legend(ax)
-    return chart(fig, t("What the model did at each step"))
+    return chart(
+        fig,
+        t("What the model did at each step"),
+        t(
+            "What each model call asked for. answer: the final reply; search: a web search,"
+            " followed by another step; invalid: an output that does not follow the expected"
+            " format, which costs a step."
+        ),
+    )
 
 
 def _action_table(model_calls: pd.DataFrame) -> pd.DataFrame:

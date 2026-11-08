@@ -44,6 +44,8 @@ KIND_COLORS = {
 class Chart:
     caption: str
     png_base64: str
+    # How to read the chart: what one mark is, the codes it shows, and what to look for.
+    reading: str
 
 
 @dataclass(frozen=True)
@@ -89,12 +91,14 @@ def histogram(
     values: pd.Series,
     *,
     xlabel: str,
+    ylabel: str,
     caption: str,
+    reading: str,
     color: str = SERIES[0],
-    markers: tuple[float, ...] = (),
+    markers: list[tuple[float, str]] | None = None,
     bins: list[float] | None = None,
 ) -> Chart:
-    """Distribution of one measure; markers draw reference lines such as a threshold."""
+    """Distribution of one measure; markers draw labeled reference lines such as a threshold."""
     data = values.astype(float)
     low, high = float(data.min()), float(data.max())
     # Float noise around one value leaves numpy no room for distinct bin edges: widen it.
@@ -108,16 +112,33 @@ def histogram(
         edgecolor=SURFACE,
         linewidth=0.8,
     )
-    for marker in markers:
-        ax.axvline(marker, color=INK, linewidth=1, linestyle="--")
+    for i, (value, label) in enumerate(markers or []):
+        ax.axvline(value, color=INK, linewidth=1, linestyle="--")
+        # Staggered heights keep the labels of close lines apart.
+        ax.text(
+            value,
+            0.97 - 0.09 * i,
+            f" {label}",
+            transform=ax.get_xaxis_transform(),
+            color=INK,
+            fontsize=8,
+            va="top",
+            bbox={"facecolor": SURFACE, "edgecolor": "none", "pad": 1},
+        )
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     ax.set_xlabel(xlabel)
-    ax.set_ylabel(t("count"))
-    return chart(fig, caption)
+    ax.set_ylabel(ylabel)
+    return chart(fig, caption, reading)
 
 
 def bars(
-    labels: list[str], values: list[float], *, xlabel: str, ylabel: str, caption: str
+    labels: list[str],
+    values: list[float],
+    *,
+    xlabel: str,
+    ylabel: str,
+    caption: str,
+    reading: str,
 ) -> Chart:
     """One series of vertical bars, each labeled with its value."""
     fig, ax = canvas(height=2.6)
@@ -128,11 +149,16 @@ def bars(
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    return chart(fig, caption)
+    return chart(fig, caption, reading)
 
 
 def boxes(
-    groups: list[tuple[str, pd.Series]], *, xlabel: str, caption: str, ylabel: str = ""
+    groups: list[tuple[str, pd.Series]],
+    *,
+    xlabel: str,
+    caption: str,
+    reading: str,
+    ylabel: str = "",
 ) -> Chart:
     """Horizontal box plots, one per labeled group, on an axis that starts at zero."""
     fig, ax = canvas(height=0.5 * len(groups) + 1.2, grid="x")
@@ -146,7 +172,8 @@ def boxes(
         whiskerprops={"color": SERIES[0]},
         capprops={"color": SERIES[0]},
         medianprops={"color": INK},
-        flierprops={"markeredgecolor": SERIES[0], "markersize": 4},
+        # Outliers are drawn below with every other value; matplotlib's would draw them twice.
+        showfliers=False,
     )
     # Every value as a dot: with a handful of runs the box alone hides the data.
     for row, (_, values) in enumerate(groups, start=1):
@@ -158,17 +185,24 @@ def boxes(
     ax.set_xlim(left=0)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    return chart(fig, t("{caption} (box: quartiles, line: median)", caption=caption))
+    explained = t(
+        "{reading} Box: middle half of the runs; thick line: median; whiskers: the other runs,"
+        " up to 1.5 times the box length; each dot is one run.",
+        reading=reading,
+    )
+    return chart(fig, caption, explained)
 
 
-def scatter(x: pd.Series, y: pd.Series, *, xlabel: str, ylabel: str, caption: str) -> Chart:
+def scatter(
+    x: pd.Series, y: pd.Series, *, xlabel: str, ylabel: str, caption: str, reading: str
+) -> Chart:
     fig, ax = canvas(height=3.0)
     ax.scatter(
         x.astype(float), y.astype(float), s=28, color=SERIES[0], edgecolors=SURFACE, linewidths=1
     )
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    return chart(fig, caption)
+    return chart(fig, caption, reading)
 
 
 class _LocalizedFormatter(ScalarFormatter):
@@ -178,7 +212,7 @@ class _LocalizedFormatter(ScalarFormatter):
         return localize(super().__call__(x, pos))
 
 
-def chart(fig: Figure, caption: str) -> Chart:
+def chart(fig: Figure, caption: str, reading: str) -> Chart:
     for ax in fig.axes:
         for axis in (ax.xaxis, ax.yaxis):
             # Only numeric axes: category and fixed tick labels are words, not numbers.
@@ -186,7 +220,8 @@ def chart(fig: Figure, caption: str) -> Chart:
                 axis.set_major_formatter(_LocalizedFormatter())
     buffer = io.BytesIO()
     fig.savefig(buffer, format="png", dpi=110, facecolor=SURFACE)
-    return Chart(caption=caption, png_base64=base64.b64encode(buffer.getvalue()).decode())
+    png = base64.b64encode(buffer.getvalue()).decode()
+    return Chart(caption=caption, png_base64=png, reading=reading)
 
 
 def render(
@@ -221,8 +256,9 @@ def _anchor(title: str) -> str:
 def _section(section: Section) -> str:
     findings = "".join(f"<li>{html.escape(text)}</li>" for text in section.findings)
     charts = "".join(
-        f'<figure><img src="data:image/png;base64,{c.png_base64}" alt="{html.escape(c.caption)}">'
-        f"<figcaption>{html.escape(c.caption)}</figcaption></figure>"
+        f"<figure><h3>{html.escape(c.caption)}</h3>"
+        f'<img src="data:image/png;base64,{c.png_base64}" alt="{html.escape(c.caption)}">'
+        f"<figcaption>{html.escape(c.reading)}</figcaption></figure>"
         for c in section.charts
     )
     tables = "".join(
@@ -244,11 +280,12 @@ main {{ max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }}
 h1 {{ font-size: 1.6rem; margin: 0 0 4px; }}
 h2 {{ font-size: 1.25rem; margin: 40px 0 8px; padding-top: 8px; border-top: 1px solid {GRID}; }}
 h3 {{ font-size: 0.95rem; margin: 16px 0 6px; color: {INK_MUTED}; }}
-.meta, figcaption {{ color: {INK_MUTED}; font-size: 0.85rem; }}
+.meta {{ color: {INK_MUTED}; font-size: 0.85rem; }}
+figcaption {{ color: {INK_MUTED}; font-size: 0.9rem; max-width: 72ch; margin-top: 4px; }}
 nav ul {{ display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 0; list-style: none; }}
 a {{ color: {SERIES[0]}; }}
 .findings li {{ margin: 4px 0; }}
-figure {{ margin: 16px 0; }}
+figure {{ margin: 24px 0; }}
 img {{ max-width: 100%; height: auto; }}
 .table {{ overflow-x: auto; }}
 table {{ border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }}

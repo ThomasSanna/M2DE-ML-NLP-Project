@@ -29,6 +29,8 @@ message and exit code 1; no report is written.
 Every number shows its sample size `n`. Below 20 runs it is tagged `indicative`, and p95
 values carry the same tag. A configuration needs 10 answered runs before its difference
 from the baseline is put into words. Sentences describe the data; they never claim a cause.
+Under each chart, a short text says what one bar or dot is, what the data codes in its legend
+mean, and what to look for.
 
 | Section | What it tells you |
 |---|---|

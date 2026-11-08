@@ -95,7 +95,11 @@ def _table(summary: pd.DataFrame) -> pd.DataFrame:
 def _totals(done: pd.DataFrame) -> Chart:
     groups = sorted(done.groupby("config_id"), key=lambda group: int(group[0][1:]))
     return boxes(
-        [(str(config_id), group["total_ms"]) for config_id, group in groups],
-        xlabel=t("total ms per answered run"),
+        [(str(config_id), group["total_ms"] / 1000) for config_id, group in groups],
+        xlabel=t("total duration per answered run (s)"),
         caption=t("Total duration per configuration"),
+        reading=t(
+            "Time from the question to the answer, one row per configuration (C1, C2… are"
+            " described in the table below). Further left is faster."
+        ),
     )

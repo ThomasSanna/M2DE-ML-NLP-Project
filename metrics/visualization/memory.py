@@ -28,17 +28,27 @@ def build(metrics: Metrics) -> Section:
                 xlabel=t("memory entries kept after the rerank threshold"),
                 ylabel=t("runs"),
                 caption=t("Memory entries kept per run"),
+                reading=t(
+                    "How many stored answers passed the rerank threshold and were shown to the"
+                    " model. 0: the model answered without the memory."
+                ),
             )
         )
     scores = runs["memory_top_score"].dropna()
     if not scores.empty:
-        thresholds = tuple(float(value) for value in runs["rerank_threshold"].dropna().unique())
         charts.append(
             histogram(
                 scores,
-                xlabel=t("best rerank score of the run (dashed: rerank threshold)"),
+                xlabel=t("best rerank score of the run"),
+                ylabel=t("runs"),
                 caption=t("Best rerank score per run against the threshold"),
-                markers=thresholds,
+                reading=t(
+                    "Best score the reranker gave to the run's memory candidates, from 0"
+                    " (unrelated) to 1 (same question). Entries right of their configuration's"
+                    " dashed line are kept; many runs just left of it suggest a threshold that is"
+                    " too strict."
+                ),
+                markers=thresholds(runs),
                 # Fixed 0.025-wide bins over [0, 1]: scores near 1 stay visible.
                 bins=[i / 40 for i in range(41)],
             )
@@ -58,14 +68,23 @@ def build(metrics: Metrics) -> Section:
                 xlabel=t("sources cited by the answer"),
                 ylabel=t("answered runs"),
                 caption=t("What answers are grounded in"),
+                reading=t(
+                    "What the final answer cites: memory entries, web results, both, or no"
+                    " source at all."
+                ),
             )
         )
         by_replies = _by_replies(done)
         charts.append(
             boxes(
-                [(label, group["total_ms"]) for label, group in by_replies],
-                xlabel=t("total ms per answered run"),
+                [(label, group["total_ms"] / 1000) for label, group in by_replies],
+                xlabel=t("total duration per answered run (s)"),
                 caption=t("Total duration by replies already in the thread"),
+                reading=t(
+                    "Runs grouped by the number of support replies already in the ticket"
+                    " (0: first question, 3+: three or more). Shows whether a longer conversation"
+                    " slows the answer."
+                ),
                 ylabel=t("prior replies"),
             )
         )
@@ -74,6 +93,9 @@ def build(metrics: Metrics) -> Section:
                 [(label, group["prompt_tokens"]) for label, group in by_replies],
                 xlabel=t("prompt tokens per answered run"),
                 caption=t("Prompt tokens by replies already in the thread"),
+                reading=t(
+                    "Same grouping. Shows whether a longer conversation makes the prompt grow."
+                ),
                 ylabel=t("prior replies"),
             )
         )
@@ -83,6 +105,22 @@ def build(metrics: Metrics) -> Section:
         charts,
         [Table(t("Answered runs by replies already in the thread"), _replies_table(done))],
     )
+
+
+def thresholds(runs: pd.DataFrame) -> list[tuple[float, str]]:
+    """One line per rerank threshold, named after the configurations that use it."""
+    used = runs.dropna(subset=["rerank_threshold"]).groupby("rerank_threshold")["config_id"]
+    return [
+        (
+            float(threshold),
+            t(
+                "{configs}: {threshold}",
+                configs=", ".join(sorted(ids.unique(), key=lambda config: int(config[1:]))),
+                threshold=number(threshold, "g"),
+            ),
+        )
+        for threshold, ids in used
+    ]
 
 
 def _kept(retrieved: pd.DataFrame) -> str:

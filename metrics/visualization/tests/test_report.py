@@ -1,3 +1,4 @@
+from datetime import datetime
 from html import escape
 from pathlib import Path
 
@@ -5,6 +6,7 @@ import pytest
 
 from i18n import LANGUAGES
 from load import load
+from render import Chart, Section, render
 from report import SECTIONS, main
 from tests.conftest import EMPTY_RESULT, Row, call, calls_of, run, write
 
@@ -101,3 +103,22 @@ def test_chart_count_does_not_grow_with_the_data(tmp_path: Path) -> None:
         return out.read_text(encoding="utf-8").count("<img")
 
     assert images(25) == images(500)
+
+
+def test_chart_title_above_and_reading_below(tmp_path: Path) -> None:
+    section = Section("S", [], [Chart("Runs per day", "AAAA", "One bar per day.")])
+    page = render([section], source=tmp_path, runs=1, calls=0, generated_at=datetime(2026, 11, 8))
+    title, image, reading = (
+        page.index("<h3>Runs per day</h3>"),
+        page.index("<img"),
+        page.index("One bar per day."),
+    )
+    assert title < image < reading
+
+
+@pytest.mark.parametrize("name", DATASETS)
+def test_every_chart_explains_how_to_read_it(tmp_path: Path, name: str) -> None:
+    metrics = load(write(tmp_path, *DATASETS[name]))
+    charts = [c for build in SECTIONS for c in build(metrics).charts]
+    assert charts
+    assert [c.caption for c in charts if not c.reading.strip()] == []

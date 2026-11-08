@@ -39,6 +39,10 @@ def build(metrics: Metrics) -> Section:
                 xlabel=t("prompt tokens (all steps)"),
                 ylabel=t("completion tokens"),
                 caption=t("Prompt and completion tokens per answered run"),
+                reading=t(
+                    "One dot per answered run, summed over all its model calls. Further right:"
+                    " a larger prompt (more steps, longer thread); higher: more generated text."
+                ),
             )
         )
         charts.append(
@@ -48,6 +52,10 @@ def build(metrics: Metrics) -> Section:
                 xlabel=t("thread length (characters)"),
                 ylabel=t("prompt tokens (all steps)"),
                 caption=t("Thread length against prompt tokens per answered run"),
+                reading=t(
+                    "One dot per answered run. Dots rising to the right mean a longer ticket"
+                    " thread makes the prompt grow."
+                ),
             )
         )
     if not by_step.empty:
@@ -58,14 +66,24 @@ def build(metrics: Metrics) -> Section:
                 xlabel=t("agent step"),
                 ylabel=t("mean prompt tokens"),
                 caption=t("Mean prompt tokens of a model call, by agent step"),
+                reading=t(
+                    "Each step resends the whole conversation with the previous outputs and"
+                    " search results appended, so the prompt grows from one step to the next."
+                ),
             )
         )
     if not cached.empty:
         charts.append(
             histogram(
-                cached["cache_rate"].dropna(),
-                xlabel=t("cached share of prompt tokens"),
+                cached["cache_rate"].dropna() * 100,
+                xlabel=t("cached share of prompt tokens (%)"),
+                ylabel=t("runs"),
                 caption=t("Prefix cache rate per run"),
+                reading=t(
+                    "Share of a run's prompt tokens that vLLM reused from its prefix cache"
+                    " instead of computing them again. Agent steps resend the same beginning, so"
+                    " a high share saves prefill time."
+                ),
                 color=SERIES[2],
             )
         )

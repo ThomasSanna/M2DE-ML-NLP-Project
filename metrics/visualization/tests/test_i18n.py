@@ -62,7 +62,7 @@ def test_french_ticks_use_a_decimal_comma() -> None:
     fig, ax = canvas()
     ax.plot([0.0, 1.0], [0.0, 1.0])
     with language("fr"):
-        chart(fig, "c")
+        chart(fig, "c", "r")
         assert ax.xaxis.get_major_formatter().format_ticks([0.25, 0.5]) == ["0,25", "0,50"]
 
 
@@ -80,6 +80,7 @@ def test_every_sentence_and_caption_is_translated(tmp_path: Path, name: str) -> 
             for text in (
                 *section.findings,
                 *(c.caption for c in section.charts),
+                *(c.reading for c in section.charts),
                 *(table.caption for table in section.tables),
             )
         ]
