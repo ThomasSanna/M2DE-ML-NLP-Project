@@ -22,8 +22,14 @@ class WebResult:
     excerpt: str
 
 
+@dataclass(frozen=True)
+class WebSearchResponse:
+    results: list[WebResult]
+    cost_usd: float | None
+
+
 class WebSearch(Protocol):
-    async def search(self, query: str) -> list[WebResult]: ...
+    async def search(self, query: str) -> WebSearchResponse: ...
 
 
 class ExaClient:
@@ -39,7 +45,7 @@ class ExaClient:
         self._num_results = num_results
         self._include_domains = include_domains
 
-    async def search(self, query: str) -> list[WebResult]:
+    async def search(self, query: str) -> WebSearchResponse:
         payload: dict[str, object] = {
             "query": query,
             "type": "auto",
@@ -64,10 +70,10 @@ class ExaClient:
         except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
             raise WebSearchError(f"Web search call failed: {exc!r}") from exc
 
-        # Only logged: an unexpected shape must not discard valid results.
+        # An unexpected cost shape must not discard valid results.
         cost = body.get("costDollars")
         logger.info("Exa search cost %s USD", cost.get("total") if isinstance(cost, dict) else cost)
-        return results
+        return WebSearchResponse(results, _cost_usd(cost))
 
 
 def _url(item: dict[str, object]) -> str:
@@ -89,3 +95,10 @@ def _highlights(item: dict[str, object]) -> list[str]:
     if not isinstance(highlights, list) or not all(isinstance(part, str) for part in highlights):
         raise TypeError("Exa result highlights is not a list of str")
     return highlights
+
+
+def _cost_usd(cost: object) -> float | None:
+    total = cost.get("total") if isinstance(cost, dict) else None
+    if isinstance(total, int | float) and not isinstance(total, bool):
+        return float(total)
+    return None

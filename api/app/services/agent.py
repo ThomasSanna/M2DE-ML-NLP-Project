@@ -130,7 +130,7 @@ async def run_agent(
                 feedback = DUPLICATE_SEARCH
             else:
                 try:
-                    results = await web_search.search(action.query)
+                    results = (await web_search.search(action.query)).results
                 except WebSearchError as exc:
                     # Not recorded: the model may retry the query, nothing was shown.
                     logger.warning("Web search failed: %s", exc)
