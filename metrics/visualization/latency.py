@@ -12,6 +12,8 @@ from render import (
     Chart,
     Section,
     Table,
+    Tabs,
+    boxes,
     canvas,
     chart,
     histogram,
@@ -25,12 +27,15 @@ KINDS = ("embed", "vector_search", "rerank", "llm", "web_search")
 def build(metrics: Metrics) -> Section:
     calls = metrics.calls
     done = answered(metrics.runs)
-    charts = []
+    charts: list[Chart | Tabs] = []
     if not done.empty:
         charts.append(_breakdown(done, calls))
         typical = _typical(done)
         if (calls["run_id"] == typical["run_id"]).any():
             charts.append(_timeline(typical, calls))
+    ok = calls[calls["status"] == "ok"]
+    if not ok.empty:
+        charts.append(_by_kind(calls, ok))
     gaps = calls["gap_ms"].dropna()
     if not gaps.empty:
         charts.append(
@@ -68,6 +73,59 @@ def build(metrics: Metrics) -> Section:
         charts,
         [Table(t("Duration per call kind"), _per_kind(calls))],
     )
+
+
+def _by_kind(calls: pd.DataFrame, ok: pd.DataFrame) -> Tabs:
+    """Every call kind side by side, then the duration spread of each kind on its own."""
+    kinds = [kind for kind in KINDS if (ok["kind"] == kind).any()]
+    meaning = {
+        "embed": t("embedding the question"),
+        "vector_search": t("searching the memory"),
+        "rerank": t("scoring the memory candidates"),
+        "llm": t("the language model, one call per agent step"),
+        "web_search": t("an Exa search"),
+    }
+    every = boxes(
+        [(kind, ok.loc[ok["kind"] == kind, "duration_ms"] / 1000) for kind in kinds],
+        xlabel=t("call duration (s)"),
+        caption=t("Duration of successful calls, by kind"),
+        reading=t(
+            "One row per kind of remote call, successful calls only. A row near zero costs almost"
+            " nothing; choose a kind above to see how its durations spread."
+        ),
+        dots=t("Each dot is one call."),
+    )
+    options = [(t("All kinds"), every)]
+    for kind in kinds:
+        durations = ok.loc[ok["kind"] == kind, "duration_ms"]
+        median, p95 = float(durations.median()), float(durations.quantile(0.95))
+        # Seconds for slow kinds, milliseconds for those that take a few ms.
+        scale = 1000 if median >= 1000 else 1
+        options.append(
+            (
+                kind,
+                histogram(
+                    durations / scale,
+                    xlabel=t("duration (s)") if scale == 1000 else t("duration (ms)"),
+                    ylabel=t("calls"),
+                    caption=t("Duration of {kind} calls", kind=kind),
+                    reading=t(
+                        "Duration of every successful {kind} call ({meaning}). Successful calls:"
+                        " {ok}; failed calls, left out: {failed}. Dashed lines: median and p95.",
+                        kind=kind,
+                        meaning=meaning[kind],
+                        ok=len(durations),
+                        failed=int(((calls["kind"] == kind) & (calls["status"] != "ok")).sum()),
+                    ),
+                    color=KIND_COLORS[kind],
+                    markers=[
+                        (median / scale, t("median {value}", value=fmt_ms(median))),
+                        (p95 / scale, t("p95 {value}", value=fmt_ms(p95))),
+                    ],
+                ),
+            )
+        )
+    return Tabs(options)
 
 
 def _typical(done: pd.DataFrame) -> pd.Series:

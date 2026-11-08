@@ -11,9 +11,9 @@ import overview
 import tokens
 from i18n import language
 from load import Metrics, load
-from render import histogram
+from render import Tabs, histogram
 from stats import fmt_ms, fmt_pct, note
-from tests.conftest import call, calls_of, run, write
+from tests.conftest import EMPTY_RESULT, call, calls_of, run, write
 
 
 def test_formats() -> None:
@@ -248,8 +248,44 @@ def test_threshold_lines_name_their_configurations(tmp_path: Path) -> None:
 
 def test_timeline_names_the_run_it_shows(tmp_path: Path) -> None:
     captions = [
-        c.caption for c in latency.build(load(write(tmp_path, [run()], calls_of("r1")))).charts
+        c.caption
+        for c in latency.build(load(write(tmp_path, [run()], calls_of("r1")))).all_charts()
     ]
     assert "Timeline of the run closest to the median total (3.0 s): C1, 2026-11-08 10:00 UTC" in (
         captions
+    )
+
+
+def test_overview_tiles(tmp_path: Path) -> None:
+    metrics = load(write(tmp_path, [run()], calls_of("r1")))
+    assert [(tile.label, tile.value, tile.note) for tile in overview.tiles(metrics)] == [
+        ("Runs", "1", "calls: 4"),
+        ("Answered", "100%", "1 of 1"),
+        ("Median total", "3.0 s", "n=1, indicative"),
+        ("p95 total", "3.0 s", "n=1, indicative"),
+        ("Mean steps", "1.0", "n=1, indicative"),
+        ("Grounded in memory", "100%", "n=1, indicative"),
+    ]
+
+
+def test_overview_tiles_without_answered_run(tmp_path: Path) -> None:
+    metrics = load(write(tmp_path, [run(outcome="llm_error", **EMPTY_RESULT)], []))
+    with language("fr"):
+        tiles = [(tile.label, tile.value, tile.note) for tile in overview.tiles(metrics)]
+    assert tiles == [("Exécutions", "1", "appels : 0"), ("Réponses", "0\u00a0%", "0 sur 1")]
+
+
+def test_latency_durations_by_call_kind(tmp_path: Path) -> None:
+    section = latency.build(load(write(tmp_path, [run()], calls_of("r1"))))
+    (tabs,) = [item for item in section.charts if isinstance(item, Tabs)]
+    assert [name for name, _ in tabs.options] == [
+        "All kinds",
+        "embed",
+        "vector_search",
+        "rerank",
+        "llm",
+    ]
+    assert tabs.options[-1][1].reading == (
+        "Duration of every successful llm call (the language model, one call per agent step)."
+        " Successful calls: 1; failed calls, left out: 0. Dashed lines: median and p95."
     )

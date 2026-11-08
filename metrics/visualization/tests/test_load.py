@@ -106,3 +106,13 @@ def test_config_ids_follow_answered_runs(tmp_path: Path) -> None:
         "a2": "C2",
         "b2": "C1",
     }
+
+
+def test_only_keeps_one_configuration_and_its_calls(tmp_path: Path) -> None:
+    runs = [run(), run(run_id="r2"), run(run_id="r3", label="b")]
+    metrics = load(write(tmp_path, runs, [*calls_of("r1"), *calls_of("r3")]))
+    only = metrics.only("C2")
+    assert list(only.runs["run_id"]) == ["r3"]
+    assert set(only.calls["run_id"]) == {"r3"}
+    # Ids come from the whole data: C1 stays C1 when it is shown alone.
+    assert list(metrics.only("C1").runs["config_id"]) == ["C1", "C1"]

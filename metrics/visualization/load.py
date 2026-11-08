@@ -82,6 +82,11 @@ class Metrics:
     runs: pd.DataFrame
     calls: pd.DataFrame
 
+    def only(self, config_id: str) -> "Metrics":
+        """The runs of one configuration and their calls; config ids keep their value."""
+        runs = self.runs[self.runs["config_id"] == config_id]
+        return Metrics(runs=runs, calls=self.calls[self.calls["run_id"].isin(runs["run_id"])])
+
 
 def load(directory: Path) -> Metrics:
     runs = _read(directory / RUNS_FILE, _RUN_TYPES)

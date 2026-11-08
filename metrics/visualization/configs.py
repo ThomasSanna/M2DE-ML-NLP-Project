@@ -102,4 +102,5 @@ def _totals(done: pd.DataFrame) -> Chart:
             "Time from the question to the answer, one row per configuration (C1, C2… are"
             " described in the table below). Further left is faster."
         ),
+        dots=t("Each dot is one run."),
     )

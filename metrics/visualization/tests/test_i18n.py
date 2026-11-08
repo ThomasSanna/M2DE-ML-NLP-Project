@@ -5,9 +5,10 @@ from pathlib import Path
 
 import pytest
 
+import overview
 from i18n import CATALOG_FR, language
 from load import load
-from render import canvas, chart
+from render import Tabs, canvas, chart
 from report import SECTIONS
 from stats import cell_num, fmt_ms, fmt_p95, fmt_pct, note
 from tests.conftest import write
@@ -74,16 +75,28 @@ def test_every_sentence_and_caption_is_translated(tmp_path: Path, name: str) -> 
         with language(code):
             metrics = load(directory)
             sections = [build(metrics) for build in SECTIONS]
-        return [
-            text
+            tiles = [tile.label for tile in overview.tiles(metrics)]
+        # The first option of a tab group is a translated text; the others are call kinds.
+        first_options = [
+            item.options[0][0]
             for section in sections
-            for text in (
-                *section.findings,
-                *(c.caption for c in section.charts),
-                *(c.reading for c in section.charts),
-                *(table.caption for table in section.tables),
-            )
+            for item in section.charts
+            if isinstance(item, Tabs)
         ]
+        return (
+            tiles
+            + first_options
+            + [
+                text
+                for section in sections
+                for text in (
+                    *section.findings,
+                    *(c.caption for c in section.all_charts()),
+                    *(c.reading for c in section.all_charts()),
+                    *(table.caption for table in section.tables),
+                )
+            ]
+        )
 
     english, french = texts("en"), texts("fr")
     assert [en for en, fr in zip(english, french, strict=True) if en == fr] == []

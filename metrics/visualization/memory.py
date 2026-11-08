@@ -85,6 +85,7 @@ def build(metrics: Metrics) -> Section:
                     " (0: first question, 3+: three or more). Shows whether a longer conversation"
                     " slows the answer."
                 ),
+                dots=t("Each dot is one run."),
                 ylabel=t("prior replies"),
             )
         )
@@ -96,6 +97,7 @@ def build(metrics: Metrics) -> Section:
                 reading=t(
                     "Same grouping. Shows whether a longer conversation makes the prompt grow."
                 ),
+                dots=t("Each dot is one run."),
                 ylabel=t("prior replies"),
             )
         )

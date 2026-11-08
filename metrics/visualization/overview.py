@@ -3,10 +3,10 @@
 import pandas as pd
 from matplotlib.ticker import MaxNLocator
 
-from i18n import t
-from load import Metrics
-from render import OUTCOME_COLORS, SURFACE, Chart, Section, Table, canvas, chart, legend
-from stats import counts, fmt_pct, listing
+from i18n import number, t
+from load import Metrics, answered
+from render import OUTCOME_COLORS, SURFACE, Chart, Section, Table, Tile, canvas, chart, legend
+from stats import counts, fmt_ms, fmt_pct, listing, note
 
 
 def build(metrics: Metrics) -> Section:
@@ -21,6 +21,32 @@ def build(metrics: Metrics) -> Section:
             Table(t("Runs per source and outcome"), _headers(_crosstab(runs, "source"))),
         ],
     )
+
+
+def tiles(metrics: Metrics) -> list[Tile]:
+    """The headline numbers at the top of a view."""
+    runs = metrics.runs
+    done = answered(runs)
+    n = len(done)
+    head = [
+        Tile(t("Runs"), str(len(runs)), t("calls: {calls}", calls=len(metrics.calls))),
+        Tile(
+            t("Answered"),
+            fmt_pct(n / len(runs)),
+            t("{answered} of {runs}", answered=n, runs=len(runs)),
+        ),
+    ]
+    if done.empty:
+        return head
+    total = done["total_ms"]
+    grounded = done["grounding"].isin(["memory", "memory+web"]).mean()
+    return [
+        *head,
+        Tile(t("Median total"), fmt_ms(total.median()), note(n)),
+        Tile(t("p95 total"), fmt_ms(total.quantile(0.95)), note(n)),
+        Tile(t("Mean steps"), number(done["steps"].mean(), ".1f"), note(n)),
+        Tile(t("Grounded in memory"), fmt_pct(grounded), note(n)),
+    ]
 
 
 def _period(runs: pd.DataFrame) -> str:

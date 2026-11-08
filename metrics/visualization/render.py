@@ -1,11 +1,8 @@
-"""Report types, chart styling and the HTML page."""
+"""Report types and chart drawing; the HTML page itself is in page.py."""
 
 import base64
-import html
 import io
 from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
 from typing import Literal
 
 import pandas as pd
@@ -13,7 +10,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator, ScalarFormatter
 
-from i18n import current, localize, t
+from i18n import localize, t
 
 # Validated categorical palette for a light surface. Each entity keeps its color in every
 # chart: colors follow the entity, never its rank.
@@ -49,6 +46,13 @@ class Chart:
 
 
 @dataclass(frozen=True)
+class Tabs:
+    """Charts shown one at a time, picked by name: the first one is shown first."""
+
+    options: list[tuple[str, Chart]]
+
+
+@dataclass(frozen=True)
 class Table:
     caption: str
     frame: pd.DataFrame
@@ -58,12 +62,39 @@ class Table:
 class Section:
     title: str
     findings: list[str]
-    charts: list[Chart] = field(default_factory=list)
+    charts: list[Chart | Tabs] = field(default_factory=list)
     tables: list[Table] = field(default_factory=list)
+
+    def all_charts(self) -> list[Chart]:
+        """Every chart of the section, each option of a tab group included."""
+        return [
+            chart
+            for item in self.charts
+            for chart in ([c for _, c in item.options] if isinstance(item, Tabs) else [item])
+        ]
+
+
+@dataclass(frozen=True)
+class Tile:
+    """A headline number at the top of a view."""
+
+    label: str
+    value: str
+    note: str
+
+
+@dataclass(frozen=True)
+class View:
+    """The whole report for one slice of the data, picked by name in the page filter."""
+
+    name: str
+    scope: str
+    tiles: list[Tile]
+    sections: list[Section]
 
 
 def canvas(
-    width: float = 7.0, height: float = 3.0, grid: Literal["x", "y"] = "y"
+    width: float = 6.0, height: float = 3.0, grid: Literal["x", "y"] = "y"
 ) -> tuple[Figure, Axes]:
     """A figure with recessive axes and grid, drawn without pyplot's global state."""
     fig = Figure(figsize=(width, height), facecolor=SURFACE, layout="constrained")
@@ -73,7 +104,7 @@ def canvas(
         ax.spines[side].set_visible(False)
     for side in ("left", "bottom"):
         ax.spines[side].set_color(GRID)
-    ax.tick_params(colors=INK_MUTED, labelsize=9)
+    ax.tick_params(colors=INK_MUTED, labelsize=10)
     ax.xaxis.label.set_color(INK_MUTED)
     ax.yaxis.label.set_color(INK_MUTED)
     ax.grid(axis=grid, color=GRID, linewidth=0.8)
@@ -83,7 +114,7 @@ def canvas(
 
 def legend(ax: Axes) -> None:
     ax.legend(
-        frameon=False, fontsize=9, labelcolor=INK_MUTED, loc="upper left", bbox_to_anchor=(1, 1)
+        frameon=False, fontsize=10, labelcolor=INK_MUTED, loc="upper left", bbox_to_anchor=(1, 1)
     )
 
 
@@ -121,7 +152,7 @@ def histogram(
             f" {label}",
             transform=ax.get_xaxis_transform(),
             color=INK,
-            fontsize=8,
+            fontsize=9,
             va="top",
             bbox={"facecolor": SURFACE, "edgecolor": "none", "pad": 1},
         )
@@ -143,7 +174,7 @@ def bars(
     """One series of vertical bars, each labeled with its value."""
     fig, ax = canvas(height=2.6)
     drawn = ax.bar(labels, values, color=SERIES[0], width=0.6)
-    ax.bar_label(drawn, fmt="{:g}", color=INK_MUTED, fontsize=9, padding=2)
+    ax.bar_label(drawn, fmt="{:g}", color=INK_MUTED, fontsize=10, padding=2)
     # Keep bars narrow when there are only a few categories.
     ax.set_xlim(-0.5, max(len(labels), 4) - 0.5)
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
@@ -158,6 +189,7 @@ def boxes(
     xlabel: str,
     caption: str,
     reading: str,
+    dots: str,
     ylabel: str = "",
 ) -> Chart:
     """Horizontal box plots, one per labeled group, on an axis that starts at zero."""
@@ -186,9 +218,10 @@ def boxes(
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     explained = t(
-        "{reading} Box: middle half of the runs; thick line: median; whiskers: the other runs,"
-        " up to 1.5 times the box length; each dot is one run.",
+        "{reading} Box: middle half of the values; thick line: median; whiskers: the other"
+        " values, up to 1.5 times the box length. {dots}",
         reading=reading,
+        dots=dots,
     )
     return chart(fig, caption, explained)
 
@@ -219,97 +252,7 @@ def chart(fig: Figure, caption: str, reading: str) -> Chart:
             if type(axis.get_major_formatter()) is ScalarFormatter:
                 axis.set_major_formatter(_LocalizedFormatter())
     buffer = io.BytesIO()
-    fig.savefig(buffer, format="png", dpi=110, facecolor=SURFACE)
+    # Twice the CSS pixel density, so charts stay sharp on high-density screens.
+    fig.savefig(buffer, format="png", dpi=200, facecolor=SURFACE)
     png = base64.b64encode(buffer.getvalue()).decode()
     return Chart(caption=caption, png_base64=png, reading=reading)
-
-
-def render(
-    sections: list[Section], *, source: Path, runs: int, calls: int, generated_at: datetime
-) -> str:
-    toc = "".join(
-        f'<li><a href="#{_anchor(s.title)}">{html.escape(s.title)}</a></li>' for s in sections
-    )
-    generated = t(
-        "Generated {generated} from {source}: {runs} runs, {calls} calls.",
-        generated=f"{generated_at:%Y-%m-%d %H:%M} UTC",
-        source=source,
-        runs=runs,
-        calls=calls,
-    )
-    sample = t('Every number shows its sample size; "indicative" marks fewer than 20 runs.')
-    return _PAGE.format(
-        lang=current(),
-        title=html.escape(t("AI metrics report")),
-        style=_STYLE,
-        generated=html.escape(generated),
-        sample=html.escape(sample),
-        toc=toc,
-        body="".join(_section(section) for section in sections),
-    )
-
-
-def _anchor(title: str) -> str:
-    return title.lower().replace(" ", "-")
-
-
-def _section(section: Section) -> str:
-    findings = "".join(f"<li>{html.escape(text)}</li>" for text in section.findings)
-    charts = "".join(
-        f"<figure><h3>{html.escape(c.caption)}</h3>"
-        f'<img src="data:image/png;base64,{c.png_base64}" alt="{html.escape(c.caption)}">'
-        f"<figcaption>{html.escape(c.reading)}</figcaption></figure>"
-        for c in section.charts
-    )
-    tables = "".join(
-        f'<div class="table"><h3>{html.escape(table.caption)}</h3>'
-        f"{table.frame.to_html(index=False, escape=True, border=0, na_rep='-')}</div>"
-        for table in section.tables
-    )
-    return (
-        f'<section><h2 id="{_anchor(section.title)}">{html.escape(section.title)}</h2>'
-        f'<ul class="findings">{findings}</ul>{charts}{tables}</section>'
-    )
-
-
-_STYLE = f"""
-:root {{ color-scheme: light; }}
-body {{ margin: 0; background: {SURFACE}; color: {INK};
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }}
-main {{ max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }}
-h1 {{ font-size: 1.6rem; margin: 0 0 4px; }}
-h2 {{ font-size: 1.25rem; margin: 40px 0 8px; padding-top: 8px; border-top: 1px solid {GRID}; }}
-h3 {{ font-size: 0.95rem; margin: 16px 0 6px; color: {INK_MUTED}; }}
-.meta {{ color: {INK_MUTED}; font-size: 0.85rem; }}
-figcaption {{ color: {INK_MUTED}; font-size: 0.9rem; max-width: 72ch; margin-top: 4px; }}
-nav ul {{ display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 0; list-style: none; }}
-a {{ color: {SERIES[0]}; }}
-.findings li {{ margin: 4px 0; }}
-figure {{ margin: 24px 0; }}
-img {{ max-width: 100%; height: auto; }}
-.table {{ overflow-x: auto; }}
-table {{ border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }}
-th, td {{ padding: 4px 10px; text-align: left; vertical-align: top;
-  border-bottom: 1px solid {GRID}; }}
-th {{ color: {INK_MUTED}; font-weight: 600; }}
-"""
-
-_PAGE = """<!doctype html>
-<html lang="{lang}">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title>
-<style>{style}</style>
-</head>
-<body>
-<main>
-<h1>{title}</h1>
-<p class="meta">{generated}
-{sample}</p>
-<nav><ul>{toc}</ul></nav>
-{body}
-</main>
-</body>
-</html>
-"""
