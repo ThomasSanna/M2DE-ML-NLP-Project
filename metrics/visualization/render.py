@@ -93,10 +93,15 @@ def histogram(
     bins: list[float] | None = None,
 ) -> Chart:
     """Distribution of one measure; markers draw reference lines such as a threshold."""
+    data = values.astype(float)
+    low, high = float(data.min()), float(data.max())
+    # Float noise around one value leaves numpy no room for distinct bin edges: widen it.
+    spread = None if high - low > 1e-9 * max(1.0, abs(high)) else (low - 0.5, high + 0.5)
     fig, ax = canvas(height=2.6)
     ax.hist(
-        values.astype(float),
+        data,
         bins=bins if bins is not None else min(30, max(5, len(values))),
+        range=None if bins is not None else spread,
         color=color,
         edgecolor=SURFACE,
         linewidth=0.8,

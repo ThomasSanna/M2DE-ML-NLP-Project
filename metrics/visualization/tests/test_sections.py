@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pandas as pd
+
 import agent
 import configs
 import errors
@@ -8,6 +10,7 @@ import memory
 import overview
 import tokens
 from load import Metrics, load
+from render import histogram
 from stats import fmt_ms, fmt_pct, note
 from tests.conftest import call, calls_of, run, write
 
@@ -202,3 +205,9 @@ def test_errors_findings(tmp_path: Path) -> None:
 def test_errors_without_failures(tmp_path: Path) -> None:
     findings = errors.build(load(write(tmp_path, [run()], calls_of("r1")))).findings
     assert findings == ["No failed run."]
+
+
+def test_histogram_of_nearly_equal_values() -> None:
+    # Float noise around one value (60 tokens/s from every call) must not break the bins.
+    values = pd.Series([59.99999999999999, 60.0, 60.000000000000014], dtype="Float64")
+    assert histogram(values, xlabel="x", caption="c").png_base64
