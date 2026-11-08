@@ -5,15 +5,21 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from app.services.websearch import EXA_BASE_URL, ExaClient, WebResult, WebSearchError
+from app.services.websearch import (
+    EXA_BASE_URL,
+    ExaClient,
+    WebResult,
+    WebSearchError,
+    WebSearchResponse,
+)
 
 
 def _search(
     handler: Callable[[httpx.Request], httpx.Response],
     query: str = "eduroam mac",
     include_domains: list[str] | None = None,
-) -> list[WebResult]:
-    async def _run() -> list[WebResult]:
+) -> WebSearchResponse:
+    async def _run() -> WebSearchResponse:
         transport = httpx.MockTransport(handler)
         async with httpx.AsyncClient(base_url=EXA_BASE_URL, transport=transport) as http:
             return await ExaClient(http, 3, include_domains or []).search(query)
@@ -45,9 +51,9 @@ def test_posts_search_with_highlights() -> None:
             },
         )
 
-    assert _search(handler) == [
-        WebResult("Eduroam macOS", "https://a.fr", "2025-01-02", "un … deux")
-    ]
+    assert _search(handler) == WebSearchResponse(
+        [WebResult("Eduroam macOS", "https://a.fr", "2025-01-02", "un … deux")], 0.005
+    )
 
 
 def test_include_domains_is_sent_when_set() -> None:
@@ -55,7 +61,7 @@ def test_include_domains_is_sent_when_set() -> None:
         assert json.loads(request.content)["includeDomains"] == ["univ-corse.fr"]
         return httpx.Response(200, json={"results": []})
 
-    assert _search(handler, include_domains=["univ-corse.fr"]) == []
+    assert _search(handler, include_domains=["univ-corse.fr"]).results == []
 
 
 def test_missing_title_falls_back_to_url_and_excerpt_is_capped() -> None:
@@ -65,7 +71,7 @@ def test_missing_title_falls_back_to_url_and_excerpt_is_capped() -> None:
             json={"results": [{"title": None, "url": "https://b.fr", "highlights": ["x" * 800]}]},
         )
 
-    [result] = _search(handler)
+    [result] = _search(handler).results
     assert result.title == "https://b.fr"
     assert result.published is None
     assert len(result.excerpt) == 500
@@ -95,10 +101,10 @@ def test_unexpected_exa_fields_raise_web_search_error(body: dict[str, object]) -
         _search(lambda _: httpx.Response(200, json=body))
 
 
-@pytest.mark.parametrize("cost", [0.005, "0.005", [1], None])
+@pytest.mark.parametrize("cost", [0.005, "0.005", [1], None, {"total": "0.005"}])
 def test_unexpected_cost_keeps_the_results(cost: object) -> None:
     body = {"results": [{"title": "t", "url": "https://a.fr"}], "costDollars": cost}
 
-    assert _search(lambda _: httpx.Response(200, json=body)) == [
-        WebResult("t", "https://a.fr", None, "")
-    ]
+    assert _search(lambda _: httpx.Response(200, json=body)) == WebSearchResponse(
+        [WebResult("t", "https://a.fr", None, "")], None
+    )

@@ -8,6 +8,7 @@ from sqlalchemy.orm import defer
 from app.models import Knowledge, KnowledgeStatus
 from app.schemas.knowledge import KnowledgeCreate
 from app.services.embeddings import Embedder
+from app.services.metrics import RunRecorder
 from app.services.reranker import Reranker
 
 
@@ -35,6 +36,12 @@ async def search(
     plugged in here with the pipeline.
     """
     [embedding] = await embedder.embed([query])
+    return await _nearest(session, embedding, top_k)
+
+
+async def _nearest(
+    session: AsyncSession, embedding: list[float], top_k: int
+) -> list[tuple[Knowledge, float]]:
     distance = Knowledge.embedding.cosine_distance(embedding)
     rows = await session.execute(
         select(Knowledge, (1 - distance).label("similarity"))
@@ -55,6 +62,7 @@ async def retrieve(
     candidates: int,
     top_k: int,
     threshold: float,
+    recorder: RunRecorder,
 ) -> list[tuple[Knowledge, float]]:
     """Vector candidates reranked by the cross-encoder, best first, scores in [0, 1].
 
@@ -62,21 +70,32 @@ async def retrieve(
     against the query, and the answer often holds the words the user typed. The
     embedding still covers the question only (see `search`).
     """
-    hits = await search(session, embedder, text, candidates)
+    with recorder.call("embed") as call:
+        [embedding] = await embedder.embed([text])
+    call.items = 1
+    with recorder.call("vector_search") as call:
+        hits = await _nearest(session, embedding, candidates)
+    call.items = recorder.memory_candidates = len(hits)
     if not hits:
+        recorder.memory_kept = 0
         return []
-    logits = await reranker.rerank(
-        text, [f"{knowledge.question}\n{knowledge.answer}" for knowledge, _ in hits]
-    )
+    with recorder.call("rerank") as call:
+        logits = await reranker.rerank(
+            text, [f"{knowledge.question}\n{knowledge.answer}" for knowledge, _ in hits]
+        )
+    call.items = len(hits)
     scored = [
         (knowledge, _sigmoid(logit)) for (knowledge, _), logit in zip(hits, logits, strict=True)
     ]
+    # Before the threshold: a run with no kept entry still shows how close the best one was.
+    recorder.memory_top_score = max(score for _, score in scored)
     kept = sorted(
         ((knowledge, score) for knowledge, score in scored if score >= threshold),
         key=lambda hit: hit[1],
         reverse=True,
-    )
-    return kept[:top_k]
+    )[:top_k]
+    recorder.memory_kept = len(kept)
+    return kept
 
 
 def _sigmoid(logit: float) -> float:

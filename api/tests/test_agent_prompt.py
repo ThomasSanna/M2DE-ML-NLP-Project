@@ -87,10 +87,21 @@ def test_render_thread() -> None:
         "Fil :\nUtilisateur : a\nSupport : b"
     )
 
-    long_thread = render_thread([("user", "y" * 5000), ("assistant", "dernier message")])
+    long_thread = render_thread(
+        [("user", "y" * (THREAD_MAX_CHARS + 1000)), ("assistant", "dernier message")]
+    )
     assert len(long_thread) <= len("Fil :\n") + THREAD_MAX_CHARS
     assert long_thread.startswith("Fil :\nUtilisateur : yyy")
     assert long_thread.endswith("Support : dernier message")
+
+
+def test_render_thread_keeps_a_long_thread_whole() -> None:
+    # A pasted log or a long back-and-forth fits: the 12B server has a 32768-token context.
+    thread = render_thread([("user", "y" * 5000), ("assistant", "z" * 2000), ("user", "Et ?")])
+
+    assert (
+        thread == f"Fil :\nUtilisateur : {'y' * 5000}\nSupport : {'z' * 2000}\nUtilisateur : Et ?"
+    )
 
 
 def test_render_thread_strips_refs_from_earlier_answers() -> None:
@@ -113,7 +124,7 @@ def test_render_thread_keeps_the_opening_message() -> None:
     thread = render_thread(
         [
             ("user", "L'imprimante du bâtiment B n'imprime plus"),
-            ("assistant", "z" * 5000),
+            ("assistant", "z" * (THREAD_MAX_CHARS + 1000)),
             ("user", "Toujours pareil"),
         ]
     )

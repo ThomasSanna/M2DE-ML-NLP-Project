@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.services.embeddings import Embedder
 from app.services.glpi import Glpi
 from app.services.llm import ChatModel
+from app.services.metrics import CsvMetricsWriter
 from app.services.reranker import Reranker
 from app.services.websearch import WebSearch
 
@@ -39,6 +40,10 @@ def get_web_search(request: Request) -> WebSearch | None:
     return request.app.state.web_search
 
 
+def get_metrics(request: Request) -> CsvMetricsWriter | None:
+    return request.app.state.metrics
+
+
 def get_glpi(request: Request) -> Glpi:
     glpi = request.app.state.glpi
     if glpi is None:
@@ -52,6 +57,7 @@ EmbedderDep = Annotated[Embedder, Depends(get_embedder)]
 RerankerDep = Annotated[Reranker, Depends(get_reranker)]
 ChatModelDep = Annotated[ChatModel, Depends(get_chat_model)]
 WebSearchDep = Annotated[WebSearch | None, Depends(get_web_search)]
+MetricsDep = Annotated[CsvMetricsWriter | None, Depends(get_metrics)]
 GlpiDep = Annotated[Glpi, Depends(get_glpi)]
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)

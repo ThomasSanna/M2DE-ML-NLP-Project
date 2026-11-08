@@ -23,6 +23,8 @@ class Completion:
     finish_reason: str
     prompt_tokens: int
     completion_tokens: int
+    # Prompt tokens served from vLLM's prefix cache; None when the server does not report it.
+    cached_tokens: int | None = None
 
 
 class ChatModel(Protocol):
@@ -69,6 +71,7 @@ class VLLMChatClient:
                 finish_reason=choice["finish_reason"],
                 prompt_tokens=body["usage"]["prompt_tokens"],
                 completion_tokens=body["usage"]["completion_tokens"],
+                cached_tokens=_cached_tokens(body["usage"]),
             )
         except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"Language model call failed: {exc!r}") from exc
@@ -76,3 +79,11 @@ class VLLMChatClient:
         if not isinstance(content, str):
             raise LLMError("Language model returned no text content")
         return completion
+
+
+def _cached_tokens(usage: dict[str, object]) -> int | None:
+    # Reported only when vLLM runs with --enable-prompt-tokens-details. A metric, not part
+    # of the answer: an odd value gives None instead of failing the call.
+    details = usage.get("prompt_tokens_details")
+    cached = details.get("cached_tokens") if isinstance(details, dict) else None
+    return cached if isinstance(cached, int) and not isinstance(cached, bool) else None

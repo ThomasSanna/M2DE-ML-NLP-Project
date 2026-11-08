@@ -1,6 +1,7 @@
 import asyncio
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +12,7 @@ from app.db.session import create_engine, create_sessionmaker
 from app.services.glpi import Author, GlpiFollowup
 from app.services.glpi_worker import MAX_ATTEMPTS, GlpiEventWorker
 from app.services.llm import ChatModel
+from app.services.metrics import CsvMetricsWriter
 from tests.conftest import (
     TICKET,
     FailingChatModel,
@@ -18,6 +20,7 @@ from tests.conftest import (
     FakeGlpi,
     FakeReranker,
     ScriptedChatModel,
+    csv_rows,
     glpi_headers,
     run_sql,
 )
@@ -38,7 +41,12 @@ def _queue(client: TestClient, payload: dict[str, object]) -> None:
     assert response.status_code == 202, response.text
 
 
-def _process(settings: Settings, glpi: FakeGlpi, model: ChatModel | None = None) -> bool:
+def _process(
+    settings: Settings,
+    glpi: FakeGlpi,
+    model: ChatModel | None = None,
+    metrics: CsvMetricsWriter | None = None,
+) -> bool:
     model = model or ScriptedChatModel(
         [json.dumps({"action": "answer", "answer": "Supprimez le profil [K1]"})]
     )
@@ -46,7 +54,14 @@ def _process(settings: Settings, glpi: FakeGlpi, model: ChatModel | None = None)
     async def run() -> bool:
         engine = create_engine(settings.database_url)
         worker = GlpiEventWorker(
-            create_sessionmaker(engine), FakeEmbedder(), FakeReranker(), model, None, glpi, settings
+            create_sessionmaker(engine),
+            FakeEmbedder(),
+            FakeReranker(),
+            model,
+            None,
+            metrics,
+            glpi,
+            settings,
         )
         try:
             return await worker.process_next()
@@ -186,3 +201,14 @@ def test_event_without_a_ticket_to_answer_posts_nothing(
 
     assert glpi.followups == []
     assert _event_state(settings) == (status, 1, error)
+
+
+def test_worker_writes_metrics_for_the_ticket(
+    client: TestClient, settings: Settings, tmp_path: Path
+) -> None:
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(), metrics=CsvMetricsWriter(tmp_path))
+
+    [run] = csv_rows(tmp_path / "runs.v1.csv")
+    assert (run["source"], run["ticket_id"], run["outcome"]) == ("worker", "42", "answered")

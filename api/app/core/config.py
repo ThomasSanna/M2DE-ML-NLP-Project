@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
@@ -85,6 +86,11 @@ class Settings(DatabaseSettings):
     # Model calls per answer; the last one is forced to answer.
     agent_max_steps: int = Field(default=3, ge=1)
 
+    # Directory of the metrics CSV files (runs.v1.csv, calls.v1.csv); empty = no metrics.
+    metrics_dir: Path | None = None
+    # Free tag written on every run row, to tell comparison campaigns apart.
+    metrics_label: str | None = None
+
     # GLPI REST API (Docker service name). Without a User-Token, the routes that write to
     # GLPI return 503.
     glpi_api_url: AnyHttpUrl = AnyHttpUrl("http://glpi/apirest.php/")
@@ -100,6 +106,8 @@ class Settings(DatabaseSettings):
         "exa_api_key",
         "glpi_user_token",
         "glpi_app_token",
+        "metrics_dir",
+        "metrics_label",
         mode="before",
     )
     @classmethod

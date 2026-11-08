@@ -74,3 +74,17 @@ def test_http_error_raises_llm_error() -> None:
 def test_missing_content_raises_llm_error(body: dict[str, object]) -> None:
     with pytest.raises(LLMError):
         _complete(lambda request: httpx.Response(200, json=body))
+
+
+@pytest.mark.parametrize(
+    ("usage", "cached"),
+    [
+        ({**USAGE, "prompt_tokens_details": {"cached_tokens": 8}}, 8),
+        ({**USAGE, "prompt_tokens_details": None}, None),
+        ({**USAGE, "prompt_tokens_details": {"cached_tokens": "8"}}, None),
+        (USAGE, None),
+    ],
+)
+def test_reads_cached_prompt_tokens(usage: dict[str, object], cached: int | None) -> None:
+    body = {"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}], "usage": usage}
+    assert _complete(lambda _: httpx.Response(200, json=body)).cached_tokens == cached
