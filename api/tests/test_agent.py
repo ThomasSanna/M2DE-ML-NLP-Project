@@ -11,6 +11,7 @@ from app.services.agent_prompt import (
     initial_messages,
 )
 from app.services.llm import Completion, LLMError
+from app.services.metrics import RunRecorder
 from app.services.websearch import WebResult
 from tests.conftest import FakeWebSearch, ScriptedChatModel
 
@@ -33,10 +34,11 @@ def _run(
     web: FakeWebSearch | None,
     max_steps: int = 3,
     memory_refs: set[str] | None = None,
+    recorder: RunRecorder | None = None,
 ) -> AgentRun:
     messages = initial_messages("Mémoire : …", "Fil : …")
     refs = {"K1"} if memory_refs is None else memory_refs
-    return asyncio.run(run_agent(model, web, messages, refs, max_steps))
+    return asyncio.run(run_agent(model, web, messages, refs, max_steps, recorder or RunRecorder()))
 
 
 def _enum(schema: dict[str, object]) -> object:
@@ -257,3 +259,61 @@ def test_unbracketed_refs_in_answer_are_not_citations() -> None:
 
     assert {"W1", "W10", "W11"} <= set(run.web_results)
     assert run.cited_refs == ["W1"]
+
+
+def test_records_model_calls_and_web_searches() -> None:
+    recorder = RunRecorder()
+    model = ScriptedChatModel([_search("eduroam mac"), _answer("Voir [K1] [W9]", ["K1", "W9"])])
+
+    _run(model, FakeWebSearch(RESULTS, cost=0.005), recorder=recorder)
+
+    assert [(c.kind, c.step, c.status, c.action, c.items, c.cost_usd) for c in recorder.calls] == [
+        ("llm", 1, "ok", "search", None, None),
+        ("web_search", 1, "ok", None, 2, 0.005),
+        ("llm", 2, "ok", "answer", None, None),
+    ]
+    first = recorder.calls[0]
+    assert (first.prompt_tokens, first.completion_tokens, first.finish_reason) == (100, 10, "stop")
+    assert recorder.dropped_refs == 1
+
+
+def test_counts_searches_that_send_no_request() -> None:
+    duplicate = RunRecorder()
+    _run(
+        ScriptedChatModel([_search("eduroam"), _search("Eduroam"), _answer()]),
+        FakeWebSearch(RESULTS),
+        recorder=duplicate,
+    )
+    assert duplicate.searches_duplicate == 1
+    assert [c.kind for c in duplicate.calls] == ["llm", "web_search", "llm", "llm"]
+
+    unavailable = RunRecorder()
+    _run(ScriptedChatModel([_search("eduroam"), _answer()]), None, recorder=unavailable)
+    assert unavailable.searches_unavailable == 1
+    assert [c.kind for c in unavailable.calls] == ["llm", "llm"]
+
+
+def test_records_a_failed_web_search() -> None:
+    recorder = RunRecorder()
+
+    _run(
+        ScriptedChatModel([_search("eduroam"), _answer()]),
+        FakeWebSearch(fail=True),
+        recorder=recorder,
+    )
+
+    assert [(c.kind, c.status) for c in recorder.calls] == [
+        ("llm", "ok"),
+        ("web_search", "WebSearchError"),
+        ("llm", "ok"),
+    ]
+    assert recorder.searches_unavailable == 0
+
+
+def test_records_the_invalid_output_that_fails_the_last_step() -> None:
+    recorder = RunRecorder()
+
+    with pytest.raises(LLMError):
+        _run(ScriptedChatModel(["pas du json"]), None, max_steps=1, recorder=recorder)
+
+    assert [(c.kind, c.status, c.action) for c in recorder.calls] == [("llm", "ok", "invalid")]

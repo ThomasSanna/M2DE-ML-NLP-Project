@@ -82,7 +82,7 @@ Models available on the university server (VPN required):
 |---|---|---|
 | Embeddings | `BAAI/bge-multilingual-gemma2` | `http://193.48.31.6:31550/v1/embeddings` |
 | Reranker | `BAAI/bge-reranker-v2-gemma` | `http://193.48.31.6:31127/rerank` |
-| LLM | `google/gemma3-12b-it` | `http://193.48.31.6:32297/v1/chat/completions` |
+| LLM | `google/gemma-4-12B-it` | `http://193.48.31.6:31887/v1/chat/completions` |
 | LLM (light) | `google/gemma3-4b-it` | `http://193.48.31.6:30091/v1/chat/completions` |
 
 ### Local development
@@ -197,6 +197,15 @@ docker exec poc-ldap sh -c 'ldapadd -x -c -H ldap://localhost \
 ```
 
 **Configuring LDAP in GLPI by hand.** Without the script, use `Setup > Authentication > LDAP directories`, then enable the source in `Setup > Authentication > Configuration > Advanced`. The first name field must be `givenname` (lowercase), otherwise it stays empty.
+
+**The API restarts in a loop after enabling `METRICS_DIR` (Linux).** Docker creates
+`./metrics` as root and the API runs as uid 10001, so it cannot write the metrics files and
+refuses to start. Give that uid the directory once:
+
+```bash
+mkdir -p metrics && sudo chown 10001 metrics
+docker compose restart api
+```
 
 **Embedding routes return `502`.** The university VPN is not connected, or `EMBEDDING_BASE_URL` is wrong.
 

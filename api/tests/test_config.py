@@ -65,3 +65,10 @@ def test_migrations_need_only_database_settings(
         get_database_settings.cache_clear()
 
     assert "CREATE TABLE knowledge" in output.getvalue()
+
+
+def test_empty_metrics_settings_are_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("METRICS_DIR", "")
+    monkeypatch.setenv("METRICS_LABEL", "")
+    settings = _settings()
+    assert (settings.metrics_dir, settings.metrics_label) == (None, None)
