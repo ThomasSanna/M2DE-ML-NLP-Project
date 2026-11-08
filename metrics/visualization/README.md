@@ -1,0 +1,86 @@
+# Metrics report
+
+Charts and interprets the AI metrics the API writes to `metrics/runs.v1.csv` and
+`metrics/calls.v1.csv` (columns in [`doc/api_doc.md` § Metrics](../../doc/api_doc.md#metrics)).
+The output is one self-contained HTML file: charts are embedded, nothing is loaded from the
+network, and every sentence is computed from the current files.
+
+## Run
+
+```bash
+cd metrics/visualization
+uv run report.py                       # reads ../*.v1.csv, writes report.html here
+uv run report.py --dir /path/to/csv --out /tmp/report.html
+uv run report.py --lang en             # English report; French is the default
+```
+
+The report is written in French by default, numbers included (`3,5 s`, `67 %`); `--lang en`
+writes it in English. Data codes such as outcomes (`answered`, `llm_error`) and call kinds
+(`embed`, `llm`) keep their CSV spelling in both languages.
+
+Collect data first: set `METRICS_DIR` (and optionally `METRICS_LABEL`) in `.env`, then
+`docker compose up -d --build api`. `report.html` holds your data and is gitignored.
+
+A missing file, a file with no run, or columns that do not match `v1` stop the script with a
+message and exit code 1; no report is written.
+
+## Reading the report
+
+The bar at the top of the page picks a view: `All` covers every configuration, and with
+several configurations each one (`C1`, `C2`…) gets its own view with the same sections,
+Configurations excepted. Hover a button to see the configuration it stands for. Each view
+opens with headline tiles (runs, answered share, median and p95 total, mean steps, share
+grounded in memory). In Latency, a selector above the call duration chart shows all call
+kinds side by side or one kind at a time, with its median and p95. These selectors are CSS:
+a browser without `:has()` shows every view one below the other.
+
+Latency opens with the total duration of an answered run, from the question reaching the API
+to the answer, all calls included (`total_ms`). Three criteria combine to narrow the runs:
+web search used or not (`web_ms` > 0), first question or follow-up in a thread
+(`prior_replies` > 0), memory entries shown to the model or not (`memory_kept` > 0). The
+histogram keeps every run of the view in gray behind the selection, the summary line gives its
+count, median and p95, and a bar splits the mean selected run by call kind. This chart is the
+one part of the page that runs a script (`explorer.js`, inline): Python writes one row per
+answered run, the script filters them and computes the statistics the way pandas does. The time
+before the API starts (GLPI webhook, worker queue) and the posting of the followup are not
+measured.
+
+Every number shows its sample size `n`. Below 20 runs it is tagged `indicative`, and p95
+values carry the same tag. A configuration needs 10 answered runs before its difference
+from the baseline is put into words. Sentences describe the data; they never claim a cause.
+Under each chart, a short text says what one bar or dot is, what the data codes in its legend
+mean, and what to look for.
+
+| Section | What it tells you |
+|---|---|
+| Overview | Period covered, sources (`api`, `ticket_stream`, `worker`), share of answered runs, runs per configuration. |
+| Configurations | One row per configuration: `METRICS_LABEL` plus the settings recorded with each run. C1 is the configuration with the most answered runs, the baseline: other configurations are compared with it on median total and mean tokens. |
+| Latency | Total duration per answered run, filtered by web search, thread and memory. Mean time per run split by call kind, per configuration. `other` is the time outside remote calls: prompt building, DB commit, parsing. Also the timeline of a typical run, the duration of each call kind, gaps between calls, and generation speed (completion tokens per second, prefill included). |
+| Tokens and cache | Prompt and completion tokens per run and per agent step, thread length against prompt size, and the prefix cache rate. The cache rate needs vLLM started with `--enable-prompt-tokens-details`; until then the report says it is not reported. |
+| Agent | Steps per run, what the model did at each step (`answer`, `search`, `invalid`), responses cut by `LLM_MAX_TOKENS`, web searches by outcome, Exa cost, and refs the model cited without having seen them (dropped). |
+| Memory and thread | Memory entries kept after the rerank threshold, best rerank score against the threshold (runs just below it hint at a threshold that is too strict), what answers cite, and first questions against follow-ups (`prior_replies`). |
+| Errors | Failed runs by outcome, the call that failed them, and the latest failures. |
+
+## Comparing configurations
+
+Give each campaign its own `METRICS_LABEL` (for example `baseline`, `steps-5`,
+`threshold-0.9`), restart the API, and send the same questions. The label is part of the
+configuration key, so each campaign gets its own row, box and bar.
+
+## Development
+
+```bash
+uv run ruff format . && uv run ruff check .
+uv run pytest -q
+```
+
+Tests write synthetic CSV files with the `v1` header (`tests/conftest.py`) and check the
+exact sentences of each section, plus a whole report on edge cases: a single run, error-only
+runs, a run without call rows, a failed configuration next to a healthy one.
+
+`tests/test_explorer.py` runs `explorer.js` under Node.js to check its statistics against
+pandas and numpy; the test is skipped when `node` is not installed.
+
+Texts are written in English in the code, wrapped in `t()` (`i18n.py`), and translated in
+`locales/fr.toml`. A new or changed text needs its French entry there: `tests/test_i18n.py`
+fails on a missing, unused or mismatched translation, and on a sentence left untranslated.

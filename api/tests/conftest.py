@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import csv
 import hashlib
 import hmac
 import json
@@ -23,7 +24,7 @@ from app.services.embeddings import EmbeddingError
 from app.services.glpi import GlpiError, GlpiTicket
 from app.services.llm import ChatMessage, Completion, LLMError
 from app.services.reranker import RerankerError
-from app.services.websearch import WebResult, WebSearchError
+from app.services.websearch import WebResult, WebSearchError, WebSearchResponse
 
 API_KEY = "test-api-key"
 WEBHOOK_SECRET = "test-webhook-secret"
@@ -71,16 +72,19 @@ class ScriptedChatModel:
 
 
 class FakeWebSearch:
-    def __init__(self, results: list[WebResult] | None = None, fail: bool = False) -> None:
+    def __init__(
+        self, results: list[WebResult] | None = None, fail: bool = False, cost: float | None = None
+    ) -> None:
         self._results = results or []
         self._fail = fail
+        self._cost = cost
         self.queries: list[str] = []
 
-    async def search(self, query: str) -> list[WebResult]:
+    async def search(self, query: str) -> WebSearchResponse:
         self.queries.append(query)
         if self._fail:
             raise WebSearchError("Exa unreachable")
-        return self._results
+        return WebSearchResponse(self._results, self._cost)
 
 
 class FakeGlpi:
@@ -135,6 +139,11 @@ def glpi_headers(body: bytes, timestamp: str = "1760000000") -> dict[str, str]:
         "X-GLPI-signature": signature.hexdigest(),
         "X-GLPI-timestamp": timestamp,
     }
+
+
+def csv_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as file:
+        return list(csv.DictReader(file))
 
 
 def run_sql(settings: Settings, statement: str) -> None:

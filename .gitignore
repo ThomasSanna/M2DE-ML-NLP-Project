@@ -11,6 +11,13 @@ doc/*.pdf
 opencode.json
 .codegraph/
 
+# AI metrics: the CSV files and the generated report stay local, the analysis code is tracked
+/metrics/*
+!/metrics/visualization/
+/metrics/visualization/report.html
+# Local default of a relative METRICS_DIR
+api/metrics/
+
 # Python (api/)
 .venv/
 __pycache__/

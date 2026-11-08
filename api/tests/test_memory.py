@@ -11,6 +11,7 @@ from app.core.config import Settings
 from app.db.session import create_engine, create_sessionmaker
 from app.services import memory
 from app.services.embeddings import EmbeddingError
+from app.services.metrics import RunRecorder
 from app.services.reranker import Reranker
 from tests.conftest import FakeEmbedder, run_sql
 
@@ -112,12 +113,18 @@ LOGITS = {KNOWLEDGE[0][0]: 3.0, KNOWLEDGE[1][0]: 0.5, KNOWLEDGE[2][0]: -4.0}
 
 
 def _retrieve(
-    settings: Settings, reranker: Reranker, text: str, top_k: int = 3
+    settings: Settings,
+    reranker: Reranker,
+    text: str,
+    top_k: int = 3,
+    recorder: RunRecorder | None = None,
 ) -> list[tuple[str, float]]:
     async def _run() -> list[tuple[str, float]]:
         engine = create_engine(settings.database_url)
         async with create_sessionmaker(engine)() as session:
-            hits = await memory.retrieve(session, FakeEmbedder(), reranker, text, 20, top_k, 0.5)
+            hits = await memory.retrieve(
+                session, FakeEmbedder(), reranker, text, 20, top_k, 0.5, recorder or RunRecorder()
+            )
         await engine.dispose()
         return [(knowledge.question, score) for knowledge, score in hits]
 
@@ -207,3 +214,48 @@ def test_retrieve_on_empty_memory_skips_reranker(client: TestClient, settings: S
             raise AssertionError("must not be called")
 
     assert _retrieve(settings, UnreachableReranker(), "wifi eduroam") == []
+
+
+def test_retrieve_records_its_calls(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    for question, answer in KNOWLEDGE:
+        _add(client, auth, question, answer)
+    recorder = RunRecorder()
+
+    _retrieve(settings, FixedReranker(LOGITS), "wifi eduroam", recorder=recorder)
+
+    assert [(c.kind, c.items, c.status) for c in recorder.calls] == [
+        ("embed", 1, "ok"),
+        ("vector_search", 3, "ok"),
+        ("rerank", 3, "ok"),
+    ]
+    assert (recorder.memory_candidates, recorder.memory_kept) == (3, 2)
+    assert recorder.memory_top_score == pytest.approx(0.9526, abs=1e-4)
+
+
+def test_retrieve_reports_the_best_score_below_the_threshold(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    for question, answer in KNOWLEDGE:
+        _add(client, auth, question, answer)
+    recorder = RunRecorder()
+    logits = {question: -4.0 for question, _ in KNOWLEDGE}
+
+    assert _retrieve(settings, FixedReranker(logits), "wifi eduroam", recorder=recorder) == []
+    assert recorder.memory_kept == 0
+    assert recorder.memory_top_score == pytest.approx(0.0180, abs=1e-4)
+
+
+def test_retrieve_without_candidates_skips_the_reranker(
+    client: TestClient, settings: Settings
+) -> None:
+    recorder = RunRecorder()
+
+    assert _retrieve(settings, FixedReranker({}), "wifi eduroam", recorder=recorder) == []
+    assert [c.kind for c in recorder.calls] == ["embed", "vector_search"]
+    assert (recorder.memory_candidates, recorder.memory_kept, recorder.memory_top_score) == (
+        0,
+        0,
+        None,
+    )

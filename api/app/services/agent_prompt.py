@@ -9,10 +9,12 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from app.services.llm import ChatMessage
 from app.services.websearch import WebResult
 
-# Caps keep the prompt near 3000 tokens with 3 memory entries and 2 searches, under the
-# 4000-token input limit of the 4B server.
+# Caps keep the prompt under 5000 tokens with 3 memory entries, a full thread and 2 searches.
+# The context does not force them (the 12B server has 32768 tokens): they bound the cost and
+# latency of each agent step. The thread cap is the loosest because cutting its middle loses
+# the request's details (a pasted log, earlier attempts), while a memory entry is a summary.
 MEMORY_ANSWER_MAX_CHARS = 800
-THREAD_MAX_CHARS = 2000
+THREAD_MAX_CHARS = 8000
 THREAD_HEAD_MAX_CHARS = 600
 
 NO_MEMORY = "Aucune connaissance pertinente en mémoire."

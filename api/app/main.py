@@ -14,7 +14,8 @@ from app.db.session import create_engine, create_sessionmaker
 from app.services.embeddings import EmbeddingError, OpenAIEmbeddingClient
 from app.services.glpi import GlpiError, GlpiRestClient
 from app.services.glpi_worker import GlpiEventWorker
-from app.services.llm import LLMError, TGIChatClient
+from app.services.llm import LLMError, VLLMChatClient
+from app.services.metrics import CsvMetricsWriter
 from app.services.reranker import HttpRerankerClient, RerankerError
 from app.services.websearch import EXA_BASE_URL, ExaClient
 
@@ -26,6 +27,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     if settings.glpi_webhook_secret is None:
         logger.warning("GLPI_WEBHOOK_SECRET is empty: GLPI webhook signatures are not verified")
+    app.state.metrics = (
+        CsvMetricsWriter(settings.metrics_dir) if settings.metrics_dir is not None else None
+    )
 
     engine = create_engine(settings.database_url)
     app.state.sessionmaker = create_sessionmaker(engine)
@@ -49,7 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 base_url=str(settings.llm_base_url), timeout=settings.llm_timeout_seconds
             )
         )
-        app.state.chat_model = TGIChatClient(llm_http, settings.llm_model, settings.llm_max_tokens)
+        app.state.chat_model = VLLMChatClient(llm_http, settings.llm_model, settings.llm_max_tokens)
         reranker_http = await stack.enter_async_context(
             httpx.AsyncClient(
                 base_url=str(settings.reranker_base_url),
@@ -89,6 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 app.state.reranker,
                 app.state.chat_model,
                 app.state.web_search,
+                app.state.metrics,
                 app.state.glpi,
                 settings,
             )

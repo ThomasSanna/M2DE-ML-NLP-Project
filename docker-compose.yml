@@ -22,7 +22,7 @@ x-api-env: &api-env
   EMBEDDING_API_KEY: "${EMBEDDING_API_KEY:-}"
   EMBEDDING_MODEL: "${EMBEDDING_MODEL:-BAAI/bge-multilingual-gemma2}"
   LLM_BASE_URL: "${LLM_BASE_URL}"
-  LLM_MODEL: "${LLM_MODEL:-google/gemma3-12b-it}"
+  LLM_MODEL: "${LLM_MODEL:-google/gemma-4-12B-it}"
   LLM_MAX_TOKENS: "${LLM_MAX_TOKENS:-512}"
   LLM_TIMEOUT_SECONDS: "${LLM_TIMEOUT_SECONDS:-60}"
   RERANKER_BASE_URL: "${RERANKER_BASE_URL}"
@@ -35,6 +35,9 @@ x-api-env: &api-env
   EXA_NUM_RESULTS: "${EXA_NUM_RESULTS:-3}"
   EXA_TIMEOUT_SECONDS: "${EXA_TIMEOUT_SECONDS:-15}"
   AGENT_MAX_STEPS: "${AGENT_MAX_STEPS:-3}"
+  # Opt-in: the container path is fixed, any value in .env turns the metrics on.
+  METRICS_DIR: "${METRICS_DIR:+/app/metrics}"
+  METRICS_LABEL: "${METRICS_LABEL:-}"
   GLPI_API_URL: "http://glpi/apirest.php/"
   GLPI_USER_TOKEN: "${GLPI_USER_TOKEN:-}"
   GLPI_APP_TOKEN: "${GLPI_APP_TOKEN:-}"
@@ -173,6 +176,8 @@ services:
     image: bisgambiglia-poc/api:latest
     container_name: poc-api
     environment: *api-env
+    volumes:
+      - ./metrics:/app/metrics
     ports:
       - "${API_PORT:-8000}:8000"
     networks:
