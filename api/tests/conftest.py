@@ -21,7 +21,7 @@ from app.db.session import create_engine
 from app.main import create_app
 from app.models import EMBEDDING_DIM
 from app.services.embeddings import EmbeddingError
-from app.services.glpi import GlpiError, GlpiTicket
+from app.services.glpi import GlpiError, GlpiSurvey, GlpiTicket
 from app.services.llm import ChatMessage, Completion, LLMError
 from app.services.reranker import RerankerError
 from app.services.websearch import WebResult, WebSearchError, WebSearchResponse
@@ -88,15 +88,20 @@ class FakeWebSearch:
 
 
 class FakeGlpi:
-    """Serves one ticket (TICKET by default) and records the followups, without a GLPI
-    server."""
+    """Serves one ticket (TICKET by default) and the given surveys, and records the
+    followups, without a GLPI server."""
 
     def __init__(
-        self, ticket: GlpiTicket = TICKET, fail_read: bool = False, fail_followup: bool = False
+        self,
+        ticket: GlpiTicket = TICKET,
+        fail_read: bool = False,
+        fail_followup: bool = False,
+        surveys: list[GlpiSurvey] | None = None,
     ) -> None:
         self._ticket = ticket
         self._fail_read = fail_read
         self._fail_followup = fail_followup
+        self.surveys = surveys or []
         self.followups: list[tuple[int, str, bool]] = []
 
     async def get_ticket(self, ticket_id: int) -> GlpiTicket | None:
@@ -109,6 +114,11 @@ class FakeGlpi:
             raise GlpiError("GLPI down")
         self.followups.append((ticket_id, text, private))
         return 7
+
+    async def list_answered_surveys(self) -> list[GlpiSurvey]:
+        if self._fail_read:
+            raise GlpiError("GLPI down")
+        return list(self.surveys)
 
 
 class FailingEmbedder:
@@ -191,7 +201,10 @@ def client(settings: Settings) -> Iterator[TestClient]:
     app.dependency_overrides[get_web_search] = lambda: None
     with TestClient(app) as test_client:
         yield test_client
-    run_sql(settings, "TRUNCATE knowledge, feedback, glpi_event RESTART IDENTITY CASCADE")
+    run_sql(
+        settings,
+        "TRUNCATE knowledge, feedback, glpi_event, ticket_answer RESTART IDENTITY CASCADE",
+    )
 
 
 @pytest.fixture

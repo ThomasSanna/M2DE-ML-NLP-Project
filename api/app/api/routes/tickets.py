@@ -17,7 +17,7 @@ from app.api.deps import (
     WebSearchDep,
     require_api_key,
 )
-from app.services import answer
+from app.services import answer, survey
 from app.services.glpi import GlpiError
 
 logger = logging.getLogger(__name__)
@@ -81,6 +81,7 @@ async def stream_ticket_answer(
             logger.error("%s", exc)
             yield _sse("error", json.dumps({"detail": "GLPI unavailable"}))
             return
+        await survey.record_answer(session, ticket_id, followup_id, result)
         yield _sse("done", json.dumps({"followup_id": followup_id}))
 
     return StreamingResponse(

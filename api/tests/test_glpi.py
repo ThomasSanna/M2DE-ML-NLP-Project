@@ -9,6 +9,7 @@ from app.services.glpi import (
     GlpiError,
     GlpiFollowup,
     GlpiRestClient,
+    GlpiSurvey,
     GlpiTicket,
     html_to_text,
     text_to_html,
@@ -18,6 +19,33 @@ BASE_URL = "http://glpi.test/apirest.php/"
 BOT_ID = 9
 # User 4 asked for help; user 5 is the technician assigned to the ticket.
 TICKET_USERS = [{"users_id": 4, "type": 1}, {"users_id": 5, "type": 2}]
+# As GLPI 11 returns them: a survey is created at closing, answered later (or never).
+SURVEYS = [
+    {
+        "id": 4,
+        "tickets_id": 45,
+        "date_answered": None,
+        "satisfaction": None,
+        "satisfaction_scaled_to_5": None,
+        "comment": None,
+    },
+    {
+        "id": 3,
+        "tickets_id": 44,
+        "date_answered": "2026-11-09 11:40:44",
+        "satisfaction": 0,
+        "satisfaction_scaled_to_5": 0,
+        "comment": "  ",
+    },
+    {
+        "id": 2,
+        "tickets_id": 43,
+        "date_answered": "2026-11-08 09:00:00",
+        "satisfaction": 4,
+        "satisfaction_scaled_to_5": 4,
+        "comment": " Clair ",
+    },
+]
 
 
 class FakeGlpiServer:
@@ -50,6 +78,8 @@ class FakeGlpiServer:
             return httpx.Response(404, json=["ERROR_ITEM_NOT_FOUND", ""])
         if path == "ITILFollowup":
             return httpx.Response(201, json={"id": 7, "message": ""})
+        if path == "TicketSatisfaction":
+            return httpx.Response(200, json=SURVEYS)
         return httpx.Response(400)
 
 
@@ -128,3 +158,18 @@ def test_bad_token_raises_glpi_error() -> None:
 def test_html_round_trip() -> None:
     assert html_to_text("<p>a<br>b</p><p>c</p>") == "a\nb\nc"
     assert text_to_html("a\n\nb") == "<p>a</p><p>b</p>"
+
+
+def test_list_answered_surveys_skips_unanswered_ones() -> None:
+    server = FakeGlpiServer()
+
+    surveys = _run(server, lambda glpi: glpi.list_answered_surveys())
+
+    assert surveys == [GlpiSurvey(44, 0.0, None), GlpiSurvey(43, 0.8, "Clair")]
+    request = next(r for r in server.requests if r.url.path.endswith("TicketSatisfaction"))
+    assert dict(request.url.params) == {"sort": "id", "order": "DESC", "range": "0-999"}
+
+
+def test_list_surveys_with_a_bad_token_raises_glpi_error() -> None:
+    with pytest.raises(GlpiError):
+        _run(FakeGlpiServer(), lambda glpi: glpi.list_answered_surveys(), user_token="wrong")

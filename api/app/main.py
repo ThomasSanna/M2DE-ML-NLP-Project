@@ -17,6 +17,7 @@ from app.services.glpi_worker import GlpiEventWorker
 from app.services.llm import LLMError, VLLMChatClient
 from app.services.metrics import CsvMetricsWriter
 from app.services.reranker import HttpRerankerClient, RerankerError
+from app.services.survey import SurveySync
 from app.services.websearch import EXA_BASE_URL, ExaClient
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # Registered after the clients: cancelled before they close. Also keeps the only
             # strong reference to the task.
             stack.callback(asyncio.create_task(worker.run()).cancel)
+            survey_sync = SurveySync(
+                app.state.sessionmaker, app.state.glpi, settings.glpi_survey_poll_seconds
+            )
+            stack.callback(asyncio.create_task(survey_sync.run()).cancel)
         yield
 
     await engine.dispose()
