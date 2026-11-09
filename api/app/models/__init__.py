@@ -2,6 +2,7 @@
 from app.models.feedback import Feedback, FeedbackSource
 from app.models.glpi_event import GlpiEvent, GlpiEventStatus
 from app.models.knowledge import EMBEDDING_DIM, Knowledge, KnowledgeSource, KnowledgeStatus
+from app.models.ticket_answer import TicketAnswer
 
 __all__ = [
     "EMBEDDING_DIM",
@@ -12,4 +13,5 @@ __all__ = [
     "Knowledge",
     "KnowledgeSource",
     "KnowledgeStatus",
+    "TicketAnswer",
 ]

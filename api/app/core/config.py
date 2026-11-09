@@ -98,6 +98,8 @@ class Settings(DatabaseSettings):
     glpi_app_token: SecretStr | None = None
     # Private followup = proposal a technician validates; public = sent directly (email).
     glpi_followup_private: bool = False
+    # Interval between two reads of the answered satisfaction surveys (feedback source).
+    glpi_survey_poll_seconds: float = Field(default=300.0, gt=0)
 
     @field_validator(
         "glpi_webhook_secret",

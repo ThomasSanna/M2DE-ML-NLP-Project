@@ -42,6 +42,7 @@ x-api-env: &api-env
   GLPI_USER_TOKEN: "${GLPI_USER_TOKEN:-}"
   GLPI_APP_TOKEN: "${GLPI_APP_TOKEN:-}"
   GLPI_FOLLOWUP_PRIVATE: "${GLPI_FOLLOWUP_PRIVATE:-false}"
+  GLPI_SURVEY_POLL_SECONDS: "${GLPI_SURVEY_POLL_SECONDS:-300}"
 
 services:
   # ---------------------------------------------------------------- LDAP

@@ -1,9 +1,11 @@
+import asyncio
 import json
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from app.api.deps import (
     get_chat_model,
@@ -13,6 +15,8 @@ from app.api.deps import (
     get_reranker,
     get_web_search,
 )
+from app.core.config import Settings
+from app.db.session import create_engine
 from app.services.glpi import Author, GlpiFollowup
 from app.services.metrics import CsvMetricsWriter
 from app.services.websearch import WebResult
@@ -29,6 +33,21 @@ from tests.conftest import (
 )
 
 URL = f"/api/v1/tickets/{TICKET.id}/answer/stream"
+
+
+def _recorded_followups(settings: Settings) -> list[int]:
+    async def run() -> list[int]:
+        engine = create_engine(settings.database_url)
+        try:
+            async with engine.connect() as connection:
+                result = await connection.execute(
+                    text("SELECT glpi_followup_id FROM ticket_answer")
+                )
+                return list(result.scalars())
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(run())
 
 
 def _events(body: str) -> list[tuple[str, dict[str, object]]]:
@@ -228,3 +247,24 @@ def test_ticket_answer_writes_metrics(
 
     [run] = csv_rows(tmp_path / "runs.v1.csv")
     assert (run["source"], run["ticket_id"]) == ("ticket_stream", "42")
+
+
+def test_ticket_answer_records_the_posted_followup(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    override(client, get_glpi, FakeGlpi())
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert _recorded_followups(settings) == [7]
+
+
+def test_ticket_answer_records_nothing_when_the_followup_fails(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    override(client, get_glpi, FakeGlpi(fail_followup=True))
+
+    client.post(URL, headers=auth)
+
+    assert _recorded_followups(settings) == []

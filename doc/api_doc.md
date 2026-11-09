@@ -218,11 +218,32 @@ arrives within about a minute.
 - Each event is locked while claimed (`FOR UPDATE SKIP LOCKED`): several API processes can poll
   without answering a ticket twice.
 
+### Feedback from the GLPI satisfaction survey
+
+GLPI creates a satisfaction survey when a ticket is closed (100 % of tickets, rated 0 to 5,
+see `scripts/configure-glpi.sh`). When `GLPI_USER_TOKEN` is set, a second background task
+reads the answered surveys through the REST API (`GET /TicketSatisfaction`, the latest 1000)
+every `GLPI_SURVEY_POLL_SECONDS`: GLPI sends no webhook for them.
+
+- Each followup the bot posts (worker or ticket stream) is recorded in `ticket_answer` with
+  the memory entries it cited (`K` refs). A followup GLPI rejected is not recorded.
+- An answered survey of such a ticket adds one `feedback` row (`source = survey`) per entry
+  cited by any bot answer on the ticket: `score` = rating / 5, `comment` = the requester's
+  comment. The survey rates the whole ticket, technician included if one took over.
+- Idempotent: one row per ticket and entry (unique index `uq_feedback_survey`). A survey the
+  requester edits updates the row; an unchanged one writes nothing.
+- Skipped: surveys not answered yet, tickets the bot never answered, answers citing only web
+  pages, entries deleted since the answer.
+- A GLPI failure is logged at WARNING and retried at the next poll.
+- The rows are stored but not used yet: the search does not weight by feedback.
+
 ## Schéma (résumé)
 
 **`knowledge`** : `id`, `question`, `answer`, `category`, `source`, `status` (`active` / `to_review` / `archived`), `glpi_ticket_id`, `reuse_count`, `embedding` (`halfvec(3584)`, embedding de la question, index HNSW cosinus), `created_at`, `updated_at`.
 
-**`feedback`** : un enregistrement par retour (`knowledge_id`, `source`, `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Non exposé par l'API pour l'instant.
+**`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`, unique par ticket et entrée) ; non exposé par l'API.
+
+**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `created_at`). Links a satisfaction survey back to the entries it rates (`app/services/survey.py`).
 
 **`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par le worker (`app/services/glpi_worker.py`).
 
@@ -256,6 +277,7 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `GLPI_API_URL` | `http://glpi/apirest.php/` | GLPI REST API URL (Docker network); not in `.env.example`, set by docker-compose |
 | `GLPI_USER_TOKEN` / `GLPI_APP_TOKEN` | empty | tokens of the GLPI bot user; without a User-Token, routes that use GLPI answer `503` |
 | `GLPI_FOLLOWUP_PRIVATE` | `false` | `true` = private followup (a technician validates it) instead of a public one emailed to the requester |
+| `GLPI_SURVEY_POLL_SECONDS` | `300` | interval between two reads of the answered GLPI satisfaction surveys (feedback) |
 | `POSTGRES_USER` / `_PASSWORD` / `_DB` | `memoire` / - / `memoire` | base de la mémoire |
 | `POSTGRES_HOST` / `_PORT` | `localhost` / `5432` | forcé à `postgres:5432` dans Docker |
 | `ENVIRONMENT`, `LOG_LEVEL` | `dev`, `INFO` | `prod` désactive `/docs` |
@@ -370,4 +392,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Garde-fous du pipeline LLM, routes de feedback, pondération de la recherche.
+Garde-fous du pipeline LLM, routes de feedback, pondération de la recherche (les retours des enquêtes de satisfaction sont collectés dans `feedback` mais pas encore utilisés).
