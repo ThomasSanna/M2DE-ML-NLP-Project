@@ -12,6 +12,7 @@ from app.services.agent_prompt import (
 )
 from app.services.llm import Completion, LLMError
 from app.services.metrics import RunRecorder
+from app.services.progress import ProgressBoard, TicketProgress
 from app.services.websearch import WebResult
 from tests.conftest import FakeWebSearch, ScriptedChatModel
 
@@ -35,10 +36,13 @@ def _run(
     max_steps: int = 3,
     memory_refs: set[str] | None = None,
     recorder: RunRecorder | None = None,
+    progress: TicketProgress | None = None,
 ) -> AgentRun:
     messages = initial_messages("Mémoire : …", "Fil : …")
     refs = {"K1"} if memory_refs is None else memory_refs
-    return asyncio.run(run_agent(model, web, messages, refs, max_steps, recorder or RunRecorder()))
+    return asyncio.run(
+        run_agent(model, web, messages, refs, max_steps, recorder or RunRecorder(), progress)
+    )
 
 
 def _enum(schema: dict[str, object]) -> object:
@@ -317,3 +321,55 @@ def test_records_the_invalid_output_that_fails_the_last_step() -> None:
         _run(ScriptedChatModel(["pas du json"]), None, max_steps=1, recorder=recorder)
 
     assert [(c.kind, c.status, c.action) for c in recorder.calls] == [("llm", "ok", "invalid")]
+
+
+def test_agent_reports_thinking_searching_and_the_sources_it_found() -> None:
+    board = ProgressBoard()
+    run = board.start(42)
+
+    _run(
+        ScriptedChatModel([_search("eduroam mac"), _answer()]), FakeWebSearch(RESULTS), progress=run
+    )
+
+    view = board.get(42)
+    assert view is not None
+    assert [step["kind"] for step in view.steps] == ["thinking", "search", "thinking"]
+    assert view.steps[1] == {
+        "kind": "search",
+        "query": "eduroam mac",
+        "sources": [
+            {"title": "Eduroam macOS", "url": "https://a.fr", "domain": "a.fr"},
+            {
+                "title": "CAT eduroam",
+                "url": "https://cat.eduroam.org",
+                "domain": "cat.eduroam.org",
+            },
+        ],
+    }
+    assert view.status == "thinking"
+
+
+def test_agent_reports_a_search_that_found_nothing() -> None:
+    board = ProgressBoard()
+    run = board.start(42)
+
+    _run(ScriptedChatModel([_search("eduroam mac"), _answer()]), FakeWebSearch([]), progress=run)
+
+    view = board.get(42)
+    assert view is not None
+    assert view.steps[1] == {"kind": "search", "query": "eduroam mac", "sources": []}
+
+
+def test_agent_reports_a_failed_search_without_sources() -> None:
+    board = ProgressBoard()
+    run = board.start(42)
+
+    _run(
+        ScriptedChatModel([_search("eduroam mac"), _answer()]),
+        FakeWebSearch(fail=True),
+        progress=run,
+    )
+
+    view = board.get(42)
+    assert view is not None
+    assert view.steps[1] == {"kind": "search", "query": "eduroam mac", "sources": []}

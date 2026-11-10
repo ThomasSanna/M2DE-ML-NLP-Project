@@ -27,6 +27,7 @@ from app.services.metrics import (
     Source,
     build_run_row,
 )
+from app.services.progress import ProgressBoard, TicketProgress
 from app.services.reranker import Reranker, RerankerError
 from app.services.websearch import WebSearch
 
@@ -56,6 +57,7 @@ async def answer_thread(
     *,
     source: Source,
     ticket_id: int | None = None,
+    progress: TicketProgress | None = None,
 ) -> AnswerResult:
     """Answer the thread's last user message from the memory, then the web if needed."""
     recorder = RunRecorder()
@@ -108,6 +110,7 @@ async def answer_thread(
                 set(knowledge),
                 settings.agent_max_steps,
                 recorder,
+                progress,
             )
     except tuple(_OUTCOMES) as exc:
         record(next(o for error, o in _OUTCOMES.items() if isinstance(exc, error)), None, None)
@@ -145,6 +148,7 @@ async def answer_ticket(
     ticket: GlpiTicket,
     *,
     source: Source,
+    board: ProgressBoard | None = None,
 ) -> AnswerResult | None:
     """Answer a GLPI ticket's thread; None when the support side wrote last."""
     messages = [
@@ -160,6 +164,9 @@ async def answer_ticket(
     ]
     if messages[-1].role != "user":
         return None
+    # Opened only once the bot owes an answer: the followup the bot itself posts
+    # comes back as a ticket_answer event and must not leave a stale state.
+    progress = board.start(ticket.id) if board is not None else None
     request = AnswerRequest(messages=messages)
     return await answer_thread(
         session,
@@ -172,6 +179,7 @@ async def answer_ticket(
         request,
         source=source,
         ticket_id=ticket.id,
+        progress=progress,
     )
 
 
