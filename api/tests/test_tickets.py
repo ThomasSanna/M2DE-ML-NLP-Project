@@ -16,16 +16,21 @@ from app.api.deps import (
     get_web_search,
 )
 from app.core.config import Settings
-from app.db.session import create_engine
+from app.db.session import create_engine, create_sessionmaker
+from app.schemas.answer import AnswerResult
+from app.services import answer
 from app.services.glpi import Author, GlpiFollowup
 from app.services.metrics import CsvMetricsWriter
+from app.services.progress import ProgressBoard
 from app.services.websearch import WebResult
 from tests.conftest import (
     TICKET,
     FailingChatModel,
     FailingEmbedder,
     FailingReranker,
+    FakeEmbedder,
     FakeGlpi,
+    FakeReranker,
     FakeWebSearch,
     ScriptedChatModel,
     csv_rows,
@@ -115,6 +120,39 @@ def test_ticket_answer_after_the_support_returns_409(
 
     assert response.status_code == 409
     assert glpi.followups == []
+
+
+def test_answer_ticket_leaves_the_board_untouched_when_the_bot_answered_last(
+    settings: Settings, tmp_path: Path
+) -> None:
+    board = ProgressBoard()
+    ticket = replace(TICKET, followups=(GlpiFollowup(1, Author.BOT, "Supprimez le profil"),))
+
+    async def run() -> AnswerResult | None:
+        engine = create_engine(settings.database_url)
+        try:
+            async with create_sessionmaker(engine)() as session:
+                return await answer.answer_ticket(
+                    session,
+                    FakeEmbedder(),
+                    FakeReranker(),
+                    ScriptedChatModel(
+                        [json.dumps({"action": "answer", "answer": "Réinstallez le profil"})]
+                    ),
+                    None,
+                    CsvMetricsWriter(tmp_path),
+                    settings,
+                    ticket,
+                    source="worker",
+                    board=board,
+                )
+        finally:
+            await engine.dispose()
+
+    result = asyncio.run(run())
+
+    assert result is None
+    assert board.get(ticket.id) is None
 
 
 def _add_knowledge(client: TestClient, auth: dict[str, str]) -> None:

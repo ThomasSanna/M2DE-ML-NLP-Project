@@ -110,7 +110,7 @@ async def answer_thread(
                 set(knowledge),
                 settings.agent_max_steps,
                 recorder,
-                progress,
+                progress=progress,
             )
     except tuple(_OUTCOMES) as exc:
         record(next(o for error, o in _OUTCOMES.items() if isinstance(exc, error)), None, None)
