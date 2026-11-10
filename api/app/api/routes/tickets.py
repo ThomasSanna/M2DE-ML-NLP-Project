@@ -47,10 +47,12 @@ async def stream_ticket_answer(
 ) -> StreamingResponse:
     """Answer a GLPI ticket's thread, then post the answer as a followup of the ticket.
 
-    Events: `answer` (an `AnswerResult` or an `EscalationResult`), then `done`
+    Events: `answer` (an `AnswerResult`, or an `EscalationResult` when the bot hands the
+    ticket over), then `done`
     (`{"followup_id": int}`) or `error`
-    when GLPI rejects the followup. A missing ticket, a thread the support side wrote last or
-    a failing model is an HTTP error returned before the stream opens.
+    when GLPI rejects the followup. A missing ticket, a thread the support side wrote last
+    or that was handed over, or a failing model is an HTTP error returned before the stream
+    opens.
     """
     ticket = await glpi.get_ticket(ticket_id)
     if ticket is None:
@@ -68,7 +70,9 @@ async def stream_ticket_answer(
     )
     if result is None:
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "Nothing to answer: the support side wrote last"
+            status.HTTP_409_CONFLICT,
+            "Nothing to answer: the support side wrote last or the ticket was handed to a"
+            " technician",
         )
 
     async def events() -> AsyncIterator[str]:

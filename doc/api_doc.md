@@ -197,19 +197,21 @@ event: done
 data: {"followup_id": 1234}
 ```
 
-- `answer`: the `AnswerResult` or the `EscalationResult` of `POST /api/v1/answer`, sent
-  before the followup is written.
+- `answer`: the `AnswerResult` or `EscalationResult` of `POST /api/v1/answer`, sent
+  before the followup is written. A handover is posted as its `message` alone; its `reason`
+  is not posted.
 - `done`: the followup is in GLPI. Public by default, so GLPI emails the requester;
   `GLPI_FOLLOWUP_PRIVATE=true` makes it private, for a technician to validate.
 - The followup is the answer without its `[K1]`/`[W2]` refs, followed by a `Sources :` list
   (title and URL, one line per page) when the answer cites at least one web result. Memory
   entries are never listed: they mean nothing to the requester.
-- A handover posts its message alone: no refs, no `Sources :` list.
+- A handover followup has no refs and no `Sources :` list.
 - `error` `{"detail": "GLPI unavailable"}` instead of `done` when GLPI rejects the followup.
   The status is already `200` at that point; the cause is only logged.
 - Errors before the stream opens are plain JSON: `404` `GLPI ticket not found`, `409`
-  `Nothing to answer: the support side wrote last` when the last public followup is not a
-  requester's, `503` when
+  `Nothing to answer: the support side wrote last or the ticket was handed to a technician`
+  when the last public followup is not a requester's or the bot already handed the ticket
+  over, `503` when
   `GLPI_USER_TOKEN` is empty, `502` when GLPI (`GLPI unavailable`) or a model fails (same
   messages as `POST /api/v1/answer`).
 - `POST`, not `GET`: the route writes to GLPI and needs `X-API-Key`. A browser reads it with
@@ -226,6 +228,9 @@ arrives within about a minute.
 
 - The bot answers each public followup of a requester, until someone else (a technician)
   writes a public followup: from then on it stays silent on that ticket.
+- When the agent hands a ticket over to a technician, the bot posts its message (public
+  unless `GLPI_FOLLOWUP_PRIVATE`), records the handover in `ticket_answer`, and never
+  answers that ticket again.
 - An event whose message is no longer the last public followup is skipped: the newer
   followup's own event answers the whole thread. So are the events of the bot's own
   followups, which GLPI sends too.
@@ -246,7 +251,8 @@ reads the answered surveys through the REST API (`GET /TicketSatisfaction`, the 
 every `GLPI_SURVEY_POLL_SECONDS`: GLPI sends no webhook for them.
 
 - Each followup the bot posts (worker or ticket stream) is recorded in `ticket_answer` with
-  the memory entries it cited (`K` refs). A followup GLPI rejected is not recorded.
+  the memory entries it cited (`K` refs), or as a handover (`escalated`, no entries: a survey
+  credits nothing). A followup GLPI rejected is not recorded.
 - An answered survey of such a ticket adds one `feedback` row (`source = survey`) per entry
   cited by any bot answer on the ticket: `score` = rating / 5, `comment` = the requester's
   comment. The survey rates the whole ticket, technician included if one took over.
@@ -263,7 +269,7 @@ every `GLPI_SURVEY_POLL_SECONDS`: GLPI sends no webhook for them.
 
 **`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`, unique par ticket et entrée) ; non exposé par l'API.
 
-**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `created_at`). Links a satisfaction survey back to the entries it rates (`app/services/survey.py`).
+**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `created_at`). Links a satisfaction survey back to the entries it rates (`app/services/survey.py`).
 
 **`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par le worker (`app/services/glpi_worker.py`).
 

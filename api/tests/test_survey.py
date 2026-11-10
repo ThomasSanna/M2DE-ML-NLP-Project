@@ -8,7 +8,6 @@ from sqlalchemy import text
 from app.core.config import Settings
 from app.db.session import create_engine, create_sessionmaker
 from app.schemas.answer import (
-    AnswerOutcome,
     AnswerResult,
     EscalationResult,
     KnowledgeCitation,
@@ -47,7 +46,20 @@ def _result(*knowledge_ids: uuid.UUID) -> AnswerResult:
     )
 
 
-def _record(settings: Settings, ticket_id: int, followup_id: int, result: AnswerOutcome) -> None:
+def _escalation() -> EscalationResult:
+    return EscalationResult(
+        message="Transmis.",
+        reason="hors sujet",
+        memory=[],
+        searches=[],
+        steps=1,
+        usage=Usage(prompt_tokens=1, completion_tokens=1),
+    )
+
+
+def _record(
+    settings: Settings, ticket_id: int, followup_id: int, result: AnswerResult | EscalationResult
+) -> None:
     async def run() -> None:
         engine = create_engine(settings.database_url)
         try:
@@ -103,19 +115,21 @@ def test_record_answer_keeps_only_cited_memory_entries(
     ) == [(TICKET_ID, 7, [entry])]
 
 
-def test_record_answer_ignores_a_handover(settings: Settings) -> None:
-    handover = EscalationResult(
-        message="Votre demande est transmise à un technicien.",
-        reason="hors sujet",
-        memory=[],
-        searches=[],
-        steps=1,
-        usage=Usage(prompt_tokens=1, completion_tokens=1),
-    )
+def test_record_answer_marks_a_handover(client: TestClient, settings: Settings) -> None:
+    _record(settings, TICKET_ID, 7, _escalation())
 
-    _record(settings, TICKET_ID, 7, handover)
+    assert _rows(
+        settings,
+        "SELECT glpi_ticket_id, glpi_followup_id, knowledge_ids, escalated FROM ticket_answer",
+    ) == [(TICKET_ID, 7, [], True)]
 
-    assert _rows(settings, "SELECT glpi_ticket_id FROM ticket_answer") == []
+
+def test_survey_credits_nothing_for_a_handover(client: TestClient, settings: Settings) -> None:
+    _record(settings, TICKET_ID, 7, _escalation())
+
+    _sync(settings, FakeGlpi(surveys=[GlpiSurvey(TICKET_ID, 0.8, "Clair")]))
+
+    assert _feedback(settings) == []
 
 
 def test_survey_scores_every_entry_cited_on_the_ticket(

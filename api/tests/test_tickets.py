@@ -30,9 +30,11 @@ from tests.conftest import (
     ScriptedChatModel,
     csv_rows,
     override,
+    run_sql,
 )
 
 URL = f"/api/v1/tickets/{TICKET.id}/answer/stream"
+HANDOVER = "Votre demande est transmise à un technicien."
 
 
 def _recorded_followups(settings: Settings) -> list[int]:
@@ -198,8 +200,47 @@ def test_ticket_handover_posts_the_message_without_sources(
     assert done == ("done", {"followup_id": 7})
     # The refs mean nothing to the requester, and a handover cites no page to list.
     assert glpi.followups == [(TICKET.id, "Transmis à un technicien.", False)]
-    # Nothing was cited: no entry to link the survey to.
-    assert _recorded_followups(settings) == []
+    # The handover is recorded: the bot must not answer this ticket again.
+    assert _recorded_followups(settings) == [7]
+
+
+def test_ticket_stream_posts_the_handover(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    glpi = FakeGlpi()
+    escalation = {"action": "escalate", "answer": HANDOVER, "reason": "hors sujet"}
+    override(client, get_glpi, glpi)
+    override(client, get_chat_model, ScriptedChatModel([json.dumps(escalation)]))
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 200, response.text
+    [(event, result), done] = _events(response.text)
+    assert (event, result["kind"], result["message"]) == ("answer", "escalation", HANDOVER)
+    assert done == ("done", {"followup_id": 7})
+    assert glpi.followups == [(TICKET.id, HANDOVER, False)]
+    assert _recorded_followups(settings) == [7]
+
+
+def test_ticket_stream_after_a_handover_returns_409(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    run_sql(
+        settings,
+        "INSERT INTO ticket_answer (glpi_ticket_id, glpi_followup_id, knowledge_ids, escalated) "
+        f"VALUES ({TICKET.id}, 7, '{{}}', true)",
+    )
+    glpi = FakeGlpi()
+    override(client, get_glpi, glpi)
+    override(client, get_chat_model, FailingChatModel())
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == (
+        "Nothing to answer: the support side wrote last or the ticket was handed to a technician"
+    )
+    assert glpi.followups == []
 
 
 def test_ticket_answer_reports_followup_failure_in_stream(

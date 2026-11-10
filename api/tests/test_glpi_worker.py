@@ -248,6 +248,31 @@ def test_worker_records_the_entries_its_followup_cited(
     assert [str(knowledge_id) for knowledge_id in knowledge_ids] == [entry]
 
 
+HANDOVER = "Votre demande est transmise à un technicien."
+
+
+def test_handed_over_ticket_is_never_answered_again(client: TestClient, settings: Settings) -> None:
+    glpi = FakeGlpi()
+    escalation = {"action": "escalate", "answer": HANDOVER, "reason": "hors sujet"}
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, glpi, ScriptedChatModel([json.dumps(escalation)]))
+
+    assert glpi.followups == [(TICKET.id, HANDOVER, False)]
+    assert _ticket_answers(settings) == [(TICKET.id, 7, [])]
+
+    run_sql(settings, "DELETE FROM glpi_event")
+    reply = GlpiFollowup(8, Author.REQUESTER, "Et alors ?")
+    later = FakeGlpi(replace(TICKET, followups=(GlpiFollowup(7, Author.BOT, HANDOVER), reply)))
+    _queue(client, _new_followup(reply))
+
+    # A model call would fail the event: the handover alone keeps the bot silent.
+    assert _process(settings, later, FailingChatModel())
+
+    assert later.followups == []
+    assert _event_state(settings) == ("done", 1, None)
+
+
 def test_worker_records_nothing_when_the_followup_fails(
     client: TestClient, settings: Settings
 ) -> None:

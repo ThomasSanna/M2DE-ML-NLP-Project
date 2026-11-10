@@ -16,7 +16,7 @@ from app.schemas.answer import (
     Usage,
     WebCitation,
 )
-from app.services import memory
+from app.services import memory, survey
 from app.services.agent import run_agent
 from app.services.agent_prompt import initial_messages, render_memory, render_thread, strip_refs
 from app.services.embeddings import Embedder, EmbeddingError
@@ -161,7 +161,8 @@ async def answer_ticket(
     *,
     source: Source,
 ) -> AnswerOutcome | None:
-    """Answer a GLPI ticket's thread; None when the support side wrote last."""
+    """Answer a GLPI ticket's thread; None when the support side wrote last or the bot
+    handed the ticket to a technician."""
     messages = [
         ThreadMessage(
             role="user", content=f"{ticket.title}\n\n{ticket.content}"[:THREAD_MESSAGE_MAX_CHARS]
@@ -173,7 +174,7 @@ async def answer_ticket(
         )
         for followup in ticket.followups
     ]
-    if messages[-1].role != "user":
+    if messages[-1].role != "user" or await survey.is_escalated(session, ticket.id):
         return None
     request = AnswerRequest(messages=messages)
     return await answer_thread(
