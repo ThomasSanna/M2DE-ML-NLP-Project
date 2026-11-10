@@ -47,7 +47,8 @@ async def stream_ticket_answer(
 ) -> StreamingResponse:
     """Answer a GLPI ticket's thread, then post the answer as a followup of the ticket.
 
-    Events: `answer` (an `AnswerResult`), then `done` (`{"followup_id": int}`) or `error`
+    Events: `answer` (an `AnswerResult` or an `EscalationResult`), then `done`
+    (`{"followup_id": int}`) or `error`
     when GLPI rejects the followup. A missing ticket, a thread the support side wrote last or
     a failing model is an HTTP error returned before the stream opens.
     """

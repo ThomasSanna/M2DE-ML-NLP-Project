@@ -175,6 +175,33 @@ def test_ticket_followup_from_memory_only_has_no_sources(
     assert glpi.followups == [(TICKET.id, "Réinstallez le profil.", False)]
 
 
+def test_ticket_handover_posts_the_message_without_sources(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    glpi = FakeGlpi()
+    handover = json.dumps(
+        {"action": "escalate", "answer": "Transmis à un technicien. [K1]", "reason": "hors sujet"}
+    )
+    override(client, get_glpi, glpi)
+    override(client, get_chat_model, ScriptedChatModel([handover]))
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 200, response.text
+    [(answer_event, result), done] = _events(response.text)
+    assert answer_event == "answer"
+    assert (result["kind"], result["message"], result["reason"]) == (
+        "escalation",
+        "Transmis à un technicien. [K1]",
+        "hors sujet",
+    )
+    assert done == ("done", {"followup_id": 7})
+    # The refs mean nothing to the requester, and a handover cites no page to list.
+    assert glpi.followups == [(TICKET.id, "Transmis à un technicien.", False)]
+    # Nothing was cited: no entry to link the survey to.
+    assert _recorded_followups(settings) == []
+
+
 def test_ticket_answer_reports_followup_failure_in_stream(
     client: TestClient, auth: dict[str, str]
 ) -> None:

@@ -125,7 +125,7 @@ curl -X POST http://localhost:8000/api/v1/answer \
       ]}'
 ```
 
-**Output**: `200`, `AnswerResult`:
+**Output**: `200`, an `AnswerResult` (`kind: "answer"`) or an `EscalationResult` (`kind: "escalation"`):
 
 ```json
 {
@@ -158,6 +158,24 @@ curl -X POST http://localhost:8000/api/v1/answer \
   memory. Without `EXA_API_KEY`, web search is disabled and the model can only answer.
 - Read-only: `reuse_count` is not incremented.
 
+When the request is out of scope, the requester asks for a person, or no source answers
+after searching, the agent hands it over to a technician instead:
+
+```json
+{
+  "kind": "escalation",
+  "message": "Votre demande est transmise à un technicien.",
+  "reason": "hors sujet : météo",
+  "memory": [],
+  "searches": [],
+  "steps": 1,
+  "usage": {"prompt_tokens": 1830, "completion_tokens": 42}
+}
+```
+
+- `message` is written for the requester, in their language; `reason` is for the support
+  and is never posted to GLPI. Both come from the model; `reason` may be empty.
+
 ### `POST /api/v1/tickets/{ticket_id}/answer/stream`
 
 Answers a GLPI ticket's thread, then posts the answer as a followup of the ticket through
@@ -179,12 +197,14 @@ event: done
 data: {"followup_id": 1234}
 ```
 
-- `answer`: the `AnswerResult` of `POST /api/v1/answer`, sent before the followup is written.
+- `answer`: the `AnswerResult` or the `EscalationResult` of `POST /api/v1/answer`, sent
+  before the followup is written.
 - `done`: the followup is in GLPI. Public by default, so GLPI emails the requester;
   `GLPI_FOLLOWUP_PRIVATE=true` makes it private, for a technician to validate.
 - The followup is the answer without its `[K1]`/`[W2]` refs, followed by a `Sources :` list
   (title and URL, one line per page) when the answer cites at least one web result. Memory
   entries are never listed: they mean nothing to the requester.
+- A handover posts its message alone: no refs, no `Sources :` list.
 - `error` `{"detail": "GLPI unavailable"}` instead of `done` when GLPI rejects the followup.
   The status is already `200` at that point; the cause is only logged.
 - Errors before the stream opens are plain JSON: `404` `GLPI ticket not found`, `409`
@@ -319,7 +339,7 @@ comparison of configurations: set `METRICS_LABEL` to name each campaign.
 | `ticket_id` | GLPI ticket id, empty for `api` |
 | `label` | `METRICS_LABEL`, empty if unset |
 | `query_hash` | first 16 hex chars of the SHA-256 of the retrieval query |
-| `outcome` | `answered`, `embedding_error`, `reranker_error`, `llm_error` |
+| `outcome` | `answered`, `escalated`, `embedding_error`, `reranker_error`, `llm_error` |
 | `llm_model`, `agent_max_steps`, `llm_max_tokens`, `retrieval_candidates`, `retrieval_top_k`, `rerank_threshold` | settings of the run |
 | `web_search_enabled` | `True` when a web search client is configured, else `False` |
 | `total_ms` | `answer_thread` entry to row assembly |
@@ -355,7 +375,7 @@ comparison of configurations: set `METRICS_LABEL` to name each campaign.
 | `duration_ms` | call duration |
 | `status` | `ok` or the exception class name |
 | `items` | `embed`: texts sent (1); `vector_search`: rows returned; `rerank`: documents sent; `web_search`: results returned; empty for `llm` |
-| `prompt_tokens`, `completion_tokens`, `cached_tokens`, `finish_reason`, `action` | `llm` only |
+| `prompt_tokens`, `completion_tokens`, `cached_tokens`, `finish_reason`, `action` | `llm` only; `action` is `search`, `answer`, `escalate` or `invalid` |
 | `cost_usd` | `web_search` only |
 
 Ratios are not stored: derive them from the raw columns. The time between two calls of a run

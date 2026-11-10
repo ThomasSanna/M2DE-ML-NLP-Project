@@ -7,7 +7,14 @@ from sqlalchemy import text
 
 from app.core.config import Settings
 from app.db.session import create_engine, create_sessionmaker
-from app.schemas.answer import AnswerResult, KnowledgeCitation, Usage, WebCitation
+from app.schemas.answer import (
+    AnswerOutcome,
+    AnswerResult,
+    EscalationResult,
+    KnowledgeCitation,
+    Usage,
+    WebCitation,
+)
 from app.services import survey
 from app.services.glpi import GlpiSurvey
 from tests.conftest import FakeGlpi
@@ -40,7 +47,7 @@ def _result(*knowledge_ids: uuid.UUID) -> AnswerResult:
     )
 
 
-def _record(settings: Settings, ticket_id: int, followup_id: int, result: AnswerResult) -> None:
+def _record(settings: Settings, ticket_id: int, followup_id: int, result: AnswerOutcome) -> None:
     async def run() -> None:
         engine = create_engine(settings.database_url)
         try:
@@ -94,6 +101,21 @@ def test_record_answer_keeps_only_cited_memory_entries(
     assert _rows(
         settings, "SELECT glpi_ticket_id, glpi_followup_id, knowledge_ids FROM ticket_answer"
     ) == [(TICKET_ID, 7, [entry])]
+
+
+def test_record_answer_ignores_a_handover(settings: Settings) -> None:
+    handover = EscalationResult(
+        message="Votre demande est transmise à un technicien.",
+        reason="hors sujet",
+        memory=[],
+        searches=[],
+        steps=1,
+        usage=Usage(prompt_tokens=1, completion_tokens=1),
+    )
+
+    _record(settings, TICKET_ID, 7, handover)
+
+    assert _rows(settings, "SELECT glpi_ticket_id FROM ticket_answer") == []
 
 
 def test_survey_scores_every_entry_cited_on_the_ticket(

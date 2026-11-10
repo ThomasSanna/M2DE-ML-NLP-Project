@@ -9,16 +9,19 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Feedback, FeedbackSource, Knowledge, TicketAnswer
-from app.schemas.answer import AnswerResult, KnowledgeCitation
+from app.schemas.answer import AnswerOutcome, EscalationResult, KnowledgeCitation
 from app.services.glpi import Glpi, GlpiError
 
 logger = logging.getLogger(__name__)
 
 
 async def record_answer(
-    session: AsyncSession, ticket_id: int, followup_id: int, result: AnswerResult
+    session: AsyncSession, ticket_id: int, followup_id: int, result: AnswerOutcome
 ) -> None:
     """Remember the memory entries a followup posted to the ticket cited."""
+    # A handover cites nothing: there is no entry to link the survey to.
+    if isinstance(result, EscalationResult):
+        return
     session.add(
         TicketAnswer(
             glpi_ticket_id=ticket_id,
