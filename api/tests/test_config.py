@@ -39,7 +39,12 @@ def test_empty_exa_api_key_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.parametrize(
     "overrides",
-    [{"agent_max_steps": 0}, {"rerank_threshold": 1.5}, {"retrieval_top_k": 0}],
+    [
+        {"agent_max_steps": 0},
+        {"rerank_threshold": 1.5},
+        {"retrieval_top_k": 0},
+        {"glpi_survey_poll_seconds": 0},
+    ],
 )
 def test_invalid_agent_settings_are_rejected(overrides: dict[str, object]) -> None:
     with pytest.raises(ValidationError):

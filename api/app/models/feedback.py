@@ -2,7 +2,17 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Integer, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -13,6 +23,7 @@ class FeedbackSource(StrEnum):
     USER = "user"  # user reply, scored by the scoring model
     TECHNICIAN = "technician"  # deferred review by a technician
     IMPLICIT = "implicit"  # implicit signal (ticket reopened, no follow-up...)
+    SURVEY = "survey"  # GLPI satisfaction survey of a ticket the bot answered
 
 
 class Feedback(Base):
@@ -33,4 +44,15 @@ class Feedback(Base):
 
     knowledge: Mapped[Knowledge] = relationship(back_populates="feedbacks")
 
-    __table_args__ = (CheckConstraint("score >= 0 AND score <= 1", name="score_range"),)
+    __table_args__ = (
+        CheckConstraint("score >= 0 AND score <= 1", name="score_range"),
+        # A ticket has one survey: it rates each entry the bot cited on it once. A requester
+        # who edits the survey updates that row instead of adding one.
+        Index(
+            "uq_feedback_survey",
+            "glpi_ticket_id",
+            "knowledge_id",
+            unique=True,
+            postgresql_where=text("source = 'survey'"),
+        ),
+    )

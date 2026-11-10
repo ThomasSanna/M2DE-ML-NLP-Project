@@ -212,3 +212,47 @@ def test_worker_writes_metrics_for_the_ticket(
 
     [run] = csv_rows(tmp_path / "runs.v1.csv")
     assert (run["source"], run["ticket_id"], run["outcome"]) == ("worker", "42", "answered")
+
+
+def _ticket_answers(settings: Settings) -> list[tuple[int, int, list[object]]]:
+    async def run() -> list[tuple[int, int, list[object]]]:
+        engine = create_engine(settings.database_url)
+        try:
+            async with engine.connect() as connection:
+                result = await connection.execute(
+                    text(
+                        "SELECT glpi_ticket_id, glpi_followup_id, knowledge_ids FROM ticket_answer"
+                    )
+                )
+                return [tuple(row) for row in result.all()]
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(run())
+
+
+def test_worker_records_the_entries_its_followup_cited(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    entry = client.post(
+        "/api/v1/memory/knowledge",
+        json={"question": "Wifi eduroam sur Mac", "answer": "Supprimez le profil"},
+        headers=auth,
+    ).json()["id"]
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi())
+
+    [(ticket_id, followup_id, knowledge_ids)] = _ticket_answers(settings)
+    assert (ticket_id, followup_id) == (TICKET.id, 7)
+    assert [str(knowledge_id) for knowledge_id in knowledge_ids] == [entry]
+
+
+def test_worker_records_nothing_when_the_followup_fails(
+    client: TestClient, settings: Settings
+) -> None:
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(fail_followup=True))
+
+    assert _ticket_answers(settings) == []

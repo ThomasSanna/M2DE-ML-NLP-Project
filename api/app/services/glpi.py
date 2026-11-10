@@ -36,16 +36,29 @@ class GlpiTicket:
     followups: tuple[GlpiFollowup, ...] = ()
 
 
+@dataclass(frozen=True)
+class GlpiSurvey:
+    """A satisfaction survey the requester answered."""
+
+    ticket_id: int
+    score: float  # the rating scaled to [0, 1]
+    comment: str | None
+
+
 class Glpi(Protocol):
     async def get_ticket(self, ticket_id: int) -> GlpiTicket | None: ...
 
     async def add_followup(self, ticket_id: int, text: str, *, private: bool) -> int: ...
+
+    async def list_answered_surveys(self) -> list[GlpiSurvey]: ...
 
 
 # Ticket_User.type of a requester (2 is an assigned technician, 3 an observer).
 _REQUESTER = 1
 # The latest 49: with the ticket itself, the 50 messages an answer thread can hold.
 _FOLLOWUPS = {"sort": "id", "order": "DESC", "range": "0-48"}
+# The latest 1000 surveys: older tickets are closed long ago, their feedback already synced.
+_SURVEYS = {"sort": "id", "order": "DESC", "range": "0-999"}
 
 _TAG = re.compile(r"<[^>]+>")
 _BLOCK_END = re.compile(r"</(p|div|li|h[1-6])>|<br\s*/?>", re.IGNORECASE)
@@ -153,6 +166,29 @@ class GlpiRestClient:
                 return int(response.json()["id"])
             except (httpx.HTTPError, ValueError, KeyError) as exc:
                 raise GlpiError(f"Cannot add a followup to ticket {ticket_id}: {exc!r}") from exc
+
+    async def list_answered_surveys(self) -> list[GlpiSurvey]:
+        """The answered satisfaction surveys among the latest 1000, newest first.
+
+        GLPI creates a survey when a ticket is closed; `date_answered` stays empty until the
+        requester rates it. `satisfaction_scaled_to_5` is the rating on 0-5 whatever the
+        entity's maximum.
+        """
+        async with self._session() as (headers, _):
+            try:
+                items = await self._get_list("TicketSatisfaction", headers, _SURVEYS)
+                return [
+                    GlpiSurvey(
+                        ticket_id=int(item["tickets_id"]),
+                        score=min(max(float(item["satisfaction_scaled_to_5"]) / 5, 0.0), 1.0),
+                        comment=(item.get("comment") or "").strip() or None,
+                    )
+                    for item in items
+                    if item.get("date_answered")
+                    and item.get("satisfaction_scaled_to_5") is not None
+                ]
+            except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+                raise GlpiError(f"Cannot list the satisfaction surveys: {exc!r}") from exc
 
 
 def _author(followup: dict[str, Any], requesters: set[int], bot_id: int) -> Author:

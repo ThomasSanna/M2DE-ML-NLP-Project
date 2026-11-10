@@ -167,6 +167,8 @@ curl -X POST http://localhost:8080/apirest.php/initSession \
 ```
 
 Writes the GLPI satisfaction survey answers to stdout as TSV (query: `glpi/sql/feedback.sql`).
+The memory API also syncs the answered surveys into its `feedback` table, as a score on each
+memory entry the bot cited on the ticket (see [`doc/api_doc.md`](doc/api_doc.md#feedback-from-the-glpi-satisfaction-survey)).
 
 ## Stop and reset
 

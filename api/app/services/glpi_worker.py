@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
 from app.models import GlpiEvent, GlpiEventStatus
-from app.services import answer
+from app.services import answer, survey
 from app.services.embeddings import Embedder, EmbeddingError
 from app.services.glpi import Author, Glpi, GlpiError, GlpiTicket
 from app.services.llm import ChatModel, LLMError
@@ -123,6 +123,7 @@ class GlpiEventWorker:
             logger.error("GLPI event %d (ticket %d) failed: %s", event.id, ticket_id, exc)
             return str(exc)
         logger.info("GLPI event %d: followup %d on ticket %d", event.id, followup_id, ticket_id)
+        await survey.record_answer(session, ticket_id, followup_id, result)
         return None
 
 
