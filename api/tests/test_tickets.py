@@ -199,7 +199,7 @@ def test_ticket_handover_posts_the_message_without_sources(
     )
     assert done == ("done", {"followup_id": 7})
     # The refs mean nothing to the requester, and a handover cites no page to list.
-    assert glpi.followups == [(TICKET.id, "Transmis à un technicien.", False)]
+    assert glpi.followups[0] == (TICKET.id, "Transmis à un technicien.", False)
     # The handover is recorded: the bot must not answer this ticket again.
     assert _recorded_followups(settings) == [7]
 
@@ -218,7 +218,10 @@ def test_ticket_stream_posts_the_handover(
     [(event, result), done] = _events(response.text)
     assert (event, result["kind"], result["message"]) == ("answer", "escalation", HANDOVER)
     assert done == ("done", {"followup_id": 7})
-    assert glpi.followups == [(TICKET.id, HANDOVER, False)]
+    assert glpi.followups == [
+        (TICKET.id, HANDOVER, False),
+        (TICKET.id, "Passation à un technicien. Raison : hors sujet", True),
+    ]
     assert _recorded_followups(settings) == [7]
 
 

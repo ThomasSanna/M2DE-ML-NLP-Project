@@ -199,8 +199,10 @@ data: {"followup_id": 1234}
 ```
 
 - `answer`: the `AnswerResult` or `EscalationResult` of `POST /api/v1/answer`, sent
-  before the followup is written. A handover is posted as its `message` alone; its `reason`
-  is not posted.
+  before the followup is written. A handover is posted as its `message` alone. Its `reason`,
+  when not empty, follows in a second, always private followup for the technicians
+  (`Passation à un technicien. Raison : ...`): the requester never sees it. A GLPI failure on
+  that note is only logged.
 - `done`: the followup is in GLPI. Public by default, so GLPI emails the requester;
   `GLPI_FOLLOWUP_PRIVATE=true` makes it private, for a technician to validate.
 - The followup is the answer without its `[K1]`/`[W2]` refs, followed by a `Sources :` list
@@ -230,8 +232,8 @@ arrives within about a minute.
 - The bot answers each public followup of a requester, until someone else (a technician)
   writes a public followup: from then on it stays silent on that ticket.
 - When the agent hands a ticket over to a technician, the bot posts its message (public
-  unless `GLPI_FOLLOWUP_PRIVATE`), records the handover in `ticket_answer`, and never
-  answers that ticket again.
+  unless `GLPI_FOLLOWUP_PRIVATE`), records the handover in `ticket_answer`, adds the reason
+  in a private followup, and never answers that ticket again.
 - An event whose message is no longer the last public followup is skipped: the newer
   followup's own event answers the whole thread. So are the events of the bot's own
   followups, which GLPI sends too.

@@ -20,7 +20,7 @@ from app.services import memory, survey
 from app.services.agent import run_agent
 from app.services.agent_prompt import initial_messages, render_memory, render_thread, strip_refs
 from app.services.embeddings import Embedder, EmbeddingError
-from app.services.glpi import Author, GlpiTicket
+from app.services.glpi import Author, Glpi, GlpiError, GlpiTicket
 from app.services.llm import ChatModel, LLMError
 from app.services.metrics import (
     CsvMetricsWriter,
@@ -202,6 +202,23 @@ def followup_text(result: AnswerOutcome) -> str:
         return text
     lines = "\n".join(f"- {title} : {url}" for url, title in pages.items())
     return f"{text}\n\nSources :\n{lines}"
+
+
+async def post_handover_note(glpi: Glpi, ticket_id: int, result: AnswerOutcome) -> None:
+    """Tell the technicians, in a private followup, why the bot handed the ticket over.
+
+    Call it after the public followup is recorded: the note is a help, not the answer, so a
+    GLPI failure here is logged and must not fail the event (a retry would find the ticket
+    handed over and post nothing).
+    """
+    if not isinstance(result, EscalationResult) or not result.reason.strip():
+        return
+    try:
+        await glpi.add_followup(
+            ticket_id, f"Passation à un technicien. Raison : {result.reason.strip()}", private=True
+        )
+    except GlpiError as exc:
+        logger.warning("Handover note on ticket %d failed: %s", ticket_id, exc)
 
 
 def _retrieval_query(messages: list[ThreadMessage]) -> str:

@@ -87,6 +87,7 @@ async def stream_ticket_answer(
             yield _sse("error", json.dumps({"detail": "GLPI unavailable"}))
             return
         await survey.record_answer(session, ticket_id, followup_id, result)
+        await answer.post_handover_note(glpi, ticket_id, result)
         yield _sse("done", json.dumps({"followup_id": followup_id}))
 
     return StreamingResponse(
