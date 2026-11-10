@@ -9,16 +9,25 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Feedback, FeedbackSource, Knowledge, TicketAnswer
-from app.schemas.answer import AnswerResult, KnowledgeCitation
+from app.schemas.answer import AnswerResult, KnowledgeCitation, WebCitation
 from app.services.glpi import Glpi, GlpiError
 
 logger = logging.getLogger(__name__)
 
 
+def _web_sources(result: AnswerResult) -> list[dict[str, str]]:
+    """Web pages the answer cited, once each, in citation order."""
+    pages: dict[str, str] = {}
+    for source in result.sources:
+        if isinstance(source, WebCitation):
+            pages.setdefault(source.url, source.title)
+    return [{"title": title, "url": url} for url, title in pages.items()]
+
+
 async def record_answer(
     session: AsyncSession, ticket_id: int, followup_id: int, result: AnswerResult
 ) -> None:
-    """Remember the memory entries a followup posted to the ticket cited."""
+    """Remember what a followup posted to the ticket cited."""
     session.add(
         TicketAnswer(
             glpi_ticket_id=ticket_id,
@@ -26,9 +35,22 @@ async def record_answer(
             knowledge_ids=[
                 s.knowledge_id for s in result.sources if isinstance(s, KnowledgeCitation)
             ],
+            web_sources=_web_sources(result),
         )
     )
     await session.commit()
+
+
+async def list_web_sources(
+    session: AsyncSession, ticket_id: int
+) -> list[tuple[int, list[dict[str, str]]]]:
+    """Sources of each answer posted on the ticket, oldest first."""
+    rows = await session.scalars(
+        select(TicketAnswer)
+        .where(TicketAnswer.glpi_ticket_id == ticket_id)
+        .order_by(TicketAnswer.created_at, TicketAnswer.id)
+    )
+    return [(row.glpi_followup_id, row.web_sources) for row in rows]
 
 
 async def sync_surveys(session: AsyncSession, glpi: Glpi) -> int:
