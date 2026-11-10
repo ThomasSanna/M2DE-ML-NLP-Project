@@ -20,7 +20,8 @@ from app.services.websearch import WebSearch
 
 logger = logging.getLogger(__name__)
 
-POLL_SECONDS = 5.0
+# The requester watches the ticket page for the bot's progress: pick an event up quickly.
+POLL_SECONDS = 1.0
 MAX_ATTEMPTS = 3
 # The model servers fail for a minute or two at a time: an immediate retry fails too.
 RETRY_DELAY = timedelta(minutes=2)

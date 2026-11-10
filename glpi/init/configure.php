@@ -171,6 +171,9 @@ step('ticket notifications enabled: new, follow-up, solved, closed, survey, surv
 // mode, which only advances when a user browses GLPI.
 $crons = [
     ['QueuedNotification', 'queuednotification', 60],
+    // Webhooks to the memory API: the bot starts as soon as the queue is sent
+    // (the container cron runs every 5 s, glpi/cron/cron-worker.sh).
+    ['QueuedWebhook', 'queuedwebhook', 5],
     ['Ticket', 'closeticket', 3600],
     ['Ticket', 'createinquest', 3600],
 ];
@@ -181,7 +184,7 @@ foreach ($crons as [$itemtype, $name, $frequency]) {
         'frequency' => $frequency,
     ], ['itemtype' => $itemtype, 'name' => $name]);
 }
-step('CLI cron: mail sending (1 min), auto-close and survey creation (1 h)');
+step('CLI cron: webhook sending (5 s), mail sending (1 min), auto-close and survey creation (1 h)');
 // If the machine clock went back (sleep, NTP resync), a `lastrun` in the future blocks
 // the task until that date: mails and webhooks are no longer sent.
 $DB->update('glpi_crontasks', ['lastrun' => null], [new \Glpi\DBAL\QueryExpression('`lastrun` > NOW()')]);
