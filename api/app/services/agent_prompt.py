@@ -20,7 +20,7 @@ THREAD_HEAD_MAX_CHARS = 600
 NO_MEMORY = "Aucune connaissance pertinente en mémoire."
 DUPLICATE_SEARCH = "Déjà cherché, résultats ci-dessus. Réponds ou cherche autre chose."
 SEARCH_UNAVAILABLE = "Recherche web indisponible, réponds avec la mémoire."
-MAX_STEPS_NOTICE = "Nombre maximal d'étapes atteint : réponds maintenant."
+MAX_STEPS_NOTICE = "Nombre maximal d'étapes atteint : réponds ou passe la main maintenant."
 
 SYSTEM_PROMPT = """\
 Tu es l'assistant du support informatique de l'Université de Corse. \
@@ -35,19 +35,27 @@ réponses déjà données : ce ne sont pas des sources, ne les répète pas.
 
 Applique la première règle qui correspond :
 1. L'utilisateur remercie ou dit que c'est résolu : réponds en une phrase.
-2. Une entrée [K] ou un résultat [W] répond précisément au dernier message : réponds avec.
-3. Sinon, cherche sur le web avec les mots-clés précis de la demande, par exemple \
+2. La demande n'a rien à voir avec l'université ni avec l'informatique, ou l'utilisateur \
+demande à parler à une personne : passe la main à un technicien.
+3. Une entrée [K] ou un résultat [W] répond précisément au dernier message : réponds avec.
+4. Sinon, cherche sur le web avec les mots-clés précis de la demande, par exemple \
 « horaires bibliothèque Université de Corse ».
 
 Ta réponse est concise et concrète, dans la langue du dernier message de l'utilisateur : \
 s'il écrit en anglais, réponds en anglais. Chaque information vient d'une entrée [K] \
 ou d'un résultat [W] : cite-les entre crochets ([K1], [W2]) et liste-les dans "sources". \
-Si aucune source ne répond à la demande, dis-le clairement : ne devine jamais une URL, \
-une date, une procédure ni un contact.
+Si aucune source ne répond à la demande après tes recherches, passe la main : ne devine \
+jamais une URL, une date, une procédure ni un contact.
+
+Pour passer la main, écris à l'utilisateur, dans sa langue et en une ou deux phrases, \
+que sa demande est transmise à un technicien, et résume dans "reason", en quelques mots, \
+pourquoi tu passes la main : le support la lira, pas l'utilisateur.
 
 À chaque tour, réponds par un seul objet JSON :
 - {"action": "search", "query": "<requête web>"} pour chercher sur le web ;
-- {"action": "answer", "answer": "<réponse>", "sources": ["K1", "W2"]} pour répondre."""
+- {"action": "answer", "answer": "<réponse>", "sources": ["K1", "W2"]} pour répondre ;
+- {"action": "escalate", "answer": "<message à l'utilisateur>", "reason": "<raison>"} \
+pour passer la main à un technicien."""
 
 _ROLE_LABELS = {"user": "Utilisateur", "assistant": "Support"}
 
@@ -73,7 +81,19 @@ class AnswerAction(BaseModel):
     sources: list[str] = []
 
 
-_ACTION = TypeAdapter(Annotated[SearchAction | AnswerAction, Field(discriminator="action")])
+class EscalateAction(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    action: Literal["escalate"]
+    # The message to the requester.
+    answer: str = Field(min_length=1)
+    # For the support only. Optional: the grammar cannot require it for this action alone.
+    reason: str = ""
+
+
+_ACTION = TypeAdapter(
+    Annotated[SearchAction | AnswerAction | EscalateAction, Field(discriminator="action")]
+)
 
 
 def decision_schema(allow_search: bool, refs: list[str]) -> dict[str, object]:
@@ -82,17 +102,18 @@ def decision_schema(allow_search: bool, refs: list[str]) -> dict[str, object]:
     enforced by the grammar: without it the 4B emits empty strings and repeats them
     despite the feedback.
 
-    Without search (last step, or web search disabled) there is a single action, so the
-    grammar itself requires `answer`: an output missing it would fail the request.
+    Without search (last step, or web search disabled) both remaining actions carry
+    `answer`, so the grammar itself requires it: an output missing it would fail the
+    request.
 
     `sources` only takes refs shown so far: with free strings the 4B stopped inside an
     item (`["W2","]`)."""
-    properties: dict[str, object] = {
-        "action": {"type": "string", "enum": ["search", "answer"] if allow_search else ["answer"]}
-    }
+    actions = ["search", "answer", "escalate"] if allow_search else ["answer", "escalate"]
+    properties: dict[str, object] = {"action": {"type": "string", "enum": actions}}
     if allow_search:
         properties["query"] = {"type": "string", "minLength": 1}
     properties["answer"] = {"type": "string", "minLength": 1}
+    properties["reason"] = {"type": "string"}
     if refs:
         properties["sources"] = {"type": "array", "items": {"type": "string", "enum": refs}}
     return {
@@ -102,7 +123,7 @@ def decision_schema(allow_search: bool, refs: list[str]) -> dict[str, object]:
     }
 
 
-def parse_action(content: str) -> SearchAction | AnswerAction:
+def parse_action(content: str) -> SearchAction | AnswerAction | EscalateAction:
     return _ACTION.validate_json(content)
 
 
