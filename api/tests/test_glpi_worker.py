@@ -286,6 +286,20 @@ def test_worker_marks_the_run_failed_on_a_model_error(
     assert (view.status, view.followup_id) == ("failed", None)
 
 
+def test_worker_marks_the_run_failed_when_the_followup_fails(
+    client: TestClient, settings: Settings
+) -> None:
+    board = ProgressBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(fail_followup=True), progress=board)
+
+    assert _ticket_answers(settings) == []
+    view = board.get(TICKET.id)
+    assert view is not None
+    assert view.status == "failed"
+
+
 def test_worker_leaves_the_board_alone_when_the_technician_took_over(
     client: TestClient, settings: Settings
 ) -> None:

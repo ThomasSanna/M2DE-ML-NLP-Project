@@ -136,9 +136,13 @@ class ProgressBoard:
         self._touch(state)
 
     def failed(self, ticket_id: int) -> None:
-        """The run stopped on an error; a technician takes over."""
+        """The run stopped on an error; a technician takes over.
+
+        A run that already finished keeps its status: the worker reports the failure
+        of the whole event, which may happen after the answer was posted.
+        """
         state = self._runs.get(ticket_id)
-        if state is None:
+        if state is None or state.status in TERMINAL:
             return
         state.status = "failed"
         self._touch(state)

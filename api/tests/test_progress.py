@@ -113,6 +113,30 @@ def test_done_and_failed_do_nothing_for_a_ticket_never_started() -> None:
     assert board.get(42) is None
 
 
+def test_a_finished_run_is_not_marked_failed() -> None:
+    board = ProgressBoard()
+    board.start(42)
+    board.done(42, 7)
+
+    board.failed(42)
+
+    view = board.get(42)
+    assert view is not None
+    assert (view.status, view.followup_id) == ("done", 7)
+
+
+def test_a_running_run_is_still_marked_failed() -> None:
+    board = ProgressBoard()
+    run = board.start(42)
+    run.searching("eduroam mac")
+
+    board.failed(42)
+
+    view = board.get(42)
+    assert view is not None
+    assert (view.status, view.followup_id) == ("failed", None)
+
+
 def test_tickets_do_not_share_their_progress() -> None:
     board = ProgressBoard()
     first = board.start(42)
