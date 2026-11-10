@@ -1,8 +1,8 @@
 """What the GLPI plugin reads back about the tickets the bot answers."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 ProgressStatus = Literal["idle", "thinking", "searching", "done", "failed"]
 
@@ -15,12 +15,21 @@ class SourceRead(BaseModel):
     domain: str
 
 
-class StepRead(BaseModel):
-    """One line of the progress bubble."""
+class ThinkingStep(BaseModel):
+    """The agent is reading the ticket."""
 
-    kind: Literal["thinking", "search"]
-    query: str | None = None
-    sources: list[SourceRead] = []
+    kind: Literal["thinking"] = "thinking"
+
+
+class SearchStep(BaseModel):
+    """The agent is looking for sources, with what it found."""
+
+    kind: Literal["search"] = "search"
+    query: str
+    sources: list[SourceRead] = Field(default_factory=list)
+
+
+StepRead = Annotated[ThinkingStep | SearchStep, Field(discriminator="kind")]
 
 
 class ProgressRead(BaseModel):

@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
+from app.schemas.ticket import ProgressRead
 from app.services.progress import ProgressBoard, domain_of
 from app.services.websearch import WebResult
 
@@ -174,3 +175,61 @@ def test_the_view_is_a_copy_the_caller_cannot_corrupt() -> None:
     again = board.get(42)
     assert again is not None
     assert len(again.steps[0]["sources"]) == 2
+
+
+def test_a_malformed_url_has_no_domain_and_does_not_break_the_run() -> None:
+    assert domain_of("http://[::1") == ""
+
+    board = ProgressBoard()
+    run = board.start(42)
+    run.searching("eduroam mac")
+    run.found([WebResult("Broken", "http://[::1", None, "")])
+
+    view = board.get(42)
+    assert view is not None
+    assert view.steps == [
+        {
+            "kind": "search",
+            "query": "eduroam mac",
+            "sources": [{"title": "Broken", "url": "http://[::1", "domain": ""}],
+        }
+    ]
+
+
+def test_a_thinking_step_is_serialized_without_a_query_or_sources() -> None:
+    dumped = ProgressRead(status="thinking", steps=[{"kind": "thinking"}]).model_dump(mode="json")
+
+    assert dumped == {
+        "status": "thinking",
+        "steps": [{"kind": "thinking"}],
+        "followup_id": None,
+    }
+
+
+def test_a_search_step_is_serialized_with_its_query_and_sources() -> None:
+    dumped = ProgressRead(
+        status="searching",
+        steps=[
+            {
+                "kind": "search",
+                "query": "eduroam mac",
+                "sources": [
+                    {"title": "Eduroam macOS", "url": "https://www.a.fr/page", "domain": "a.fr"}
+                ],
+            }
+        ],
+    ).model_dump(mode="json")
+
+    assert dumped == {
+        "status": "searching",
+        "steps": [
+            {
+                "kind": "search",
+                "query": "eduroam mac",
+                "sources": [
+                    {"title": "Eduroam macOS", "url": "https://www.a.fr/page", "domain": "a.fr"}
+                ],
+            }
+        ],
+        "followup_id": None,
+    }

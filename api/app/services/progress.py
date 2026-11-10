@@ -2,7 +2,7 @@
 
 The board lives in the API process: the worker records what the agent is doing,
 `GET /api/v1/tickets/{id}/progress` reads it back for the plugin, and nothing is
-persisted. A finished run is dropped once nobody asked for it for `ttl`.
+persisted. A finished run is dropped `ttl` after it finished.
 """
 
 from collections.abc import Callable
@@ -38,8 +38,16 @@ class ProgressView:
 
 
 def domain_of(url: str) -> str:
-    """Host of a URL without the `www.` prefix, as the sources panel shows it."""
-    return (urlsplit(url).hostname or "").removeprefix("www.")
+    """Host of a URL without the `www.` prefix, as the sources panel shows it.
+
+    A URL the parser rejects (`http://[::1`) has no domain rather than an error:
+    a broken source must not abort the answer.
+    """
+    try:
+        host = urlsplit(url).hostname
+    except ValueError:
+        return ""
+    return (host or "").removeprefix("www.")
 
 
 def _source(result: WebResult) -> dict[str, str]:
