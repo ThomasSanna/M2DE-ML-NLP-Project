@@ -48,7 +48,7 @@ function setCoreConfig(array $values): void
 }
 
 // ------------------------------------------------------------------ General
-echo "[1/7] General\n";
+echo "[1/8] General\n";
 setCoreConfig([
     // URL used in the links of the mails (http://localhost without a port = broken links)
     'url_base'     => env('GLPI_URL_BASE', 'http://localhost:8080'),
@@ -57,7 +57,7 @@ setCoreConfig([
 step('url_base = ' . env('GLPI_URL_BASE', 'http://localhost:8080'));
 
 // ---------------------------------------------------------------------- API
-echo "[2/7] REST API\n";
+echo "[2/8] REST API\n";
 setCoreConfig([
     'enable_api'                      => 1,
     'enable_api_login_credentials'    => 1,
@@ -76,7 +76,7 @@ if (env('GLPI_APP_TOKEN') !== null) {
 }
 
 // --------------------------------------------------------------------- LDAP
-echo "[3/7] LDAP directory\n";
+echo "[3/8] LDAP directory\n";
 $ldapName  = 'Univ Corse LDAP';
 $ldapInput = [
     'name'            => $ldapName,
@@ -111,7 +111,7 @@ $ok = AuthLDAP::testLDAPConnection($authldap->getID());
 step('LDAP connection test: ' . ($ok ? 'OK' : 'FAILED'));
 
 // ------------------------------------------------------ Notifications / SMTP
-echo "[4/7] E-mail notifications\n";
+echo "[4/8] E-mail notifications\n";
 setCoreConfig([
     'use_notifications'     => 1,
     'notifications_mailing' => 1,
@@ -143,7 +143,7 @@ if (env('SMTP_HOST') !== null) {
 }
 
 // ------------------------------------------- Feedback: satisfaction survey
-echo "[5/7] Satisfaction survey (source of the w1 feedback)\n";
+echo "[5/8] Satisfaction survey (source of the w1 feedback)\n";
 $entity = new Entity();
 $entity->update([
     'id'                        => 0,
@@ -187,7 +187,7 @@ step('CLI cron: mail sending (1 min), auto-close and survey creation (1 h)');
 $DB->update('glpi_crontasks', ['lastrun' => null], [new \Glpi\DBAL\QueryExpression('`lastrun` > NOW()')]);
 
 // ------------------------------------------------------------ API bot user
-echo "[6/7] Bot user (memory API)\n";
+echo "[6/8] Bot user (memory API)\n";
 $botName = env('GLPI_BOT_USER', 'chatbot');
 $bot     = new User();
 if (!$bot->getFromDBbyName($botName)) {
@@ -232,7 +232,7 @@ if (env('GLPI_USER_TOKEN') !== null) {
 }
 
 // ------------------------------------------- New ticket and followup webhooks
-echo "[7/7] New ticket and new followup webhooks → memory API\n";
+echo "[7/8] New ticket and new followup webhooks → memory API\n";
 if (env('GLPI_WEBHOOK_SECRET') === null) {
     step('GLPI_WEBHOOK_SECRET empty: webhooks not created (the API could not verify the signature)');
 } else {
@@ -271,6 +271,35 @@ if (env('GLPI_WEBHOOK_SECRET') === null) {
     if (!Toolbox::isUrlSafe($webhookUrl)) {
         step('WARNING: URL rejected by GLPI_SERVERSIDE_URL_ALLOWLIST, the webhooks will not be sent');
     }
+}
+
+// -------------------------------------------
+// AI assistant plugin
+
+echo "[8/8] GLPI plugin 'Assistant IA'\n";
+
+Config::setConfigurationValues('plugin:aiassistant', [
+    'api_url' => 'http://api:8000',
+    'api_key' => (new GLPIKey())->encrypt(env('API_KEY')),
+]);
+step('URL et clé de l\'API mémoire enregistrées');
+
+// Un plugin copié sur le disque n'entre en base qu'au premier scan des
+// plugins ; on le scanne ici pour qu'une stack neuve s'installe sans clic.
+$plugin = new Plugin();
+$plugin->checkStates(true);
+if (!$plugin->getFromDBbyDir('aiassistant')) {
+    throw new RuntimeException('Plugin aiassistant introuvable : vérifier le montage du volume');
+}
+
+if (!$plugin->isInstalled('aiassistant')) {
+    $plugin->install($plugin->fields['id']);
+    step('Plugin installé');
+}
+
+if (!$plugin->isActivated('aiassistant')) {
+    $plugin->activate($plugin->fields['id']);
+    step('Plugin activé');
 }
 
 echo "GLPI configuration done.\n";
