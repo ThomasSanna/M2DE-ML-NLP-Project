@@ -13,7 +13,8 @@ LATEST = 50
 
 def build(metrics: Metrics) -> Section:
     runs, calls = metrics.runs, metrics.calls
-    failed_runs = runs[runs["outcome"] != "answered"]
+    # Only a remote failure is an error: a handover to a technician is a normal end.
+    failed_runs = runs[runs["outcome"].str.endswith("_error")]
     failed_calls = calls[calls["status"] != "ok"]
     title = t("Errors")
     findings = [t("No failed run.")]

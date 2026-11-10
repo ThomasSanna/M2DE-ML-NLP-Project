@@ -228,6 +228,14 @@ def test_errors_without_failures(tmp_path: Path) -> None:
     assert findings == ["No failed run."]
 
 
+def test_escalation_is_not_an_error(tmp_path: Path) -> None:
+    # The bot handed the request to a technician: the run succeeded, it is not a failure.
+    data = load(write(tmp_path, [run(), run(run_id="r2", outcome="escalated")], []))
+
+    assert errors.build(data).findings == ["No failed run."]
+    assert configs._summary(data.runs)["errors"].tolist() == [0]
+
+
 def test_histogram_of_nearly_equal_values() -> None:
     # Float noise around one value (60 tokens/s from every call) must not break the bins.
     values = pd.Series([59.99999999999999, 60.0, 60.000000000000014], dtype="Float64")

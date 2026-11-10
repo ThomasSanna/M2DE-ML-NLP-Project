@@ -22,11 +22,17 @@ NEUTRAL = "#a3a29c"
 SERIES = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948")
 OUTCOME_COLORS = {
     "answered": SERIES[0],
+    "escalated": SERIES[4],
     "embedding_error": SERIES[1],
     "reranker_error": SERIES[2],
     "llm_error": SERIES[3],
 }
-ACTION_COLORS = {"answer": SERIES[0], "search": SERIES[1], "invalid": SERIES[3]}
+ACTION_COLORS = {
+    "answer": SERIES[0],
+    "search": SERIES[1],
+    "escalate": SERIES[2],
+    "invalid": SERIES[3],
+}
 KIND_COLORS = {
     "embed": SERIES[0],
     "vector_search": SERIES[1],
