@@ -278,11 +278,16 @@ if (env('GLPI_WEBHOOK_SECRET') === null) {
 
 echo "[8/8] GLPI plugin 'Assistant IA'\n";
 
-Config::setConfigurationValues('plugin:aiassistant', [
-    'api_url' => 'http://api:8000',
-    'api_key' => (new GLPIKey())->encrypt(env('API_KEY')),
-]);
-step('URL et clé de l\'API mémoire enregistrées');
+$apiKey = env('API_KEY');
+if ($apiKey === null) {
+    step('API_KEY vide : configuration du plugin laissée en l\'état');
+} else {
+    Config::setConfigurationValues('plugin:aiassistant', [
+        'api_url' => 'http://api:8000',
+        'api_key' => (new GLPIKey())->encrypt($apiKey),
+    ]);
+    step('URL et clé de l\'API mémoire enregistrées');
+}
 
 // Un plugin copié sur le disque n'entre en base qu'au premier scan des
 // plugins ; on le scanne ici pour qu'une stack neuve s'installe sans clic.
