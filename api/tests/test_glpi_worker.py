@@ -13,6 +13,7 @@ from app.services.glpi import Author, GlpiFollowup
 from app.services.glpi_worker import MAX_ATTEMPTS, GlpiEventWorker
 from app.services.llm import ChatModel
 from app.services.metrics import CsvMetricsWriter
+from app.services.progress import ProgressBoard
 from tests.conftest import (
     TICKET,
     FailingChatModel,
@@ -46,6 +47,7 @@ def _process(
     glpi: FakeGlpi,
     model: ChatModel | None = None,
     metrics: CsvMetricsWriter | None = None,
+    progress: ProgressBoard | None = None,
 ) -> bool:
     model = model or ScriptedChatModel(
         [json.dumps({"action": "answer", "answer": "Supprimez le profil [K1]"})]
@@ -62,6 +64,7 @@ def _process(
             metrics,
             glpi,
             settings,
+            progress or ProgressBoard(),
         )
         try:
             return await worker.process_next()
@@ -256,3 +259,47 @@ def test_worker_records_nothing_when_the_followup_fails(
     assert _process(settings, FakeGlpi(fail_followup=True))
 
     assert _ticket_answers(settings) == []
+
+
+def test_worker_reports_the_run_until_the_followup(client: TestClient, settings: Settings) -> None:
+    board = ProgressBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(), progress=board)
+
+    view = board.get(TICKET.id)
+    assert view is not None
+    assert (view.status, view.followup_id) == ("done", 7)
+    assert view.steps == [{"kind": "thinking"}]
+
+
+def test_worker_marks_the_run_failed_on_a_model_error(
+    client: TestClient, settings: Settings
+) -> None:
+    board = ProgressBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(), FailingChatModel(), progress=board)
+
+    view = board.get(TICKET.id)
+    assert view is not None
+    assert (view.status, view.followup_id) == ("failed", None)
+
+
+def test_worker_leaves_the_board_alone_when_the_technician_took_over(
+    client: TestClient, settings: Settings
+) -> None:
+    board = ProgressBoard()
+    trigger = GlpiFollowup(4, Author.REQUESTER, "Merci")
+    glpi = FakeGlpi(
+        replace(
+            TICKET,
+            followups=(REPLY, GlpiFollowup(3, Author.OTHER, "Je regarde"), trigger),
+        )
+    )
+    _queue(client, _new_followup(trigger))
+
+    assert _process(settings, glpi, FailingChatModel(), progress=board)
+
+    assert glpi.followups == []
+    assert board.get(TICKET.id) is None

@@ -14,6 +14,7 @@ from app.services.embeddings import Embedder, EmbeddingError
 from app.services.glpi import Author, Glpi, GlpiError, GlpiTicket
 from app.services.llm import ChatModel, LLMError
 from app.services.metrics import CsvMetricsWriter
+from app.services.progress import ProgressBoard
 from app.services.reranker import Reranker, RerankerError
 from app.services.websearch import WebSearch
 
@@ -37,6 +38,7 @@ class GlpiEventWorker:
     metrics: CsvMetricsWriter | None
     glpi: Glpi
     settings: Settings
+    progress: ProgressBoard
 
     async def run(self) -> None:
         """Process events until cancelled at shutdown."""
@@ -107,6 +109,7 @@ class GlpiEventWorker:
                     self.settings,
                     ticket,
                     source="worker",
+                    board=self.progress,
                 )
                 if _awaits_bot(ticket, trigger_id)
                 else None
@@ -120,8 +123,10 @@ class GlpiEventWorker:
                 private=self.settings.glpi_followup_private,
             )
         except (EmbeddingError, RerankerError, LLMError, GlpiError) as exc:
+            self.progress.failed(ticket_id)
             logger.error("GLPI event %d (ticket %d) failed: %s", event.id, ticket_id, exc)
             return str(exc)
+        self.progress.done(ticket_id, followup_id)
         logger.info("GLPI event %d: followup %d on ticket %d", event.id, followup_id, ticket_id)
         await survey.record_answer(session, ticket_id, followup_id, result)
         return None
