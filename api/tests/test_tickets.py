@@ -383,6 +383,27 @@ def test_ticket_answers_is_empty_for_an_unknown_ticket(
     assert client.get("/api/v1/tickets/999/answers", headers=auth).json() == []
 
 
+def test_ticket_answers_survives_a_malformed_stored_source(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    # A row written by hand can miss a key: it must degrade, not fail the whole list.
+    run_sql(
+        settings,
+        "INSERT INTO ticket_answer (glpi_ticket_id, glpi_followup_id, knowledge_ids, "
+        "web_sources) VALUES (42, 7, '{}', "
+        """'[{"title": "Page"}]')""",
+    )
+
+    body = client.get(f"/api/v1/tickets/{TICKET.id}/answers", headers=auth).json()
+
+    assert body == [
+        {
+            "followup_id": 7,
+            "sources": [{"title": "Page", "url": "", "domain": ""}],
+        }
+    ]
+
+
 @pytest.mark.parametrize("path", ["progress", "answers"])
 def test_ticket_views_require_api_key(client: TestClient, path: str) -> None:
     assert client.get(f"/api/v1/tickets/{TICKET.id}/{path}").status_code == 401
@@ -412,3 +433,31 @@ def test_ticket_stream_closes_the_run_on_the_board(
     view = _board(client).get(TICKET.id)
     assert view is not None
     assert (view.status, view.followup_id) == ("done", 7)
+
+
+def test_ticket_stream_marks_the_run_failed_on_a_model_error(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    override(client, get_glpi, FakeGlpi())
+    override(client, get_chat_model, FailingChatModel())
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 502, response.text
+    view = _board(client).get(TICKET.id)
+    assert view is not None
+    assert (view.status, view.followup_id) == ("failed", None)
+
+
+def test_ticket_stream_marks_the_run_failed_when_the_followup_fails(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    override(client, get_glpi, FakeGlpi(fail_followup=True))
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert [event for event, _ in _events(response.text)] == ["answer", "error"]
+    view = _board(client).get(TICKET.id)
+    assert view is not None
+    assert (view.status, view.followup_id) == ("failed", None)

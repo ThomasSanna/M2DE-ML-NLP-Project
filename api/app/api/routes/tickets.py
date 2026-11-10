@@ -131,7 +131,9 @@ async def ticket_answers(
             followup_id=followup_id,
             sources=[
                 SourceRead(
-                    title=source["title"], url=source["url"], domain=domain_of(source["url"])
+                    title=source.get("title", ""),
+                    url=source.get("url", ""),
+                    domain=domain_of(source.get("url", "")),
                 )
                 for source in sources
             ],
