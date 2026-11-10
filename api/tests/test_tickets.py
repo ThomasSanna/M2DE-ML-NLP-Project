@@ -2,6 +2,7 @@ import asyncio
 import json
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,6 +36,7 @@ from tests.conftest import (
     ScriptedChatModel,
     csv_rows,
     override,
+    run_sql,
 )
 
 URL = f"/api/v1/tickets/{TICKET.id}/answer/stream"
@@ -306,3 +308,107 @@ def test_ticket_answer_records_nothing_when_the_followup_fails(
     client.post(URL, headers=auth)
 
     assert _recorded_followups(settings) == []
+
+
+def _board(client: TestClient) -> ProgressBoard:
+    return cast(ProgressBoard, client.app.state.progress)
+
+
+def test_ticket_progress_is_idle_when_the_bot_never_ran(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    response = client.get(f"/api/v1/tickets/{TICKET.id}/progress", headers=auth)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "idle", "steps": [], "followup_id": None}
+
+
+def test_ticket_progress_shows_the_live_run(client: TestClient, auth: dict[str, str]) -> None:
+    run = _board(client).start(TICKET.id)
+    run.thinking()
+    run.searching("eduroam mac")
+    run.found([WebResult("Eduroam macOS", "https://www.tf1info.fr/x", None, "…")])
+
+    body = client.get(f"/api/v1/tickets/{TICKET.id}/progress", headers=auth).json()
+
+    assert body == {
+        "status": "searching",
+        "steps": [
+            {"kind": "thinking"},
+            {
+                "kind": "search",
+                "query": "eduroam mac",
+                "sources": [
+                    {
+                        "title": "Eduroam macOS",
+                        "url": "https://www.tf1info.fr/x",
+                        "domain": "tf1info.fr",
+                    }
+                ],
+            },
+        ],
+        "followup_id": None,
+    }
+
+
+def test_ticket_answers_lists_the_sources_of_each_followup(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    run_sql(
+        settings,
+        "INSERT INTO ticket_answer (glpi_ticket_id, glpi_followup_id, knowledge_ids, "
+        "web_sources) VALUES (42, 7, '{}', "
+        """'[{"title": "Page", "url": "https://www.example.org/a"}]')""",
+    )
+
+    body = client.get(f"/api/v1/tickets/{TICKET.id}/answers", headers=auth).json()
+
+    assert body == [
+        {
+            "followup_id": 7,
+            "sources": [
+                {
+                    "title": "Page",
+                    "url": "https://www.example.org/a",
+                    "domain": "example.org",
+                }
+            ],
+        }
+    ]
+
+
+def test_ticket_answers_is_empty_for_an_unknown_ticket(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    assert client.get("/api/v1/tickets/999/answers", headers=auth).json() == []
+
+
+@pytest.mark.parametrize("path", ["progress", "answers"])
+def test_ticket_views_require_api_key(client: TestClient, path: str) -> None:
+    assert client.get(f"/api/v1/tickets/{TICKET.id}/{path}").status_code == 401
+
+
+@pytest.mark.parametrize("path", ["progress", "answers"])
+@pytest.mark.parametrize("ticket_id", ["abc", "0", "-1"])
+def test_ticket_views_reject_invalid_ids(
+    client: TestClient, auth: dict[str, str], path: str, ticket_id: str
+) -> None:
+    assert client.get(f"/api/v1/tickets/{ticket_id}/{path}", headers=auth).status_code == 422
+
+
+def test_ticket_stream_closes_the_run_on_the_board(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    override(client, get_glpi, FakeGlpi())
+    override(
+        client,
+        get_chat_model,
+        ScriptedChatModel([json.dumps({"action": "answer", "answer": "Supprimez le profil"})]),
+    )
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 200, response.text
+    view = _board(client).get(TICKET.id)
+    assert view is not None
+    assert (view.status, view.followup_id) == ("done", 7)
