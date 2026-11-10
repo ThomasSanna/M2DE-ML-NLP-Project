@@ -19,7 +19,7 @@ THREAD_HEAD_MAX_CHARS = 600
 
 NO_MEMORY = "Aucune connaissance pertinente en mémoire."
 DUPLICATE_SEARCH = "Déjà cherché, résultats ci-dessus. Réponds ou cherche autre chose."
-SEARCH_UNAVAILABLE = "Recherche web indisponible, réponds avec la mémoire."
+SEARCH_UNAVAILABLE = "Recherche web indisponible, réponds avec la mémoire ou passe la main."
 MAX_STEPS_NOTICE = "Nombre maximal d'étapes atteint : réponds ou passe la main maintenant."
 
 SYSTEM_PROMPT = """\

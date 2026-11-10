@@ -155,7 +155,8 @@ curl -X POST http://localhost:8000/api/v1/answer \
   fails, including a model that still returns invalid JSON at the last step. The cause is
   only logged.
 - A failed web search does not fail the request: the model is told to answer from the
-  memory. Without `EXA_API_KEY`, web search is disabled and the model can only answer.
+  memory, or to hand the request over. Without `EXA_API_KEY`, web search is disabled and the
+  model can only answer or hand over.
 - Read-only: `reuse_count` is not incremented.
 
 When the request is out of scope, the requester asks for a person, or no source answers
@@ -361,12 +362,12 @@ comparison of configurations: set `METRICS_LABEL` to name each campaign.
 | `memory_candidates` | rows returned by the vector search |
 | `memory_kept` | entries above the threshold, after `top_k` |
 | `memory_top_score` | best rerank score before the threshold, empty without candidates |
-| `cited_knowledge`, `cited_web` | `K` and `W` refs in the citations, empty if not answered |
-| `dropped_refs` | unknown refs dropped by the agent, empty if not answered |
+| `cited_knowledge`, `cited_web` | `K` and `W` refs in the citations, 0 for a handover, empty if the run failed |
+| `dropped_refs` | unknown refs dropped by the agent, 0 for a handover, empty if the run failed |
 | `thread_messages` | messages in the thread |
 | `prior_replies` | `assistant` messages in the thread: 0 = first question, 1 = the support side answered once and the user replied, … The support side is the bot or a technician: `POST /answer` cannot tell them apart, and `answer_ticket` maps both to `assistant` |
 | `thread_chars` | characters in the thread |
-| `answer_chars` | answer length, empty if not answered |
+| `answer_chars` | answer length, the handover message when the bot hands over, empty if the run failed |
 | `web_cost_usd` | sum of `cost_usd`, empty if no search reported a cost |
 
 ### `calls.v1.csv`

@@ -27,9 +27,8 @@ async def create_answer(
     metrics: MetricsDep,
     settings: SettingsDep,
 ) -> AnswerOutcome:
-    """Answer a ticket thread from the memory and, if needed, a web search, with sources, or
-    hand it over to a technician.
-    """
+    """Answer a ticket thread from the memory and, if needed, a web search, with sources,
+    or hand it over to a technician."""
     return await answer.answer_thread(
         session, embedder, reranker, model, web_search, metrics, settings, data, source="api"
     )
