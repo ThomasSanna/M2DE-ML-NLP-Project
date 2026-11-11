@@ -175,7 +175,8 @@ after searching, the agent hands it over to a technician instead:
 ```
 
 - `message` is written for the requester, in their language; `reason` is for the support
-  and is never posted to GLPI. Both come from the model; `reason` may be empty.
+  and never reaches the requester (on a GLPI ticket it goes in a private followup). Both
+  come from the model; `reason` may be empty.
 
 ### `POST /api/v1/tickets/{ticket_id}/answer/stream`
 
