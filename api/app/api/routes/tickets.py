@@ -94,9 +94,12 @@ async def stream_ticket_answer(
             logger.error("%s", exc)
             yield _sse("error", json.dumps({"detail": "GLPI unavailable"}))
             return
-        # The followup is posted: the run is done even if the recording of it fails.
-        progress.done(ticket_id, followup_id)
-        await survey.record_answer(session, ticket_id, followup_id, result)
+        # `done` reloads the plugin's page, which then reads the sources from this row. The
+        # followup is posted: the run is done even if the recording of it fails.
+        try:
+            await survey.record_answer(session, ticket_id, followup_id, result)
+        finally:
+            progress.done(ticket_id, followup_id)
         yield _sse("done", json.dumps({"followup_id": followup_id}))
 
     return StreamingResponse(

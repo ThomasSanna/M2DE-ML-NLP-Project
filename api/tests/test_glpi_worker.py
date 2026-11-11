@@ -1,5 +1,6 @@
 import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
@@ -271,6 +272,28 @@ def test_worker_reports_the_run_until_the_followup(client: TestClient, settings:
     assert view is not None
     assert (view.status, view.followup_id) == ("done", 7)
     assert view.steps == [{"kind": "thinking"}]
+
+
+def test_worker_records_the_answer_before_reporting_the_run_done(
+    client: TestClient, settings: Settings
+) -> None:
+    # `done` reloads the plugin's page, which reads the sources from `ticket_answer` at once.
+    class SnapshotBoard(ProgressBoard):
+        rows_at_done: list[tuple[int, int, list[object]]] | None = None
+
+        def done(self, ticket_id: int, followup_id: int) -> None:
+            # The worker's loop is running here: read the table from another thread.
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                self.rows_at_done = pool.submit(_ticket_answers, settings).result()
+            super().done(ticket_id, followup_id)
+
+    board = SnapshotBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(), progress=board)
+
+    assert board.rows_at_done is not None
+    assert [row[:2] for row in board.rows_at_done] == [(TICKET.id, 7)]
 
 
 def test_worker_marks_the_run_failed_on_a_model_error(

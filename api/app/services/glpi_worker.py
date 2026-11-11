@@ -127,9 +127,13 @@ class GlpiEventWorker:
             self.progress.failed(ticket_id)
             logger.error("GLPI event %d (ticket %d) failed: %s", event.id, ticket_id, exc)
             return str(exc)
-        self.progress.done(ticket_id, followup_id)
         logger.info("GLPI event %d: followup %d on ticket %d", event.id, followup_id, ticket_id)
-        await survey.record_answer(session, ticket_id, followup_id, result)
+        # `done` reloads the plugin's page, which then reads the sources from this row. The
+        # followup is posted: the run is done even if the recording of it fails.
+        try:
+            await survey.record_answer(session, ticket_id, followup_id, result)
+        finally:
+            self.progress.done(ticket_id, followup_id)
         return None
 
 
