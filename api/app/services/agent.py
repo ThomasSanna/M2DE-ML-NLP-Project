@@ -104,9 +104,8 @@ async def run_agent(
             feedback = invalid_output(action)
         elif isinstance(action, EscalateAction):
             logger.info(
-                "agent step %d: escalate %r (prompt=%d, completion=%d)",
+                "agent step %d: escalate (prompt=%d, completion=%d)",
                 step,
-                action.reason,
                 completion.prompt_tokens,
                 completion.completion_tokens,
             )

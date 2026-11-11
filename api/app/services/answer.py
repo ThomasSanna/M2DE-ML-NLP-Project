@@ -117,7 +117,8 @@ async def answer_thread(
     memory_hits = [MemoryHit(knowledge_id=entry.id, score=score) for entry, score in hits]
     usage = Usage(prompt_tokens=run.prompt_tokens, completion_tokens=run.completion_tokens)
     if run.escalation_reason is not None:
-        logger.info("handed over to a technician: %s", run.escalation_reason)
+        # The reason sums up the thread: DEBUG only, like the thread itself.
+        logger.debug("handed over to a technician: %s", run.escalation_reason)
         record("escalated", run.answer, [])
         return EscalationResult(
             message=run.answer,
