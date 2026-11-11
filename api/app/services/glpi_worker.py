@@ -124,6 +124,7 @@ class GlpiEventWorker:
             return str(exc)
         logger.info("GLPI event %d: followup %d on ticket %d", event.id, followup_id, ticket_id)
         await survey.record_answer(session, ticket_id, followup_id, result)
+        await answer.post_handover_note(self.glpi, ticket_id, result)
         return None
 
 

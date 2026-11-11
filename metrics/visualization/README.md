@@ -15,7 +15,7 @@ uv run report.py --lang en             # English report; French is the default
 ```
 
 The report is written in French by default, numbers included (`3,5 s`, `67 %`); `--lang en`
-writes it in English. Data codes such as outcomes (`answered`, `llm_error`) and call kinds
+writes it in English. Data codes such as outcomes (`answered`, `escalated`, `llm_error`) and call kinds
 (`embed`, `llm`) keep their CSV spelling in both languages.
 
 Collect data first: set `METRICS_DIR` (and optionally `METRICS_LABEL`) in `.env`, then
@@ -57,9 +57,9 @@ mean, and what to look for.
 | Configurations | One row per configuration: `METRICS_LABEL` plus the settings recorded with each run. C1 is the configuration with the most answered runs, the baseline: other configurations are compared with it on median total and mean tokens. |
 | Latency | Total duration per answered run, filtered by web search, thread and memory. Mean time per run split by call kind, per configuration. `other` is the time outside remote calls: prompt building, DB commit, parsing. Also the timeline of a typical run, the duration of each call kind, gaps between calls, and generation speed (completion tokens per second, prefill included). |
 | Tokens and cache | Prompt and completion tokens per run and per agent step, thread length against prompt size, and the prefix cache rate. The cache rate needs vLLM started with `--enable-prompt-tokens-details`; until then the report says it is not reported. |
-| Agent | Steps per run, what the model did at each step (`answer`, `search`, `invalid`), responses cut by `LLM_MAX_TOKENS`, web searches by outcome, Exa cost, and refs the model cited without having seen them (dropped). |
+| Agent | Steps per run, what the model did at each step (`answer`, `search`, `escalate`, `invalid`), responses cut by `LLM_MAX_TOKENS`, web searches by outcome, Exa cost, and refs the model cited without having seen them (dropped). |
 | Memory and thread | Memory entries kept after the rerank threshold, best rerank score against the threshold (runs just below it hint at a threshold that is too strict), what answers cite, and first questions against follow-ups (`prior_replies`). |
-| Errors | Failed runs by outcome, the call that failed them, and the latest failures. |
+| Errors | Failed runs by outcome, the call that failed them, and the latest failures. Only the `*_error` outcomes are failures: a run ended by a handover to a technician is an outcome, not an error. |
 
 ## Comparing configurations
 

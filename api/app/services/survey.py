@@ -4,31 +4,43 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Feedback, FeedbackSource, Knowledge, TicketAnswer
-from app.schemas.answer import AnswerResult, KnowledgeCitation
+from app.schemas.answer import AnswerOutcome, EscalationResult, KnowledgeCitation
 from app.services.glpi import Glpi, GlpiError
 
 logger = logging.getLogger(__name__)
 
 
 async def record_answer(
-    session: AsyncSession, ticket_id: int, followup_id: int, result: AnswerResult
+    session: AsyncSession, ticket_id: int, followup_id: int, result: AnswerOutcome
 ) -> None:
-    """Remember the memory entries a followup posted to the ticket cited."""
+    """Remember a followup posted to the ticket: the memory entries it cited, or a handover."""
+    if isinstance(result, EscalationResult):
+        # A handover cites nothing: the survey has no entry to credit.
+        cited: list[uuid.UUID] = []
+        escalated = True
+    else:
+        cited = [s.knowledge_id for s in result.sources if isinstance(s, KnowledgeCitation)]
+        escalated = False
     session.add(
         TicketAnswer(
             glpi_ticket_id=ticket_id,
             glpi_followup_id=followup_id,
-            knowledge_ids=[
-                s.knowledge_id for s in result.sources if isinstance(s, KnowledgeCitation)
-            ],
+            knowledge_ids=cited,
+            escalated=escalated,
         )
     )
     await session.commit()
+
+
+async def is_escalated(session: AsyncSession, ticket_id: int) -> bool:
+    """Whether the bot handed the ticket to a technician: it then never answers it again."""
+    handover = exists().where(TicketAnswer.glpi_ticket_id == ticket_id, TicketAnswer.escalated)
+    return bool(await session.scalar(select(handover)))
 
 
 async def sync_surveys(session: AsyncSession, glpi: Glpi) -> int:

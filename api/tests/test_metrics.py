@@ -317,6 +317,28 @@ def test_answer_writes_the_run_and_its_calls(
     assert all(float(c["duration_ms"]) >= 0 for c in calls)
 
 
+def test_escalation_is_recorded_as_its_own_outcome(
+    client: TestClient, auth: dict[str, str], tmp_path: Path
+) -> None:
+    message = "Votre demande est transmise à un technicien."
+    escalation = {"action": "escalate", "answer": message, "reason": "hors sujet"}
+    override(client, get_chat_model, ScriptedChatModel([json.dumps(escalation)]))
+    override(client, get_metrics, CsvMetricsWriter(tmp_path))
+
+    response = client.post("/api/v1/answer", json={"messages": THREAD}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    [run] = csv_rows(tmp_path / "runs.v1.csv")
+    assert (run["outcome"], run["answer_chars"], run["cited_knowledge"], run["cited_web"]) == (
+        "escalated",
+        str(len(message)),
+        "0",
+        "0",
+    )
+    calls = csv_rows(tmp_path / "calls.v1.csv")
+    assert [c["action"] for c in calls if c["kind"] == "llm"] == ["escalate"]
+
+
 @pytest.mark.parametrize(
     ("dependency", "failing", "outcome", "status"),
     [

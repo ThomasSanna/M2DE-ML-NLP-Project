@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from app.core.config import Settings
 from app.db.session import create_engine, create_sessionmaker
-from app.services.glpi import Author, GlpiFollowup
+from app.services.glpi import Author, GlpiError, GlpiFollowup
 from app.services.glpi_worker import MAX_ATTEMPTS, GlpiEventWorker
 from app.services.llm import ChatModel
 from app.services.metrics import CsvMetricsWriter
@@ -246,6 +246,68 @@ def test_worker_records_the_entries_its_followup_cited(
     [(ticket_id, followup_id, knowledge_ids)] = _ticket_answers(settings)
     assert (ticket_id, followup_id) == (TICKET.id, 7)
     assert [str(knowledge_id) for knowledge_id in knowledge_ids] == [entry]
+
+
+HANDOVER = "Votre demande est transmise à un technicien."
+
+
+def test_handed_over_ticket_is_never_answered_again(client: TestClient, settings: Settings) -> None:
+    glpi = FakeGlpi()
+    escalation = {"action": "escalate", "answer": HANDOVER, "reason": "hors sujet"}
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, glpi, ScriptedChatModel([json.dumps(escalation)]))
+
+    # The reason goes to the technicians in a private followup, never to the requester.
+    assert glpi.followups == [
+        (TICKET.id, HANDOVER, False),
+        (TICKET.id, "Passation à un technicien. Raison : hors sujet", True),
+    ]
+    assert _ticket_answers(settings) == [(TICKET.id, 7, [])]
+
+    run_sql(settings, "DELETE FROM glpi_event")
+    reply = GlpiFollowup(8, Author.REQUESTER, "Et alors ?")
+    later = FakeGlpi(replace(TICKET, followups=(GlpiFollowup(7, Author.BOT, HANDOVER), reply)))
+    _queue(client, _new_followup(reply))
+
+    # A model call would fail the event: the handover alone keeps the bot silent.
+    assert _process(settings, later, FailingChatModel())
+
+    assert later.followups == []
+    assert _event_state(settings) == ("done", 1, None)
+
+
+def test_handover_without_reason_posts_no_private_note(
+    client: TestClient, settings: Settings
+) -> None:
+    glpi = FakeGlpi()
+    _queue(client, NEW_TICKET)
+
+    escalation = {"action": "escalate", "answer": HANDOVER, "reason": " "}
+    assert _process(settings, glpi, ScriptedChatModel([json.dumps(escalation)]))
+
+    assert glpi.followups == [(TICKET.id, HANDOVER, False)]
+
+
+class _NoPrivateGlpi(FakeGlpi):
+    async def add_followup(self, ticket_id: int, text: str, *, private: bool) -> int:
+        if private:
+            raise GlpiError("GLPI down")
+        return await super().add_followup(ticket_id, text, private=private)
+
+
+def test_failed_handover_note_does_not_fail_the_event(
+    client: TestClient, settings: Settings
+) -> None:
+    glpi = _NoPrivateGlpi()
+    _queue(client, NEW_TICKET)
+
+    escalation = {"action": "escalate", "answer": HANDOVER, "reason": "hors sujet"}
+    assert _process(settings, glpi, ScriptedChatModel([json.dumps(escalation)]))
+
+    assert glpi.followups == [(TICKET.id, HANDOVER, False)]
+    assert _event_state(settings) == ("done", 1, None)
+    assert _ticket_answers(settings) == [(TICKET.id, 7, [])]
 
 
 def test_worker_records_nothing_when_the_followup_fails(

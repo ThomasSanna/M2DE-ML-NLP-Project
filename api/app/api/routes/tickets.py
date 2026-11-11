@@ -47,9 +47,12 @@ async def stream_ticket_answer(
 ) -> StreamingResponse:
     """Answer a GLPI ticket's thread, then post the answer as a followup of the ticket.
 
-    Events: `answer` (an `AnswerResult`), then `done` (`{"followup_id": int}`) or `error`
-    when GLPI rejects the followup. A missing ticket, a thread the support side wrote last or
-    a failing model is an HTTP error returned before the stream opens.
+    Events: `answer` (an `AnswerResult`, or an `EscalationResult` when the bot hands the
+    ticket over), then `done`
+    (`{"followup_id": int}`) or `error`
+    when GLPI rejects the followup. A missing ticket, a thread the support side wrote last
+    or that was handed over, or a failing model is an HTTP error returned before the stream
+    opens.
     """
     ticket = await glpi.get_ticket(ticket_id)
     if ticket is None:
@@ -67,7 +70,9 @@ async def stream_ticket_answer(
     )
     if result is None:
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "Nothing to answer: the support side wrote last"
+            status.HTTP_409_CONFLICT,
+            "Nothing to answer: the support side wrote last or the ticket was handed to a"
+            " technician",
         )
 
     async def events() -> AsyncIterator[str]:
@@ -82,6 +87,7 @@ async def stream_ticket_answer(
             yield _sse("error", json.dumps({"detail": "GLPI unavailable"}))
             return
         await survey.record_answer(session, ticket_id, followup_id, result)
+        await answer.post_handover_note(glpi, ticket_id, result)
         yield _sse("done", json.dumps({"followup_id": followup_id}))
 
     return StreamingResponse(

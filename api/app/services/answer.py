@@ -5,20 +5,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.schemas.answer import (
     THREAD_MESSAGE_MAX_CHARS,
+    AnswerOutcome,
     AnswerRequest,
     AnswerResult,
     Citation,
+    EscalationResult,
     KnowledgeCitation,
     MemoryHit,
     ThreadMessage,
     Usage,
     WebCitation,
 )
-from app.services import memory
+from app.services import memory, survey
 from app.services.agent import run_agent
 from app.services.agent_prompt import initial_messages, render_memory, render_thread, strip_refs
 from app.services.embeddings import Embedder, EmbeddingError
-from app.services.glpi import Author, GlpiTicket
+from app.services.glpi import Author, Glpi, GlpiError, GlpiTicket
 from app.services.llm import ChatModel, LLMError
 from app.services.metrics import (
     CsvMetricsWriter,
@@ -56,7 +58,7 @@ async def answer_thread(
     *,
     source: Source,
     ticket_id: int | None = None,
-) -> AnswerResult:
+) -> AnswerOutcome:
     """Answer the thread's last user message from the memory, then the web if needed."""
     recorder = RunRecorder()
     text = _retrieval_query(request.messages)
@@ -112,6 +114,20 @@ async def answer_thread(
     except tuple(_OUTCOMES) as exc:
         record(next(o for error, o in _OUTCOMES.items() if isinstance(exc, error)), None, None)
         raise
+    memory_hits = [MemoryHit(knowledge_id=entry.id, score=score) for entry, score in hits]
+    usage = Usage(prompt_tokens=run.prompt_tokens, completion_tokens=run.completion_tokens)
+    if run.escalation_reason is not None:
+        # The reason sums up the thread: DEBUG only, like the thread itself.
+        logger.debug("handed over to a technician: %s", run.escalation_reason)
+        record("escalated", run.answer, [])
+        return EscalationResult(
+            message=run.answer,
+            reason=run.escalation_reason,
+            memory=memory_hits,
+            searches=run.searches,
+            steps=run.steps,
+            usage=usage,
+        )
     record("answered", run.answer, run.cited_refs)
 
     sources: list[Citation] = []
@@ -127,10 +143,10 @@ async def answer_thread(
     return AnswerResult(
         answer=run.answer,
         sources=sources,
-        memory=[MemoryHit(knowledge_id=entry.id, score=score) for entry, score in hits],
+        memory=memory_hits,
         searches=run.searches,
         steps=run.steps,
-        usage=Usage(prompt_tokens=run.prompt_tokens, completion_tokens=run.completion_tokens),
+        usage=usage,
     )
 
 
@@ -145,8 +161,9 @@ async def answer_ticket(
     ticket: GlpiTicket,
     *,
     source: Source,
-) -> AnswerResult | None:
-    """Answer a GLPI ticket's thread; None when the support side wrote last."""
+) -> AnswerOutcome | None:
+    """Answer a GLPI ticket's thread; None when the support side wrote last or the bot
+    handed the ticket to a technician."""
     messages = [
         ThreadMessage(
             role="user", content=f"{ticket.title}\n\n{ticket.content}"[:THREAD_MESSAGE_MAX_CHARS]
@@ -158,7 +175,7 @@ async def answer_ticket(
         )
         for followup in ticket.followups
     ]
-    if messages[-1].role != "user":
+    if messages[-1].role != "user" or await survey.is_escalated(session, ticket.id):
         return None
     request = AnswerRequest(messages=messages)
     return await answer_thread(
@@ -175,8 +192,10 @@ async def answer_ticket(
     )
 
 
-def followup_text(result: AnswerResult) -> str:
+def followup_text(result: AnswerOutcome) -> str:
     """The answer as the requester reads it: refs mean nothing to them, web pages can help."""
+    if isinstance(result, EscalationResult):
+        return strip_refs(result.message)
     text = strip_refs(result.answer)
     # Keyed by URL: two searches can return the same page under two refs.
     pages = {s.url: s.title for s in result.sources if isinstance(s, WebCitation)}
@@ -184,6 +203,23 @@ def followup_text(result: AnswerResult) -> str:
         return text
     lines = "\n".join(f"- {title} : {url}" for url, title in pages.items())
     return f"{text}\n\nSources :\n{lines}"
+
+
+async def post_handover_note(glpi: Glpi, ticket_id: int, result: AnswerOutcome) -> None:
+    """Tell the technicians, in a private followup, why the bot handed the ticket over.
+
+    Call it after the public followup is recorded: the note is a help, not the answer, so a
+    GLPI failure here is logged and must not fail the event (a retry would find the ticket
+    handed over and post nothing).
+    """
+    if not isinstance(result, EscalationResult) or not result.reason.strip():
+        return
+    try:
+        await glpi.add_followup(
+            ticket_id, f"Passation à un technicien. Raison : {result.reason.strip()}", private=True
+        )
+    except GlpiError as exc:
+        logger.warning("Handover note on ticket %d failed: %s", ticket_id, exc)
 
 
 def _retrieval_query(messages: list[ThreadMessage]) -> str:

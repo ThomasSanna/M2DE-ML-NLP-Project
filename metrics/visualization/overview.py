@@ -126,6 +126,7 @@ def _per_day(runs: pd.DataFrame) -> Chart:
         t("Runs per day, by outcome"),
         t(
             "One bar per day (UTC), split by outcome. answered: the bot replied;"
+            " escalated: the bot handed the request over to a technician;"
             " embedding_error, reranker_error, llm_error: the run stopped because the embeddings"
             " server, the reranker or the language model failed."
         ),

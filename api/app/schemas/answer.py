@@ -53,8 +53,6 @@ class Usage(BaseModel):
 
 
 class AnswerResult(BaseModel):
-    # A one-member discriminated union is rejected by pydantic: escalation will turn the
-    # route's return type into `AnswerResult | EscalationResult` on `kind`.
     kind: Literal["answer"] = "answer"
     answer: str
     sources: list[Citation]
@@ -63,3 +61,20 @@ class AnswerResult(BaseModel):
     searches: list[str]
     steps: int
     usage: Usage
+
+
+class EscalationResult(BaseModel):
+    """The agent handed the request to a technician instead of answering."""
+
+    kind: Literal["escalation"] = "escalation"
+    # Shown to the requester.
+    message: str
+    # For the support only, never shown to the requester.
+    reason: str
+    memory: list[MemoryHit]
+    searches: list[str]
+    steps: int
+    usage: Usage
+
+
+AnswerOutcome = Annotated[AnswerResult | EscalationResult, Field(discriminator="kind")]
