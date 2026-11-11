@@ -1,4 +1,4 @@
-"""Bounded search-or-answer loop over the chat model.
+"""Bounded search, answer or escalate loop over the chat model.
 
 Messages are append-only: each step adds the raw model output and one user message
 with its result, so the server can reuse the cached prompt prefix.
@@ -16,6 +16,7 @@ from app.services.agent_prompt import (
     REF_GROUP,
     SEARCH_UNAVAILABLE,
     AnswerAction,
+    EscalateAction,
     SearchAction,
     decision_schema,
     invalid_output,
@@ -43,9 +44,12 @@ class AgentRun:
     steps: int
     prompt_tokens: int
     completion_tokens: int
+    # Set when the model handed the request to a technician: `answer` is then the message
+    # to the requester and nothing is cited.
+    escalation_reason: str | None = None
 
 
-def _parse(completion: Completion) -> SearchAction | AnswerAction | str:
+def _parse(completion: Completion) -> SearchAction | AnswerAction | EscalateAction | str:
     """The action, or a short error to feed back to the model."""
     if completion.finish_reason == "length":
         return "réponse coupée par la limite de longueur"
@@ -102,6 +106,26 @@ async def run_agent(
             if last:
                 raise LLMError(f"Invalid model output at the last step: {action}")
             feedback = invalid_output(action)
+        elif isinstance(action, EscalateAction):
+            logger.info(
+                "agent step %d: escalate (prompt=%d, completion=%d)",
+                step,
+                completion.prompt_tokens,
+                completion.completion_tokens,
+            )
+            # A handover cites nothing: the message to the requester is not a source, so
+            # no ref is dropped.
+            recorder.dropped_refs = 0
+            return AgentRun(
+                answer=action.answer,
+                cited_refs=[],
+                searches=searches,
+                web_results=web_results,
+                steps=step,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                escalation_reason=action.reason,
+            )
         elif isinstance(action, AnswerAction):
             logger.info(
                 "agent step %d: answer (prompt=%d, completion=%d)",

@@ -63,7 +63,7 @@ Compose runs it as three services: `postgres` (PostgreSQL 17 + pgvector), `migra
 | `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | add a Q/A pair (the question is embedded) |
 | `GET` | `/api/v1/memory/knowledge/{id}` | `X-API-Key` | read a knowledge entry |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | top-k cosine similarity search over `active` entries |
-| `POST` | `/api/v1/answer` | `X-API-Key` | answer a ticket thread from memory and web search, with sources |
+| `POST` | `/api/v1/answer` | `X-API-Key` | answer a ticket thread from memory and web search, with sources, or hand it over to a technician |
 | `POST` | `/api/v1/tickets/{id}/answer/stream` | `X-API-Key` | answer a GLPI ticket's thread and post the answer as a followup (SSE) |
 | `GET` | `/api/v1/tickets/{id}/progress` | `X-API-Key` | live progress of the answer the bot is writing on a ticket |
 | `GET` | `/api/v1/tickets/{id}/answers` | `X-API-Key` | web sources cited by each answer the bot posted on a ticket |
@@ -173,7 +173,7 @@ An empty variable skips the step or leaves the corresponding setting unchanged. 
 
 | Direction | Mechanism | Detail |
 |---|---|---|
-| GLPI → API | Webhooks `Ticket / New` and `ITILFollowup / New` | `POST http://api:8000/api/v1/ingest/ticket`, HMAC-signed. Queued by GLPI and sent by the `queuedwebhook` task (within 60 s). An API worker then answers the ticket or the requester's followup in a followup, as the SSE route does, until a technician writes a public followup. |
+| GLPI → API | Webhooks `Ticket / New` and `ITILFollowup / New` | `POST http://api:8000/api/v1/ingest/ticket`, HMAC-signed. Queued by GLPI and sent by the `queuedwebhook` task (within 60 s). An API worker then answers the ticket or the requester's followup in a followup, as the SSE route does, until a technician writes a public followup or the bot hands the ticket over. |
 | API → GLPI (read/write) | REST API `/apirest.php` as the bot user | `User-Token` + `App-Token`. Writes go through the REST API only, so GLPI keeps its notifications, history and rights. |
 | API → GLPI database (bulk read) | MariaDB user `memoire_ro` | `SELECT` only (`db:3306`). Never any SQL write. |
 | Client → API → GLPI | `POST /api/v1/tickets/{id}/answer/stream` (SSE) | Reads the ticket and its public followups, answers the thread, then posts the answer as a followup through the REST API. |

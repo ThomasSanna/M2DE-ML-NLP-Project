@@ -23,7 +23,8 @@ def build(metrics: Metrics) -> Section:
 
 def _summary(runs: pd.DataFrame) -> pd.DataFrame:
     summary = runs.groupby("config_id").agg(
-        config=("config", "first"), errors=("outcome", lambda o: int((o != "answered").sum()))
+        config=("config", "first"),
+        errors=("outcome", lambda o: int(o.str.endswith("_error").sum())),
     )
     groups = answered(runs).groupby("config_id")
     summary["answered"] = groups.size().reindex(summary.index, fill_value=0)

@@ -127,7 +127,7 @@ curl -X POST http://localhost:8000/api/v1/answer \
       ]}'
 ```
 
-**Output**: `200`, `AnswerResult`:
+**Output**: `200`, an `AnswerResult` (`kind: "answer"`) or an `EscalationResult` (`kind: "escalation"`):
 
 ```json
 {
@@ -157,8 +157,28 @@ curl -X POST http://localhost:8000/api/v1/answer \
   fails, including a model that still returns invalid JSON at the last step. The cause is
   only logged.
 - A failed web search does not fail the request: the model is told to answer from the
-  memory. Without `EXA_API_KEY`, web search is disabled and the model can only answer.
+  memory, or to hand the request over. Without `EXA_API_KEY`, web search is disabled and the
+  model can only answer or hand over.
 - Read-only: `reuse_count` is not incremented.
+
+When the request is out of scope, the requester asks for a person, or no source answers
+after searching, the agent hands it over to a technician instead:
+
+```json
+{
+  "kind": "escalation",
+  "message": "Votre demande est transmise à un technicien.",
+  "reason": "hors sujet : météo",
+  "memory": [],
+  "searches": [],
+  "steps": 1,
+  "usage": {"prompt_tokens": 1830, "completion_tokens": 42}
+}
+```
+
+- `message` is written for the requester, in their language; `reason` is for the support
+  and never reaches the requester (on a GLPI ticket it goes in a private followup). Both
+  come from the model; `reason` may be empty.
 
 ### `POST /api/v1/tickets/{ticket_id}/answer/stream`
 
@@ -181,17 +201,23 @@ event: done
 data: {"followup_id": 1234}
 ```
 
-- `answer`: the `AnswerResult` of `POST /api/v1/answer`, sent before the followup is written.
+- `answer`: the `AnswerResult` or `EscalationResult` of `POST /api/v1/answer`, sent
+  before the followup is written. A handover is posted as its `message` alone. Its `reason`,
+  when not empty, follows in a second, always private followup for the technicians
+  (`Passation à un technicien. Raison : ...`): the requester never sees it. A GLPI failure on
+  that note is only logged.
 - `done`: the followup is in GLPI. Public by default, so GLPI emails the requester;
   `GLPI_FOLLOWUP_PRIVATE=true` makes it private, for a technician to validate.
 - The followup is the answer without its `[K1]`/`[W2]` refs, followed by a `Sources :` list
   (title and URL, one line per page) when the answer cites at least one web result. Memory
   entries are never listed: they mean nothing to the requester.
+- A handover followup has no refs and no `Sources :` list.
 - `error` `{"detail": "GLPI unavailable"}` instead of `done` when GLPI rejects the followup.
   The status is already `200` at that point; the cause is only logged.
 - Errors before the stream opens are plain JSON: `404` `GLPI ticket not found`, `409`
-  `Nothing to answer: the support side wrote last` when the last public followup is not a
-  requester's, `503` when
+  `Nothing to answer: the support side wrote last or the ticket was handed to a technician`
+  when the last public followup is not a requester's or the bot already handed the ticket
+  over, `503` when
   `GLPI_USER_TOKEN` is empty, `502` when GLPI (`GLPI unavailable`) or a model fails (same
   messages as `POST /api/v1/answer`).
 - `POST`, not `GET`: the route writes to GLPI and needs `X-API-Key`. A browser reads it with
@@ -270,6 +296,9 @@ arrives within about a minute.
 
 - The bot answers each public followup of a requester, until someone else (a technician)
   writes a public followup: from then on it stays silent on that ticket.
+- When the agent hands a ticket over to a technician, the bot posts its message (public
+  unless `GLPI_FOLLOWUP_PRIVATE`), records the handover in `ticket_answer`, adds the reason
+  in a private followup, and never answers that ticket again.
 - An event whose message is no longer the last public followup is skipped: the newer
   followup's own event answers the whole thread. So are the events of the bot's own
   followups, which GLPI sends too.
@@ -290,7 +319,8 @@ reads the answered surveys through the REST API (`GET /TicketSatisfaction`, the 
 every `GLPI_SURVEY_POLL_SECONDS`: GLPI sends no webhook for them.
 
 - Each followup the bot posts (worker or ticket stream) is recorded in `ticket_answer` with
-  the memory entries it cited (`K` refs). A followup GLPI rejected is not recorded.
+  the memory entries it cited (`K` refs), or as a handover (`escalated`, no entries: a survey
+  credits nothing). A followup GLPI rejected is not recorded.
 - An answered survey of such a ticket adds one `feedback` row (`source = survey`) per entry
   cited by any bot answer on the ticket: `score` = rating / 5, `comment` = the requester's
   comment. The survey rates the whole ticket, technician included if one took over.
@@ -307,7 +337,7 @@ every `GLPI_SURVEY_POLL_SECONDS`: GLPI sends no webhook for them.
 
 **`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`, unique par ticket et entrée) ; non exposé par l'API.
 
-**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `web_sources` = web pages cited, `{title, url}` once per URL, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
+**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
 
 **`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par le worker (`app/services/glpi_worker.py`).
 
@@ -383,7 +413,7 @@ comparison of configurations: set `METRICS_LABEL` to name each campaign.
 | `ticket_id` | GLPI ticket id, empty for `api` |
 | `label` | `METRICS_LABEL`, empty if unset |
 | `query_hash` | first 16 hex chars of the SHA-256 of the retrieval query |
-| `outcome` | `answered`, `embedding_error`, `reranker_error`, `llm_error` |
+| `outcome` | `answered`, `escalated`, `embedding_error`, `reranker_error`, `llm_error` |
 | `llm_model`, `agent_max_steps`, `llm_max_tokens`, `retrieval_candidates`, `retrieval_top_k`, `rerank_threshold` | settings of the run |
 | `web_search_enabled` | `True` when a web search client is configured, else `False` |
 | `total_ms` | `answer_thread` entry to row assembly |
@@ -399,12 +429,12 @@ comparison of configurations: set `METRICS_LABEL` to name each campaign.
 | `memory_candidates` | rows returned by the vector search |
 | `memory_kept` | entries above the threshold, after `top_k` |
 | `memory_top_score` | best rerank score before the threshold, empty without candidates |
-| `cited_knowledge`, `cited_web` | `K` and `W` refs in the citations, empty if not answered |
-| `dropped_refs` | unknown refs dropped by the agent, empty if not answered |
+| `cited_knowledge`, `cited_web` | `K` and `W` refs in the citations, 0 for a handover, empty if the run failed |
+| `dropped_refs` | unknown refs dropped by the agent, 0 for a handover, empty if the run failed |
 | `thread_messages` | messages in the thread |
 | `prior_replies` | `assistant` messages in the thread: 0 = first question, 1 = the support side answered once and the user replied, … The support side is the bot or a technician: `POST /answer` cannot tell them apart, and `answer_ticket` maps both to `assistant` |
 | `thread_chars` | characters in the thread |
-| `answer_chars` | answer length, empty if not answered |
+| `answer_chars` | answer length, the handover message when the bot hands over, empty if the run failed |
 | `web_cost_usd` | sum of `cost_usd`, empty if no search reported a cost |
 
 ### `calls.v1.csv`
@@ -419,7 +449,7 @@ comparison of configurations: set `METRICS_LABEL` to name each campaign.
 | `duration_ms` | call duration |
 | `status` | `ok` or the exception class name |
 | `items` | `embed`: texts sent (1); `vector_search`: rows returned; `rerank`: documents sent; `web_search`: results returned; empty for `llm` |
-| `prompt_tokens`, `completion_tokens`, `cached_tokens`, `finish_reason`, `action` | `llm` only |
+| `prompt_tokens`, `completion_tokens`, `cached_tokens`, `finish_reason`, `action` | `llm` only; `action` is `search`, `answer`, `escalate` or `invalid` |
 | `cost_usd` | `web_search` only |
 
 Ratios are not stored: derive them from the raw columns. The time between two calls of a run
