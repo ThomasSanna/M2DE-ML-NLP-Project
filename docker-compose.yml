@@ -111,6 +111,8 @@ services:
 
   # ---------------------------------------------------------------- GLPI
   glpi:
+    # Bumping this tag: diff /opt/glpi/cron-worker.sh against glpi/cron/cron-worker.sh, which
+    # replaces it (5 s cron). A stale copy stops the cron, so no webhook reaches the bot.
     image: glpi/glpi:11.0.8
     container_name: poc-glpi
     environment:
