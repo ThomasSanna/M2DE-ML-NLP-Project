@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, Uuid, false, func
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import Boolean, DateTime, Integer, Uuid, false, func, text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -24,4 +24,8 @@ class TicketAnswer(Base):
     knowledge_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid))
     # A handed-over ticket belongs to the support: the bot never answers it again.
     escalated: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    # {title, url} of each web page the answer cited, once per URL.
+    web_sources: Mapped[list[dict[str, str]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

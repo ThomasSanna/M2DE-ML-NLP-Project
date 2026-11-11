@@ -18,6 +18,8 @@ Routes métier sous `/api/v1`.
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | `200` | `401`, `422`, `502` |
 | `POST` | `/api/v1/answer` | `X-API-Key` | `200` | `401`, `422`, `502` |
 | `POST` | `/api/v1/tickets/{ticket_id}/answer/stream` | `X-API-Key` | `200` (SSE) | `401`, `404`, `409`, `422`, `502`, `503` |
+| `GET` | `/api/v1/tickets/{ticket_id}/progress` | `X-API-Key` | `200` | `401`, `422` |
+| `GET` | `/api/v1/tickets/{ticket_id}/answers` | `X-API-Key` | `200` | `401`, `422` |
 
 ### Conventions
 
@@ -223,6 +225,68 @@ data: {"followup_id": 1234}
   header, and its automatic reconnection would post duplicate followups.
 - Not idempotent: every call posts a new followup.
 
+### `GET /api/v1/tickets/{ticket_id}/progress`
+
+Live progress of the answer the bot is writing on a ticket, for the GLPI plugin to
+render its "Assistant IA" bubble. Kept in memory in the API process, fed by the
+answer engine (`app/services/progress.py`), by the worker and by the stream route.
+
+```bash
+curl http://localhost:8000/api/v1/tickets/42/progress -H "X-API-Key: $API_KEY"
+```
+
+**Output**: `200`:
+
+```json
+{
+  "status": "searching",
+  "steps": [
+    {"kind": "thinking"},
+    {"kind": "search", "query": "prix licence windows 11", "sources": [
+      {"title": "Acheter Windows 11", "url": "https://example.org/win11", "domain": "example.org"}
+    ]}
+  ],
+  "followup_id": null
+}
+```
+
+- `status`: `idle` (nothing running), `thinking` (the model is deciding), `searching`
+  (a web search is running or its results are being read), `done` (the followup is in
+  GLPI, `followup_id` is set) or `failed` (a model or GLPI failure, the worker retries
+  the event later).
+- A step is either `{"kind": "thinking"}` or
+  `{"kind": "search", "query": "…", "sources": [{"title", "url", "domain"}]}`; `domain`
+  is the URL host without a leading `www.`.
+- `idle` for a ticket nobody answered, and after an API restart: the state is never
+  persisted, and only one API process knows about a run. A run stays readable for 5
+  minutes after its last update: a finished run, or a run whose caller stopped without
+  closing it.
+- Read-only, no remote call: an unknown or unanswerable ticket is `idle`, never `404`.
+  A non-positive `ticket_id` is `422`.
+
+### `GET /api/v1/tickets/{ticket_id}/answers`
+
+Web pages cited by each answer the bot posted on a ticket, for the plugin's sources
+pill. Read from `ticket_answer.web_sources`, so it survives a restart.
+
+```bash
+curl http://localhost:8000/api/v1/tickets/42/answers -H "X-API-Key: $API_KEY"
+```
+
+**Output**: `200`, oldest answer first:
+
+```json
+[{"followup_id": 1234, "sources": [
+  {"title": "Acheter Windows 11", "url": "https://example.org/win11", "domain": "example.org"}
+]}]
+```
+
+- One entry per recorded bot answer, in the order they were posted. An answer that cited
+  no web page has an empty `sources` list (the plugin ignores it).
+- Empty list for an unknown ticket or a ticket the bot never answered.
+- Memory entries (`K` refs) are never listed: only web pages, deduplicated by URL.
+- Read-only, no remote call. A non-positive `ticket_id` is `422`.
+
 ### Automatic answer to tickets and followups
 
 When `GLPI_USER_TOKEN` is set, a worker started with the API polls `glpi_event` every 5 s and
@@ -273,7 +337,7 @@ every `GLPI_SURVEY_POLL_SECONDS`: GLPI sends no webhook for them.
 
 **`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`, unique par ticket et entrée) ; non exposé par l'API.
 
-**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `created_at`). Links a satisfaction survey back to the entries it rates (`app/services/survey.py`).
+**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
 
 **`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par le worker (`app/services/glpi_worker.py`).
 

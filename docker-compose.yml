@@ -125,6 +125,10 @@ services:
       - glpi_marketplace:/var/glpi/marketplace
       # Allowlist des URL appelées par GLPI (webhook vers l'API mémoire)
       - ./glpi/config/local_define.php:/var/www/glpi/config/local_define.php:ro
+      # Plugin « Assistant IA » : bulle de progression et panneau des sources
+      - ./glpi/plugins/aiassistant:/var/www/glpi/plugins/aiassistant:ro
+      # CLI cron every 5 s instead of 60 s: webhooks to the API leave the queue sooner
+      - ./glpi/cron/cron-worker.sh:/opt/glpi/cron-worker.sh:ro
     ports:
       - "8080:80"
     networks:

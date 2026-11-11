@@ -1,5 +1,6 @@
 import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from app.services.glpi import Author, GlpiError, GlpiFollowup
 from app.services.glpi_worker import MAX_ATTEMPTS, GlpiEventWorker
 from app.services.llm import ChatModel
 from app.services.metrics import CsvMetricsWriter
+from app.services.progress import ProgressBoard
 from tests.conftest import (
     TICKET,
     FailingChatModel,
@@ -46,6 +48,7 @@ def _process(
     glpi: FakeGlpi,
     model: ChatModel | None = None,
     metrics: CsvMetricsWriter | None = None,
+    progress: ProgressBoard | None = None,
 ) -> bool:
     model = model or ScriptedChatModel(
         [json.dumps({"action": "answer", "answer": "Supprimez le profil [K1]"})]
@@ -62,6 +65,7 @@ def _process(
             metrics,
             glpi,
             settings,
+            progress or ProgressBoard(),
         )
         try:
             return await worker.process_next()
@@ -318,3 +322,83 @@ def test_worker_records_nothing_when_the_followup_fails(
     assert _process(settings, FakeGlpi(fail_followup=True))
 
     assert _ticket_answers(settings) == []
+
+
+def test_worker_reports_the_run_until_the_followup(client: TestClient, settings: Settings) -> None:
+    board = ProgressBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(), progress=board)
+
+    view = board.get(TICKET.id)
+    assert view is not None
+    assert (view.status, view.followup_id) == ("done", 7)
+    assert view.steps == [{"kind": "thinking"}]
+
+
+def test_worker_records_the_answer_before_reporting_the_run_done(
+    client: TestClient, settings: Settings
+) -> None:
+    # `done` reloads the plugin's page, which reads the sources from `ticket_answer` at once.
+    class SnapshotBoard(ProgressBoard):
+        rows_at_done: list[tuple[int, int, list[object]]] | None = None
+
+        def done(self, ticket_id: int, followup_id: int) -> None:
+            # The worker's loop is running here: read the table from another thread.
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                self.rows_at_done = pool.submit(_ticket_answers, settings).result()
+            super().done(ticket_id, followup_id)
+
+    board = SnapshotBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(), progress=board)
+
+    assert board.rows_at_done is not None
+    assert [row[:2] for row in board.rows_at_done] == [(TICKET.id, 7)]
+
+
+def test_worker_marks_the_run_failed_on_a_model_error(
+    client: TestClient, settings: Settings
+) -> None:
+    board = ProgressBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(), FailingChatModel(), progress=board)
+
+    view = board.get(TICKET.id)
+    assert view is not None
+    assert (view.status, view.followup_id) == ("failed", None)
+
+
+def test_worker_marks_the_run_failed_when_the_followup_fails(
+    client: TestClient, settings: Settings
+) -> None:
+    board = ProgressBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(fail_followup=True), progress=board)
+
+    assert _ticket_answers(settings) == []
+    view = board.get(TICKET.id)
+    assert view is not None
+    assert view.status == "failed"
+
+
+def test_worker_leaves_the_board_alone_when_the_technician_took_over(
+    client: TestClient, settings: Settings
+) -> None:
+    board = ProgressBoard()
+    trigger = GlpiFollowup(4, Author.REQUESTER, "Merci")
+    glpi = FakeGlpi(
+        replace(
+            TICKET,
+            followups=(REPLY, GlpiFollowup(3, Author.OTHER, "Je regarde"), trigger),
+        )
+    )
+    _queue(client, _new_followup(trigger))
+
+    assert _process(settings, glpi, FailingChatModel(), progress=board)
+
+    assert glpi.followups == []
+    assert board.get(TICKET.id) is None

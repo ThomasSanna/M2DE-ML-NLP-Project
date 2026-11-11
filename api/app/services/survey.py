@@ -9,22 +9,39 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Feedback, FeedbackSource, Knowledge, TicketAnswer
-from app.schemas.answer import AnswerOutcome, EscalationResult, KnowledgeCitation
+from app.schemas.answer import (
+    AnswerOutcome,
+    AnswerResult,
+    EscalationResult,
+    KnowledgeCitation,
+    WebCitation,
+)
 from app.services.glpi import Glpi, GlpiError
 
 logger = logging.getLogger(__name__)
 
 
+def _web_sources(result: AnswerResult) -> list[dict[str, str]]:
+    """Web pages the answer cited, once each, in citation order."""
+    pages: dict[str, str] = {}
+    for source in result.sources:
+        if isinstance(source, WebCitation):
+            pages.setdefault(source.url, source.title)
+    return [{"title": title, "url": url} for url, title in pages.items()]
+
+
 async def record_answer(
     session: AsyncSession, ticket_id: int, followup_id: int, result: AnswerOutcome
 ) -> None:
-    """Remember a followup posted to the ticket: the memory entries it cited, or a handover."""
+    """Remember a followup posted to the ticket: what it cited, or a handover."""
     if isinstance(result, EscalationResult):
-        # A handover cites nothing: the survey has no entry to credit.
+        # A handover cites nothing: the survey has no entry to credit, the panel no page.
         cited: list[uuid.UUID] = []
+        pages: list[dict[str, str]] = []
         escalated = True
     else:
         cited = [s.knowledge_id for s in result.sources if isinstance(s, KnowledgeCitation)]
+        pages = _web_sources(result)
         escalated = False
     session.add(
         TicketAnswer(
@@ -32,6 +49,7 @@ async def record_answer(
             glpi_followup_id=followup_id,
             knowledge_ids=cited,
             escalated=escalated,
+            web_sources=pages,
         )
     )
     await session.commit()
@@ -41,6 +59,18 @@ async def is_escalated(session: AsyncSession, ticket_id: int) -> bool:
     """Whether the bot handed the ticket to a technician: it then never answers it again."""
     handover = exists().where(TicketAnswer.glpi_ticket_id == ticket_id, TicketAnswer.escalated)
     return bool(await session.scalar(select(handover)))
+
+
+async def list_web_sources(
+    session: AsyncSession, ticket_id: int
+) -> list[tuple[int, list[dict[str, str]]]]:
+    """Sources of each answer posted on the ticket, oldest first."""
+    rows = await session.scalars(
+        select(TicketAnswer)
+        .where(TicketAnswer.glpi_ticket_id == ticket_id)
+        .order_by(TicketAnswer.created_at, TicketAnswer.id)
+    )
+    return [(row.glpi_followup_id, row.web_sources) for row in rows]
 
 
 async def sync_surveys(session: AsyncSession, glpi: Glpi) -> int:

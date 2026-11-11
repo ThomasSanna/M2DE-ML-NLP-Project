@@ -11,6 +11,7 @@ from app.services.embeddings import Embedder
 from app.services.glpi import Glpi
 from app.services.llm import ChatModel
 from app.services.metrics import CsvMetricsWriter
+from app.services.progress import ProgressBoard
 from app.services.reranker import Reranker
 from app.services.websearch import WebSearch
 
@@ -51,6 +52,10 @@ def get_glpi(request: Request) -> Glpi:
     return glpi
 
 
+def get_progress(request: Request) -> ProgressBoard:
+    return request.app.state.progress
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 EmbedderDep = Annotated[Embedder, Depends(get_embedder)]
@@ -59,6 +64,7 @@ ChatModelDep = Annotated[ChatModel, Depends(get_chat_model)]
 WebSearchDep = Annotated[WebSearch | None, Depends(get_web_search)]
 MetricsDep = Annotated[CsvMetricsWriter | None, Depends(get_metrics)]
 GlpiDep = Annotated[Glpi, Depends(get_glpi)]
+ProgressDep = Annotated[ProgressBoard, Depends(get_progress)]
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 

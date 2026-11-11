@@ -65,6 +65,8 @@ Compose runs it as three services: `postgres` (PostgreSQL 17 + pgvector), `migra
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | top-k cosine similarity search over `active` entries |
 | `POST` | `/api/v1/answer` | `X-API-Key` | answer a ticket thread from memory and web search, with sources, or hand it over to a technician |
 | `POST` | `/api/v1/tickets/{id}/answer/stream` | `X-API-Key` | answer a GLPI ticket's thread and post the answer as a followup (SSE) |
+| `GET` | `/api/v1/tickets/{id}/progress` | `X-API-Key` | live progress of the answer the bot is writing on a ticket |
+| `GET` | `/api/v1/tickets/{id}/answers` | `X-API-Key` | web sources cited by each answer the bot posted on a ticket |
 
 When `GLPI_WEBHOOK_SECRET` is set, the `X-GLPI-signature` header is verified (`HMAC-SHA256(body + X-GLPI-timestamp, secret)`, GLPI 11 format). When it is empty, every request is accepted and a warning is logged at startup.
 
@@ -102,6 +104,34 @@ Tests run against a real pgvector container and never call the embeddings server
 To change the schema: edit `app/models/`, run `uv run alembic revision --autogenerate -m "..."`, review the generated migration, then run `uv run alembic check` (it must report no changes). Never edit a migration that has already been shared.
 
 After changing API code, rebuild the container: `docker compose up -d --build api`.
+
+## GLPI AI assistant plugin
+
+Source in [`glpi/plugins/aiassistant/`](glpi/plugins/aiassistant/). It makes the bot's
+answer visible while it is being written, and gives the cited pages a readable shape.
+
+- **Progress bubble**: on a ticket the bot is answering, an "Assistant IA" entry appears at
+  the end of the timeline with "Réflexion", then "Recherche sur le web « … »" with the
+  sources' favicons and a count, like a chat assistant. The page reloads once when the
+  followup is posted.
+- **Sources pill**: the `Sources :` paragraph of each answer is hidden in the ticket
+  and replaced by a pill at the bottom right ("N sources" + stacked favicons). Clicking it
+  opens a panel listing the page title, its domain, and a link that opens in a new tab.
+  Escape or a click outside closes it.
+- **Plain text kept**: the followup itself still contains the `Sources :` list, so the
+  e-mail GLPI sends to the requester is unchanged.
+
+The browser never sees `API_KEY`: `ajax/ticket.php` checks the GLPI session and the ticket
+READ right, then calls `GET /api/v1/tickets/{id}/progress` and `/answers` with the key
+stored encrypted in `glpi_configs` (context `plugin:aiassistant`). Both calls are bounded to
+2 s; an unreachable API means "nothing running", never a broken page.
+
+Deployment: `docker-compose.yml` mounts `./glpi/plugins/aiassistant` read-only into the GLPI
+container, and step 8 of `scripts/configure-glpi.sh` stores `http://api:8000` + `API_KEY`,
+then installs and activates the plugin, so a fresh stack needs no click.
+
+The progress is held in memory by the API process: it is `idle` after a restart, and only a
+single-process API (`uvicorn` without `--workers`) sees its own runs.
 
 ## LDAP directory
 

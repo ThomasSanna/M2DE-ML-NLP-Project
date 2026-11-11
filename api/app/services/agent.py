@@ -25,6 +25,7 @@ from app.services.agent_prompt import (
 )
 from app.services.llm import ChatMessage, ChatModel, Completion, LLMError
 from app.services.metrics import RunRecorder
+from app.services.progress import TicketProgress
 from app.services.websearch import WebResult, WebSearch, WebSearchError
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ async def run_agent(
     memory_refs: set[str],
     max_steps: int,
     recorder: RunRecorder,
+    progress: TicketProgress | None = None,
 ) -> AgentRun:
     messages = list(messages)
     searches: list[str] = []
@@ -83,6 +85,8 @@ async def run_agent(
                 "content": f"{final['content']}\n\n{MAX_STEPS_NOTICE}",
             }
         known = memory_refs | web_results.keys()
+        if progress is not None:
+            progress.thinking()
         with recorder.call("llm", step) as llm_call:
             completion = await model.complete(
                 messages, decision_schema(web_search is not None and not last, sorted(known))
@@ -165,6 +169,8 @@ async def run_agent(
                 recorder.searches_duplicate += 1
                 feedback = DUPLICATE_SEARCH
             else:
+                if progress is not None:
+                    progress.searching(action.query)
                 try:
                     with recorder.call("web_search", step) as web_call:
                         response = await web_search.search(action.query)
@@ -181,6 +187,8 @@ async def run_agent(
                     first_ref = len(web_results) + 1
                     for ref, result in enumerate(results, start=first_ref):
                         web_results[f"W{ref}"] = result
+                    if progress is not None:
+                        progress.found(results)
                     feedback = render_web_results(action.query, results, first_ref)
         messages.append({"role": "user", "content": feedback})
 
