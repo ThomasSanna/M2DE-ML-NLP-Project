@@ -1,5 +1,6 @@
 import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
@@ -9,10 +10,11 @@ from sqlalchemy import text
 
 from app.core.config import Settings
 from app.db.session import create_engine, create_sessionmaker
-from app.services.glpi import Author, GlpiFollowup
+from app.services.glpi import Author, GlpiError, GlpiFollowup
 from app.services.glpi_worker import MAX_ATTEMPTS, GlpiEventWorker
 from app.services.llm import ChatModel
 from app.services.metrics import CsvMetricsWriter
+from app.services.progress import ProgressBoard
 from tests.conftest import (
     TICKET,
     FailingChatModel,
@@ -46,6 +48,7 @@ def _process(
     glpi: FakeGlpi,
     model: ChatModel | None = None,
     metrics: CsvMetricsWriter | None = None,
+    progress: ProgressBoard | None = None,
 ) -> bool:
     model = model or ScriptedChatModel(
         [json.dumps({"action": "answer", "answer": "Supprimez le profil [K1]"})]
@@ -62,6 +65,7 @@ def _process(
             metrics,
             glpi,
             settings,
+            progress or ProgressBoard(),
         )
         try:
             return await worker.process_next()
@@ -248,6 +252,68 @@ def test_worker_records_the_entries_its_followup_cited(
     assert [str(knowledge_id) for knowledge_id in knowledge_ids] == [entry]
 
 
+HANDOVER = "Votre demande est transmise à un technicien."
+
+
+def test_handed_over_ticket_is_never_answered_again(client: TestClient, settings: Settings) -> None:
+    glpi = FakeGlpi()
+    escalation = {"action": "escalate", "answer": HANDOVER, "reason": "hors sujet"}
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, glpi, ScriptedChatModel([json.dumps(escalation)]))
+
+    # The reason goes to the technicians in a private followup, never to the requester.
+    assert glpi.followups == [
+        (TICKET.id, HANDOVER, False),
+        (TICKET.id, "Passation à un technicien. Raison : hors sujet", True),
+    ]
+    assert _ticket_answers(settings) == [(TICKET.id, 7, [])]
+
+    run_sql(settings, "DELETE FROM glpi_event")
+    reply = GlpiFollowup(8, Author.REQUESTER, "Et alors ?")
+    later = FakeGlpi(replace(TICKET, followups=(GlpiFollowup(7, Author.BOT, HANDOVER), reply)))
+    _queue(client, _new_followup(reply))
+
+    # A model call would fail the event: the handover alone keeps the bot silent.
+    assert _process(settings, later, FailingChatModel())
+
+    assert later.followups == []
+    assert _event_state(settings) == ("done", 1, None)
+
+
+def test_handover_without_reason_posts_no_private_note(
+    client: TestClient, settings: Settings
+) -> None:
+    glpi = FakeGlpi()
+    _queue(client, NEW_TICKET)
+
+    escalation = {"action": "escalate", "answer": HANDOVER, "reason": " "}
+    assert _process(settings, glpi, ScriptedChatModel([json.dumps(escalation)]))
+
+    assert glpi.followups == [(TICKET.id, HANDOVER, False)]
+
+
+class _NoPrivateGlpi(FakeGlpi):
+    async def add_followup(self, ticket_id: int, text: str, *, private: bool) -> int:
+        if private:
+            raise GlpiError("GLPI down")
+        return await super().add_followup(ticket_id, text, private=private)
+
+
+def test_failed_handover_note_does_not_fail_the_event(
+    client: TestClient, settings: Settings
+) -> None:
+    glpi = _NoPrivateGlpi()
+    _queue(client, NEW_TICKET)
+
+    escalation = {"action": "escalate", "answer": HANDOVER, "reason": "hors sujet"}
+    assert _process(settings, glpi, ScriptedChatModel([json.dumps(escalation)]))
+
+    assert glpi.followups == [(TICKET.id, HANDOVER, False)]
+    assert _event_state(settings) == ("done", 1, None)
+    assert _ticket_answers(settings) == [(TICKET.id, 7, [])]
+
+
 def test_worker_records_nothing_when_the_followup_fails(
     client: TestClient, settings: Settings
 ) -> None:
@@ -256,3 +322,83 @@ def test_worker_records_nothing_when_the_followup_fails(
     assert _process(settings, FakeGlpi(fail_followup=True))
 
     assert _ticket_answers(settings) == []
+
+
+def test_worker_reports_the_run_until_the_followup(client: TestClient, settings: Settings) -> None:
+    board = ProgressBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(), progress=board)
+
+    view = board.get(TICKET.id)
+    assert view is not None
+    assert (view.status, view.followup_id) == ("done", 7)
+    assert view.steps == [{"kind": "thinking"}]
+
+
+def test_worker_records_the_answer_before_reporting_the_run_done(
+    client: TestClient, settings: Settings
+) -> None:
+    # `done` reloads the plugin's page, which reads the sources from `ticket_answer` at once.
+    class SnapshotBoard(ProgressBoard):
+        rows_at_done: list[tuple[int, int, list[object]]] | None = None
+
+        def done(self, ticket_id: int, followup_id: int) -> None:
+            # The worker's loop is running here: read the table from another thread.
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                self.rows_at_done = pool.submit(_ticket_answers, settings).result()
+            super().done(ticket_id, followup_id)
+
+    board = SnapshotBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(), progress=board)
+
+    assert board.rows_at_done is not None
+    assert [row[:2] for row in board.rows_at_done] == [(TICKET.id, 7)]
+
+
+def test_worker_marks_the_run_failed_on_a_model_error(
+    client: TestClient, settings: Settings
+) -> None:
+    board = ProgressBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(), FailingChatModel(), progress=board)
+
+    view = board.get(TICKET.id)
+    assert view is not None
+    assert (view.status, view.followup_id) == ("failed", None)
+
+
+def test_worker_marks_the_run_failed_when_the_followup_fails(
+    client: TestClient, settings: Settings
+) -> None:
+    board = ProgressBoard()
+    _queue(client, NEW_TICKET)
+
+    assert _process(settings, FakeGlpi(fail_followup=True), progress=board)
+
+    assert _ticket_answers(settings) == []
+    view = board.get(TICKET.id)
+    assert view is not None
+    assert view.status == "failed"
+
+
+def test_worker_leaves_the_board_alone_when_the_technician_took_over(
+    client: TestClient, settings: Settings
+) -> None:
+    board = ProgressBoard()
+    trigger = GlpiFollowup(4, Author.REQUESTER, "Merci")
+    glpi = FakeGlpi(
+        replace(
+            TICKET,
+            followups=(REPLY, GlpiFollowup(3, Author.OTHER, "Je regarde"), trigger),
+        )
+    )
+    _queue(client, _new_followup(trigger))
+
+    assert _process(settings, glpi, FailingChatModel(), progress=board)
+
+    assert glpi.followups == []
+    assert board.get(TICKET.id) is None

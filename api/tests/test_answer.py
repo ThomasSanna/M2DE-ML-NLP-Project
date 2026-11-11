@@ -1,4 +1,5 @@
 import json
+import logging
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,6 +26,11 @@ from tests.conftest import (
 QUESTION = "Je n'arrive plus à me connecter au wifi eduroam"
 ANSWER = "Réinstallez le profil eduroam via CAT."
 THREAD = [{"role": "user", "content": "Le wifi eduroam ne marche pas sur mon Mac"}]
+ESCALATION = {
+    "action": "escalate",
+    "answer": "Votre demande est transmise à un technicien.",
+    "reason": "hors sujet : météo",
+}
 
 
 def _add_knowledge(client: TestClient, auth: dict[str, str]) -> str:
@@ -82,6 +88,37 @@ def test_answer_returns_cited_sources(client: TestClient, auth: dict[str, str]) 
     first_user_message = model.calls[0][0][1]["content"]
     assert f"[K1] Q : {QUESTION}" in first_user_message
     assert "Utilisateur : Le wifi eduroam" in first_user_message
+
+
+def test_answer_can_hand_over_to_a_technician(client: TestClient, auth: dict[str, str]) -> None:
+    override(client, get_chat_model, ScriptedChatModel([json.dumps(ESCALATION)]))
+
+    response = client.post("/api/v1/answer", json={"messages": THREAD}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert {key: body[key] for key in ("kind", "message", "reason", "searches", "steps")} == {
+        "kind": "escalation",
+        "message": "Votre demande est transmise à un technicien.",
+        "reason": "hors sujet : météo",
+        "searches": [],
+        "steps": 1,
+    }
+    assert "sources" not in body
+
+
+def test_handover_reason_is_logged_at_debug_only(
+    client: TestClient, auth: dict[str, str], caplog: pytest.LogCaptureFixture
+) -> None:
+    # The reason sums up the thread, which is never logged above DEBUG.
+    override(client, get_chat_model, ScriptedChatModel([json.dumps(ESCALATION)]))
+
+    with caplog.at_level(logging.DEBUG, logger="app"):
+        response = client.post("/api/v1/answer", json={"messages": THREAD}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    levels = {r.levelno for r in caplog.records if ESCALATION["reason"] in r.getMessage()}
+    assert levels == {logging.DEBUG}
 
 
 def test_answer_without_memory_says_so(client: TestClient, auth: dict[str, str]) -> None:

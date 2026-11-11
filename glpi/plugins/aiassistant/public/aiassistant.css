@@ -1,0 +1,170 @@
+/* Bulle de progression et panneau des sources, aux couleurs du thème GLPI. */
+
+.aiassistant-bubble {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--tblr-border-color, #dadfe5);
+  border-radius: 8px;
+  background: var(--tblr-bg-surface, #fff);
+  color: var(--tblr-body-color, #1f2d3d);
+  max-width: 640px;
+}
+
+.aiassistant-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-bottom: 0.35rem;
+}
+
+.aiassistant-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  padding: 0.15rem 0;
+}
+
+.aiassistant-step--past {
+  opacity: 0.55;
+}
+
+.aiassistant-step--current .aiassistant-label {
+  color: var(--tblr-body-color, #1f2d3d);
+}
+
+.aiassistant-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.aiassistant-spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px dotted currentColor;
+  border-radius: 50%;
+  animation: aiassistant-spin 1.6s linear infinite;
+  flex: none;
+}
+
+@keyframes aiassistant-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aiassistant-spinner {
+    animation-duration: 4s;
+  }
+}
+
+.aiassistant-failed {
+  font-size: 0.875rem;
+  opacity: 0.8;
+}
+
+.aiassistant-stack {
+  display: inline-flex;
+}
+
+.aiassistant-favicon {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--tblr-bg-surface-secondary, #f1f3f5);
+  object-fit: cover;
+  margin-left: -0.25rem;
+  flex: none;
+}
+
+.aiassistant-favicon--letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.aiassistant-count {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.aiassistant-sources-pending {
+  display: none;
+}
+
+.aiassistant-sources {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+.aiassistant-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--tblr-border-color, #dadfe5);
+  border-radius: 999px;
+  background: var(--tblr-bg-surface, #fff);
+  color: inherit;
+  cursor: pointer;
+}
+
+.aiassistant-pill:hover {
+  background: var(--tblr-bg-surface-secondary, #f1f3f5);
+}
+
+.aiassistant-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.4rem);
+  z-index: 1050;
+  width: min(24rem, 80vw);
+  max-height: 18rem;
+  overflow-y: auto;
+  padding: 0.35rem;
+  border: 1px solid var(--tblr-border-color, #dadfe5);
+  border-radius: 10px;
+  background: var(--tblr-bg-surface, #fff);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 18%);
+}
+
+.aiassistant-source {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.aiassistant-source:hover {
+  background: var(--tblr-bg-surface-secondary, #f1f3f5);
+  color: inherit;
+  text-decoration: none;
+}
+
+.aiassistant-source .aiassistant-favicon {
+  margin-left: 0;
+}
+
+.aiassistant-source-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.aiassistant-source-domain {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  white-space: nowrap;
+}

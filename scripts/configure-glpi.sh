@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Apply the PoC GLPI configuration (API, LDAP, SMTP, notifications, satisfaction
-# survey, bot user, webhook) and create the read-only SQL user. Idempotent: rerun
-# after every `docker compose down -v`.
+# survey, bot user, webhook, AI assistant plugin) and create the read-only SQL
+# user. Idempotent: rerun after every `docker compose down -v`.
 # Usage: ./scripts/configure-glpi.sh   (stack started; ENV_FILE=... for another .env)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -17,7 +17,7 @@ vars=(
   SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD
   MAIL_FROM MAIL_FROM_NAME MAIL_ADMIN MAIL_ADMIN_NAME MAIL_SIGNATURE
   SURVEY_RATE SURVEY_COMMENT_THRESHOLD TICKET_AUTOCLOSE_DAYS
-  GLPI_APP_TOKEN GLPI_BOT_USER GLPI_USER_TOKEN GLPI_WEBHOOK_SECRET GLPI_WEBHOOK_URL
+  GLPI_APP_TOKEN GLPI_BOT_USER GLPI_USER_TOKEN GLPI_WEBHOOK_SECRET GLPI_WEBHOOK_URL API_KEY
 )
 env_args=()
 for v in "${vars[@]}"; do

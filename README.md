@@ -63,8 +63,10 @@ Compose runs it as three services: `postgres` (PostgreSQL 17 + pgvector), `migra
 | `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | add a Q/A pair (the question is embedded) |
 | `GET` | `/api/v1/memory/knowledge/{id}` | `X-API-Key` | read a knowledge entry |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | top-k cosine similarity search over `active` entries |
-| `POST` | `/api/v1/answer` | `X-API-Key` | answer a ticket thread from memory and web search, with sources |
+| `POST` | `/api/v1/answer` | `X-API-Key` | answer a ticket thread from memory and web search, with sources, or hand it over to a technician |
 | `POST` | `/api/v1/tickets/{id}/answer/stream` | `X-API-Key` | answer a GLPI ticket's thread and post the answer as a followup (SSE) |
+| `GET` | `/api/v1/tickets/{id}/progress` | `X-API-Key` | live progress of the answer the bot is writing on a ticket |
+| `GET` | `/api/v1/tickets/{id}/answers` | `X-API-Key` | web sources cited by each answer the bot posted on a ticket |
 
 When `GLPI_WEBHOOK_SECRET` is set, the `X-GLPI-signature` header is verified (`HMAC-SHA256(body + X-GLPI-timestamp, secret)`, GLPI 11 format). When it is empty, every request is accepted and a warning is logged at startup.
 
@@ -102,6 +104,34 @@ Tests run against a real pgvector container and never call the embeddings server
 To change the schema: edit `app/models/`, run `uv run alembic revision --autogenerate -m "..."`, review the generated migration, then run `uv run alembic check` (it must report no changes). Never edit a migration that has already been shared.
 
 After changing API code, rebuild the container: `docker compose up -d --build api`.
+
+## GLPI AI assistant plugin
+
+Source in [`glpi/plugins/aiassistant/`](glpi/plugins/aiassistant/). It makes the bot's
+answer visible while it is being written, and gives the cited pages a readable shape.
+
+- **Progress bubble**: on a ticket the bot is answering, an "Assistant IA" entry appears at
+  the end of the timeline with "Réflexion", then "Recherche sur le web « … »" with the
+  sources' favicons and a count, like a chat assistant. The page reloads once when the
+  followup is posted.
+- **Sources pill**: the `Sources :` paragraph of each answer is hidden in the ticket
+  and replaced by a pill at the bottom right ("N sources" + stacked favicons). Clicking it
+  opens a panel listing the page title, its domain, and a link that opens in a new tab.
+  Escape or a click outside closes it.
+- **Plain text kept**: the followup itself still contains the `Sources :` list, so the
+  e-mail GLPI sends to the requester is unchanged.
+
+The browser never sees `API_KEY`: `ajax/ticket.php` checks the GLPI session and the ticket
+READ right, then calls `GET /api/v1/tickets/{id}/progress` and `/answers` with the key
+stored encrypted in `glpi_configs` (context `plugin:aiassistant`). Both calls are bounded to
+2 s; an unreachable API means "nothing running", never a broken page.
+
+Deployment: `docker-compose.yml` mounts `./glpi/plugins/aiassistant` read-only into the GLPI
+container, and step 8 of `scripts/configure-glpi.sh` stores `http://api:8000` + `API_KEY`,
+then installs and activates the plugin, so a fresh stack needs no click.
+
+The progress is held in memory by the API process: it is `idle` after a restart, and only a
+single-process API (`uvicorn` without `--workers`) sees its own runs.
 
 ## LDAP directory
 
@@ -143,7 +173,7 @@ An empty variable skips the step or leaves the corresponding setting unchanged. 
 
 | Direction | Mechanism | Detail |
 |---|---|---|
-| GLPI → API | Webhooks `Ticket / New` and `ITILFollowup / New` | `POST http://api:8000/api/v1/ingest/ticket`, HMAC-signed. Queued by GLPI and sent by the `queuedwebhook` task (within 60 s). An API worker then answers the ticket or the requester's followup in a followup, as the SSE route does, until a technician writes a public followup. |
+| GLPI → API | Webhooks `Ticket / New` and `ITILFollowup / New` | `POST http://api:8000/api/v1/ingest/ticket`, HMAC-signed. Queued by GLPI and sent by the `queuedwebhook` task (within about 5 s). An API worker then answers the ticket or the requester's followup in a followup, as the SSE route does, until a technician writes a public followup or the bot hands the ticket over. |
 | API → GLPI (read/write) | REST API `/apirest.php` as the bot user | `User-Token` + `App-Token`. Writes go through the REST API only, so GLPI keeps its notifications, history and rights. |
 | API → GLPI database (bulk read) | MariaDB user `memoire_ro` | `SELECT` only (`db:3306`). Never any SQL write. |
 | Client → API → GLPI | `POST /api/v1/tickets/{id}/answer/stream` (SSE) | Reads the ticket and its public followups, answers the thread, then posts the answer as a followup through the REST API. |

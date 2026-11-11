@@ -7,7 +7,13 @@ from sqlalchemy import text
 
 from app.core.config import Settings
 from app.db.session import create_engine, create_sessionmaker
-from app.schemas.answer import AnswerResult, KnowledgeCitation, Usage, WebCitation
+from app.schemas.answer import (
+    AnswerResult,
+    EscalationResult,
+    KnowledgeCitation,
+    Usage,
+    WebCitation,
+)
 from app.services import survey
 from app.services.glpi import GlpiSurvey
 from tests.conftest import FakeGlpi
@@ -40,7 +46,20 @@ def _result(*knowledge_ids: uuid.UUID) -> AnswerResult:
     )
 
 
-def _record(settings: Settings, ticket_id: int, followup_id: int, result: AnswerResult) -> None:
+def _escalation() -> EscalationResult:
+    return EscalationResult(
+        message="Transmis.",
+        reason="hors sujet",
+        memory=[],
+        searches=[],
+        steps=1,
+        usage=Usage(prompt_tokens=1, completion_tokens=1),
+    )
+
+
+def _record(
+    settings: Settings, ticket_id: int, followup_id: int, result: AnswerResult | EscalationResult
+) -> None:
     async def run() -> None:
         engine = create_engine(settings.database_url)
         try:
@@ -94,6 +113,24 @@ def test_record_answer_keeps_only_cited_memory_entries(
     assert _rows(
         settings, "SELECT glpi_ticket_id, glpi_followup_id, knowledge_ids FROM ticket_answer"
     ) == [(TICKET_ID, 7, [entry])]
+
+
+def test_record_answer_marks_a_handover(client: TestClient, settings: Settings) -> None:
+    _record(settings, TICKET_ID, 7, _escalation())
+
+    assert _rows(
+        settings,
+        "SELECT glpi_ticket_id, glpi_followup_id, knowledge_ids, escalated, web_sources"
+        " FROM ticket_answer",
+    ) == [(TICKET_ID, 7, [], True, [])]
+
+
+def test_survey_credits_nothing_for_a_handover(client: TestClient, settings: Settings) -> None:
+    _record(settings, TICKET_ID, 7, _escalation())
+
+    _sync(settings, FakeGlpi(surveys=[GlpiSurvey(TICKET_ID, 0.8, "Clair")]))
+
+    assert _feedback(settings) == []
 
 
 def test_survey_scores_every_entry_cited_on_the_ticket(
@@ -154,3 +191,61 @@ def test_answer_from_the_web_only_gets_no_feedback(client: TestClient, settings:
 
     assert _sync(settings, FakeGlpi(surveys=[GlpiSurvey(TICKET_ID, 1.0, None)])) == 0
     assert _feedback(settings) == []
+
+
+def test_record_answer_keeps_the_cited_web_pages(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    _record(settings, TICKET_ID, 7, _result())
+
+    assert _rows(settings, "SELECT web_sources FROM ticket_answer") == [
+        ([{"title": "Page", "url": "https://example.org"}],)
+    ]
+
+
+def test_record_answer_keeps_each_web_page_once(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    result = AnswerResult(
+        answer="Réponse [W1][W2]",
+        sources=[
+            WebCitation(ref="W1", url="https://example.org/a", title="Page"),
+            WebCitation(ref="W2", url="https://example.org/a", title="Page (doublon)"),
+            WebCitation(ref="W3", url="https://www.cat.eduroam.org", title="CAT"),
+        ],
+        memory=[],
+        searches=["eduroam"],
+        steps=2,
+        usage=Usage(prompt_tokens=1, completion_tokens=1),
+    )
+
+    _record(settings, TICKET_ID, 7, result)
+
+    assert _rows(settings, "SELECT web_sources FROM ticket_answer") == [
+        (
+            [
+                {"title": "Page", "url": "https://example.org/a"},
+                {"title": "CAT", "url": "https://www.cat.eduroam.org"},
+            ],
+        )
+    ]
+
+
+def test_list_web_sources_returns_each_followup_oldest_first(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    _record(settings, TICKET_ID, 7, _result())
+    _record(settings, TICKET_ID, 8, _result())
+
+    async def run() -> list[tuple[int, list[dict[str, str]]]]:
+        engine = create_engine(settings.database_url)
+        try:
+            async with create_sessionmaker(engine)() as session:
+                return await survey.list_web_sources(session, TICKET_ID)
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(run()) == [
+        (7, [{"title": "Page", "url": "https://example.org"}]),
+        (8, [{"title": "Page", "url": "https://example.org"}]),
+    ]

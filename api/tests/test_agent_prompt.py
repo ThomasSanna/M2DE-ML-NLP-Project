@@ -5,6 +5,7 @@ from app.services.agent_prompt import (
     NO_MEMORY,
     THREAD_MAX_CHARS,
     AnswerAction,
+    EscalateAction,
     SearchAction,
     decision_schema,
     initial_messages,
@@ -17,13 +18,13 @@ from app.services.websearch import WebResult
 
 
 def test_decision_schema() -> None:
-    # Flat object on purpose: TGI rejects a root `oneOf`.
     assert decision_schema(True, ["K1", "W1"]) == {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["search", "answer"]},
+            "action": {"type": "string", "enum": ["search", "answer", "escalate"]},
             "query": {"type": "string", "minLength": 1},
             "answer": {"type": "string", "minLength": 1},
+            "reason": {"type": "string"},
             "sources": {"type": "array", "items": {"type": "string", "enum": ["K1", "W1"]}},
         },
         "required": ["action"],
@@ -31,12 +32,12 @@ def test_decision_schema() -> None:
 
 
 def test_answer_only_schema_requires_answer() -> None:
-    # `{"action": "answer"}` matched the flat grammar and failed `parse_action`.
     assert decision_schema(False, ["K1"]) == {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["answer"]},
+            "action": {"type": "string", "enum": ["answer", "escalate"]},
             "answer": {"type": "string", "minLength": 1},
+            "reason": {"type": "string"},
             "sources": {"type": "array", "items": {"type": "string", "enum": ["K1"]}},
         },
         "required": ["action", "answer"],
@@ -58,6 +59,17 @@ def test_parse_action() -> None:
     )
 
 
+def test_parse_escalate_action() -> None:
+    content = '{"action": "escalate", "answer": " Transmis. ", "reason": " hors sujet "}'
+    assert parse_action(content) == EscalateAction(
+        action="escalate", answer="Transmis.", reason="hors sujet"
+    )
+    # The grammar cannot require `reason`: a handover without one must not fail the run.
+    assert parse_action('{"action": "escalate", "answer": "Transmis."}') == EscalateAction(
+        action="escalate", answer="Transmis.", reason=""
+    )
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -65,6 +77,8 @@ def test_parse_action() -> None:
         '{"action": "search"}',
         '{"action": "search", "query": "   "}',
         '{"action": "answer", "answer": ""}',
+        '{"action": "escalate"}',
+        '{"action": "escalate", "answer": " "}',
     ],
 )
 def test_parse_action_rejects_invalid_output(content: str) -> None:

@@ -12,6 +12,7 @@ from app.services.agent_prompt import (
 )
 from app.services.llm import Completion, LLMError
 from app.services.metrics import RunRecorder
+from app.services.progress import ProgressBoard, TicketProgress
 from app.services.websearch import WebResult
 from tests.conftest import FakeWebSearch, ScriptedChatModel
 
@@ -29,16 +30,25 @@ def _answer(answer: str = "Réponse", sources: list[str] | None = None) -> str:
     return json.dumps({"action": "answer", "answer": answer, "sources": sources or []})
 
 
+def _escalate(
+    answer: str = "Demande transmise à un technicien.", reason: str = "hors sujet"
+) -> str:
+    return json.dumps({"action": "escalate", "answer": answer, "reason": reason})
+
+
 def _run(
     model: ScriptedChatModel,
     web: FakeWebSearch | None,
     max_steps: int = 3,
     memory_refs: set[str] | None = None,
     recorder: RunRecorder | None = None,
+    progress: TicketProgress | None = None,
 ) -> AgentRun:
     messages = initial_messages("Mémoire : …", "Fil : …")
     refs = {"K1"} if memory_refs is None else memory_refs
-    return asyncio.run(run_agent(model, web, messages, refs, max_steps, recorder or RunRecorder()))
+    return asyncio.run(
+        run_agent(model, web, messages, refs, max_steps, recorder or RunRecorder(), progress)
+    )
 
 
 def _enum(schema: dict[str, object]) -> object:
@@ -141,13 +151,13 @@ def test_truncated_output_is_fed_back() -> None:
     assert _last_content(model, 1).startswith("Sortie invalide")
 
 
-def test_last_step_allows_only_answer() -> None:
+def test_last_step_forbids_search() -> None:
     model = ScriptedChatModel([_search("a"), _answer()])
 
     _run(model, FakeWebSearch(RESULTS), max_steps=2)
 
-    assert _enum(model.calls[0][1]) == ["search", "answer"]
-    assert _enum(model.calls[1][1]) == ["answer"]
+    assert _enum(model.calls[0][1]) == ["search", "answer", "escalate"]
+    assert _enum(model.calls[1][1]) == ["answer", "escalate"]
     assert _last_content(model, 1).endswith(MAX_STEPS_NOTICE)
 
 
@@ -159,7 +169,7 @@ def test_single_step_notice_goes_on_initial_message() -> None:
     [(messages, schema)] = model.calls
     assert len(messages) == 2
     assert messages[1]["content"].endswith(MAX_STEPS_NOTICE)
-    assert _enum(schema) == ["answer"]
+    assert _enum(schema) == ["answer", "escalate"]
 
 
 def test_citations_are_filtered_and_deduplicated() -> None:
@@ -207,12 +217,56 @@ def test_sources_grammar_lists_the_refs_shown_so_far() -> None:
     assert [items["items"]["enum"] for items in sources] == [["K1", "K2"], ["K1", "K2", "W1", "W2"]]
 
 
-def test_search_disabled_allows_only_answer() -> None:
+def test_search_disabled_forbids_search() -> None:
     model = ScriptedChatModel([_answer()])
 
     _run(model, None)
 
-    assert _enum(model.calls[0][1]) == ["answer"]
+    assert _enum(model.calls[0][1]) == ["answer", "escalate"]
+
+
+def test_escalation_ends_the_run_without_citations() -> None:
+    recorder = RunRecorder()
+    model = ScriptedChatModel([_escalate(answer="Transmis [K1].")])
+
+    run = _run(model, FakeWebSearch(RESULTS), recorder=recorder)
+
+    assert (run.answer, run.cited_refs, run.escalation_reason, run.steps) == (
+        "Transmis [K1].",
+        [],
+        "hors sujet",
+        1,
+    )
+    assert [c.action for c in recorder.calls if c.kind == "llm"] == ["escalate"]
+    assert recorder.dropped_refs == 0
+
+
+def test_answer_has_no_escalation_reason() -> None:
+    run = _run(ScriptedChatModel([_answer()]), FakeWebSearch(RESULTS))
+    assert run.escalation_reason is None
+
+
+def test_escalation_after_a_search() -> None:
+    model = ScriptedChatModel([_search("météo Ajaccio"), _escalate()])
+
+    run = _run(model, FakeWebSearch(RESULTS))
+
+    assert (run.searches, run.escalation_reason, run.steps) == (
+        ["météo Ajaccio"],
+        "hors sujet",
+        2,
+    )
+
+
+def test_escalation_without_reason_at_the_last_step() -> None:
+    model = ScriptedChatModel(
+        [_search("météo Ajaccio"), json.dumps({"action": "escalate", "answer": "Transmis."})]
+    )
+
+    run = _run(model, FakeWebSearch(RESULTS), max_steps=2)
+
+    assert (run.answer, run.escalation_reason) == ("Transmis.", "")
+    assert _last_content(model, 1).endswith(MAX_STEPS_NOTICE)
 
 
 def test_invalid_last_step_raises_llm_error() -> None:
@@ -317,3 +371,55 @@ def test_records_the_invalid_output_that_fails_the_last_step() -> None:
         _run(ScriptedChatModel(["pas du json"]), None, max_steps=1, recorder=recorder)
 
     assert [(c.kind, c.status, c.action) for c in recorder.calls] == [("llm", "ok", "invalid")]
+
+
+def test_agent_reports_thinking_searching_and_the_sources_it_found() -> None:
+    board = ProgressBoard()
+    run = board.start(42)
+
+    _run(
+        ScriptedChatModel([_search("eduroam mac"), _answer()]), FakeWebSearch(RESULTS), progress=run
+    )
+
+    view = board.get(42)
+    assert view is not None
+    assert [step["kind"] for step in view.steps] == ["thinking", "search", "thinking"]
+    assert view.steps[1] == {
+        "kind": "search",
+        "query": "eduroam mac",
+        "sources": [
+            {"title": "Eduroam macOS", "url": "https://a.fr", "domain": "a.fr"},
+            {
+                "title": "CAT eduroam",
+                "url": "https://cat.eduroam.org",
+                "domain": "cat.eduroam.org",
+            },
+        ],
+    }
+    assert view.status == "thinking"
+
+
+def test_agent_reports_a_search_that_found_nothing() -> None:
+    board = ProgressBoard()
+    run = board.start(42)
+
+    _run(ScriptedChatModel([_search("eduroam mac"), _answer()]), FakeWebSearch([]), progress=run)
+
+    view = board.get(42)
+    assert view is not None
+    assert view.steps[1] == {"kind": "search", "query": "eduroam mac", "sources": []}
+
+
+def test_agent_reports_a_failed_search_without_sources() -> None:
+    board = ProgressBoard()
+    run = board.start(42)
+
+    _run(
+        ScriptedChatModel([_search("eduroam mac"), _answer()]),
+        FakeWebSearch(fail=True),
+        progress=run,
+    )
+
+    view = board.get(42)
+    assert view is not None
+    assert view.steps[1] == {"kind": "search", "query": "eduroam mac", "sources": []}

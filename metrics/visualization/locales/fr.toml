@@ -27,7 +27,7 @@
 "Runs per configuration" = "Exécutions par configuration"
 "Runs per source and outcome" = "Exécutions par source et par issue"
 "Runs per day, by outcome" = "Exécutions par jour, par issue"
-"One bar per day (UTC), split by outcome. answered: the bot replied; embedding_error, reranker_error, llm_error: the run stopped because the embeddings server, the reranker or the language model failed." = "Une barre par jour (UTC), découpée par issue. answered : le bot a répondu ; embedding_error, reranker_error, llm_error : l'exécution s'est arrêtée sur une panne du serveur d'embeddings, du reranker ou du modèle de langage."
+"One bar per day (UTC), split by outcome. answered: the bot replied; escalated: the bot handed the request over to a technician; embedding_error, reranker_error, llm_error: the run stopped because the embeddings server, the reranker or the language model failed." = "Une barre par jour (UTC), découpée par issue. answered : le bot a répondu ; escalated : le bot a transmis la demande à un technicien ; embedding_error, reranker_error, llm_error : l'exécution s'est arrêtée sur une panne du serveur d'embeddings, du reranker ou du modèle de langage."
 "runs" = "exécutions"
 "config" = "configuration"
 "source" = "source"

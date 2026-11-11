@@ -111,6 +111,8 @@ services:
 
   # ---------------------------------------------------------------- GLPI
   glpi:
+    # Bumping this tag: diff /opt/glpi/cron-worker.sh against glpi/cron/cron-worker.sh, which
+    # replaces it (5 s cron). A stale copy stops the cron, so no webhook reaches the bot.
     image: glpi/glpi:11.0.8
     container_name: poc-glpi
     environment:
@@ -125,6 +127,10 @@ services:
       - glpi_marketplace:/var/glpi/marketplace
       # Allowlist des URL appelées par GLPI (webhook vers l'API mémoire)
       - ./glpi/config/local_define.php:/var/www/glpi/config/local_define.php:ro
+      # Plugin « Assistant IA » : bulle de progression et panneau des sources
+      - ./glpi/plugins/aiassistant:/var/www/glpi/plugins/aiassistant:ro
+      # CLI cron every 5 s instead of 60 s: webhooks to the API leave the queue sooner
+      - ./glpi/cron/cron-worker.sh:/opt/glpi/cron-worker.sh:ro
     ports:
       - "8080:80"
     networks:

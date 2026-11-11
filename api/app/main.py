@@ -16,6 +16,7 @@ from app.services.glpi import GlpiError, GlpiRestClient
 from app.services.glpi_worker import GlpiEventWorker
 from app.services.llm import LLMError, VLLMChatClient
 from app.services.metrics import CsvMetricsWriter
+from app.services.progress import ProgressBoard
 from app.services.reranker import HttpRerankerClient, RerankerError
 from app.services.survey import SurveySync
 from app.services.websearch import EXA_BASE_URL, ExaClient
@@ -97,6 +98,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 app.state.metrics,
                 app.state.glpi,
                 settings,
+                app.state.progress,
             )
             # Registered after the clients: cancelled before they close. Also keeps the only
             # strong reference to the task.
@@ -132,6 +134,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
     )
     app.state.settings = settings
+    # Lives in this process only: the worker writes it, the plugin reads it.
+    app.state.progress = ProgressBoard()
 
     api_v1 = APIRouter(prefix="/api/v1")
     api_v1.include_router(ingest.router)

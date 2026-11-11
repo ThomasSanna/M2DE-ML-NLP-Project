@@ -27,7 +27,7 @@ RUNS_FILE = "runs.v1.csv"
 CALLS_FILE = "calls.v1.csv"
 
 Source = Literal["api", "ticket_stream", "worker"]
-Outcome = Literal["answered", "embedding_error", "reranker_error", "llm_error"]
+Outcome = Literal["answered", "escalated", "embedding_error", "reranker_error", "llm_error"]
 CallKind = Literal["embed", "vector_search", "rerank", "llm", "web_search"]
 
 
