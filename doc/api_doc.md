@@ -232,8 +232,9 @@ curl http://localhost:8000/api/v1/tickets/42/progress -H "X-API-Key: $API_KEY"
   `{"kind": "search", "query": "…", "sources": [{"title", "url", "domain"}]}`; `domain`
   is the URL host without a leading `www.`.
 - `idle` for a ticket nobody answered, and after an API restart: the state is never
-  persisted, and only one API process knows about a run. A finished run stays readable
-  for 5 minutes.
+  persisted, and only one API process knows about a run. A run stays readable for 5
+  minutes after its last update: a finished run, or a run whose caller stopped without
+  closing it.
 - Read-only, no remote call: an unknown or unanswerable ticket is `idle`, never `404`.
   A non-positive `ticket_id` is `422`.
 

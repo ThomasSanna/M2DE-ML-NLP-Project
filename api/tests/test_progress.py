@@ -174,16 +174,29 @@ def test_a_finished_run_is_purged_after_the_ttl() -> None:
     assert board.get(42) is None
 
 
-def test_a_running_ticket_is_never_purged() -> None:
+def test_a_running_run_is_kept_while_it_reports_steps() -> None:
     moments = [datetime(2026, 11, 10, 12, 0, tzinfo=UTC)]
     board = ProgressBoard(clock=lambda: moments[0])
-    board.start(42)
+    run = board.start(42)
 
-    moments[0] += timedelta(hours=1)
+    for _ in range(3):
+        moments[0] += timedelta(minutes=4)
+        run.thinking()
 
     view = board.get(42)
     assert view is not None
     assert view.status == "thinking"
+
+
+def test_a_running_run_without_news_is_purged_after_the_ttl() -> None:
+    # Its caller died without closing it: the plugin must not spin forever.
+    moments = [datetime(2026, 11, 10, 12, 0, tzinfo=UTC)]
+    board = ProgressBoard(clock=lambda: moments[0])
+    board.start(42)
+
+    moments[0] += timedelta(minutes=6)
+
+    assert board.get(42) is None
 
 
 def test_the_view_is_a_copy_the_caller_cannot_corrupt() -> None:

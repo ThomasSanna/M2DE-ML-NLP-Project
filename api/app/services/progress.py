@@ -2,7 +2,7 @@
 
 The board lives in the API process: the worker records what the agent is doing,
 `GET /api/v1/tickets/{id}/progress` reads it back for the plugin, and nothing is
-persisted. A finished run is dropped `ttl` after it finished.
+persisted. A run is dropped `ttl` after its last update.
 """
 
 from collections.abc import Callable
@@ -163,7 +163,9 @@ class ProgressBoard:
         state.updated_at = self._clock()
 
     def _purge(self) -> None:
+        # Running runs too: a caller that died on an unexpected error or a client that
+        # left the stream never closes its run, and every step updates well within `ttl`.
         now = self._clock()
         for ticket_id, state in list(self._runs.items()):
-            if state.status in TERMINAL and now - state.updated_at > self._ttl:
+            if now - state.updated_at > self._ttl:
                 del self._runs[ticket_id]
