@@ -17,6 +17,7 @@
   var ACTIVE_MS = 1000;
   var IDLE_MS = 3000;
   var BUBBLE_ID = 'aiassistant-progress';
+  var PENDING = 'aiassistant-sources-pending';
   var timer = null;
   var sawActive = false;
 
@@ -50,16 +51,19 @@
       })
       .then(handle)
       .catch(function () {
+        revealPendingSources();
         schedule(IDLE_MS);
       });
   }
 
   function handle(state) {
     if (!state || typeof state !== 'object' || !document.querySelector('.itil-timeline')) {
+      revealPendingSources();
       schedule(IDLE_MS);
       return;
     }
     applySources(state.answers || []);
+    revealPendingSources();
 
     if (state.status === 'thinking' || state.status === 'searching') {
       sawActive = true;
@@ -68,7 +72,9 @@
       return;
     }
     if (state.status === 'failed') {
+      // The worker retries the event: keep polling so a retry shows up.
       renderFailed();
+      schedule(IDLE_MS);
       return;
     }
     if (sawActive && state.status === 'done') {
@@ -260,7 +266,44 @@
     document.querySelectorAll('.aiassistant-panel:not([hidden])').forEach(function (body) {
       body.hidden = true;
     });
+    document.querySelectorAll('.aiassistant-pill[aria-expanded="true"]').forEach(function (pill) {
+      pill.setAttribute('aria-expanded', 'false');
+    });
   }
+
+  function isSourcesParagraph(node) {
+    return (node.textContent || '').trim().indexOf('Sources :') === 0;
+  }
+
+  // The plain-text list must not show before the pill replaces it. The timeline arrives
+  // through AJAX: the observer hides each list as it is inserted, before the next paint.
+  function hidePendingSources(root) {
+    if (root.matches && root.matches('.read-only-content p') && isSourcesParagraph(root)) {
+      root.classList.add(PENDING);
+    }
+    if (!root.querySelectorAll) {
+      return;
+    }
+    root.querySelectorAll('.read-only-content p').forEach(function (paragraph) {
+      if (isSourcesParagraph(paragraph)) {
+        paragraph.classList.add(PENDING);
+      }
+    });
+  }
+
+  // A list with no stored sources (older answer, API down) stays readable as text.
+  function revealPendingSources() {
+    document.querySelectorAll('.' + PENDING).forEach(function (paragraph) {
+      paragraph.classList.remove(PENDING);
+    });
+  }
+
+  hidePendingSources(document);
+  new MutationObserver(function (mutations) {
+    mutations.forEach(function (mutation) {
+      mutation.addedNodes.forEach(hidePendingSources);
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true });
 
   document.addEventListener('click', closePanels);
 

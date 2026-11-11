@@ -91,6 +91,10 @@
   white-space: nowrap;
 }
 
+.aiassistant-sources-pending {
+  display: none;
+}
+
 .aiassistant-sources {
   position: relative;
   display: flex;
