@@ -20,6 +20,7 @@ Routes métier sous `/api/v1`.
 | `POST` | `/api/v1/tickets/{ticket_id}/answer/stream` | `X-API-Key` | `200` (SSE) | `401`, `404`, `409`, `422`, `502`, `503` |
 | `GET` | `/api/v1/tickets/{ticket_id}/progress` | `X-API-Key` | `200` | `401`, `422` |
 | `GET` | `/api/v1/tickets/{ticket_id}/answers` | `X-API-Key` | `200` | `401`, `422` |
+| `POST` | `/api/v1/tickets/{ticket_id}/verdict` | `X-API-Key` | `204` | `401`, `409`, `422`, `502`, `503` |
 
 ### Conventions
 
@@ -187,6 +188,7 @@ the GLPI REST API (bot user). The thread, answered as by `POST /api/v1/answer`, 
 title and description, then its latest 49 public followups: the requesters' as `user`, the
 others' (bot, technicians) as `assistant`. Private followups are never read.
 
+
 ```bash
 curl -N -X POST http://localhost:8000/api/v1/tickets/42/answer/stream -H "X-API-Key: $API_KEY"
 ```
@@ -266,8 +268,9 @@ curl http://localhost:8000/api/v1/tickets/42/progress -H "X-API-Key: $API_KEY"
 
 ### `GET /api/v1/tickets/{ticket_id}/answers`
 
-Web pages cited by each answer the bot posted on a ticket, for the plugin's sources
-pill. Read from `ticket_answer.web_sources`, so it survives a restart.
+Each answer the bot posted on a ticket, for the plugin: the web pages it cited (sources
+pill), whether it handed the ticket over, and the requester's verdict on it (verdict
+buttons). Read from `ticket_answer`, so it survives a restart.
 
 ```bash
 curl http://localhost:8000/api/v1/tickets/42/answers -H "X-API-Key: $API_KEY"
@@ -278,14 +281,41 @@ curl http://localhost:8000/api/v1/tickets/42/answers -H "X-API-Key: $API_KEY"
 ```json
 [{"followup_id": 1234, "sources": [
   {"title": "Acheter Windows 11", "url": "https://example.org/win11", "domain": "example.org"}
-]}]
+], "escalated": false, "verdict": null}]
 ```
 
 - One entry per recorded bot answer, in the order they were posted. An answer that cited
   no web page has an empty `sources` list (the plugin ignores it).
 - Empty list for an unknown ticket or a ticket the bot never answered.
 - Memory entries (`K` refs) are never listed: only web pages, deduplicated by URL.
+- `escalated`: the answer handed the ticket to a technician. `verdict`: `null`, `resolved`
+  or `technician` (see the next route).
 - Read-only, no remote call. A non-positive `ticket_id` is `422`.
+
+### `POST /api/v1/tickets/{ticket_id}/verdict`
+
+The requester's verdict on the bot's latest answer, sent by the plugin's buttons. Only a
+technician closes a ticket: the verdict tells the technicians whether they can.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/tickets/42/verdict -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" -d '{"verdict": "resolved"}'
+```
+
+**Input**: `{"verdict": "resolved" | "technician"}`. **Output**: `204`, no body.
+
+- `resolved`: a private followup ("Le demandeur indique que la réponse de l'assistant a
+  résolu son problème…"), then the ticket is set to Solved (status 5), so the ticket list
+  shows it. A technician closes it, or GLPI's auto-close. GLPI also shows the requester its
+  own "approval of the solution" form: approving it closes the ticket.
+- `technician`: a private followup, then a handover: the bot never answers the ticket again,
+  like a handover by the agent.
+- The verdict applies to the latest bot answer (`ticket_answer.verdict`), once. A newer
+  answer gets its own verdict.
+- `409`: no answer awaits a verdict (none posted, the latest is a handover, or it already
+  has one). `503`: `GLPI_USER_TOKEN` is empty.
+- `502` `{"detail": "GLPI unavailable"}`: the verdict is withdrawn and can be sent again. If
+  the note was posted before the failure, a retry posts it a second time.
 
 ### Automatic answer to tickets and followups
 
@@ -296,6 +326,7 @@ arrives within about a minute.
 
 - The bot answers each public followup of a requester, until someone else (a technician)
   writes a public followup: from then on it stays silent on that ticket.
+- A requester's `technician` verdict (plugin button) is a handover too.
 - When the agent hands a ticket over to a technician, the bot posts its message (public
   unless `GLPI_FOLLOWUP_PRIVATE`), records the handover in `ticket_answer`, adds the reason
   in a private followup, and never answers that ticket again.
@@ -337,7 +368,7 @@ every `GLPI_SURVEY_POLL_SECONDS`: GLPI sends no webhook for them.
 
 **`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`, unique par ticket et entrée) ; non exposé par l'API.
 
-**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
+**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `verdict` = the requester's verdict from the plugin, `resolved` or `technician`, null until given, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
 
 **`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par le worker (`app/services/glpi_worker.py`).
 

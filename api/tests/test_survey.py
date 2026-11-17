@@ -231,7 +231,7 @@ def test_record_answer_keeps_each_web_page_once(
     ]
 
 
-def test_list_web_sources_returns_each_followup_oldest_first(
+def test_list_answers_returns_each_followup_oldest_first(
     client: TestClient, auth: dict[str, str], settings: Settings
 ) -> None:
     _record(settings, TICKET_ID, 7, _result())
@@ -241,7 +241,8 @@ def test_list_web_sources_returns_each_followup_oldest_first(
         engine = create_engine(settings.database_url)
         try:
             async with create_sessionmaker(engine)() as session:
-                return await survey.list_web_sources(session, TICKET_ID)
+                answers = await survey.list_answers(session, TICKET_ID)
+                return [(row.glpi_followup_id, row.web_sources) for row in answers]
         finally:
             await engine.dispose()
 

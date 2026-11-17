@@ -52,7 +52,11 @@ class Glpi(Protocol):
 
     async def list_answered_surveys(self) -> list[GlpiSurvey]: ...
 
+    async def mark_solved(self, ticket_id: int) -> None: ...
 
+
+# Ticket.status of a solved ticket: a technician still closes it (6), or GLPI's auto-close.
+_SOLVED = 5
 # Ticket_User.type of a requester (2 is an assigned technician, 3 an observer).
 _REQUESTER = 1
 # The latest 49: with the ticket itself, the 50 messages an answer thread can hold.
@@ -166,6 +170,18 @@ class GlpiRestClient:
                 return int(response.json()["id"])
             except (httpx.HTTPError, ValueError, KeyError) as exc:
                 raise GlpiError(f"Cannot add a followup to ticket {ticket_id}: {exc!r}") from exc
+
+    async def mark_solved(self, ticket_id: int) -> None:
+        """Set the ticket to Solved, so the ticket list shows it is ready to close."""
+        payload = {"input": {"status": _SOLVED}}
+        async with self._session() as (headers, _):
+            try:
+                response = await self._http.put(
+                    f"Ticket/{ticket_id}", headers=headers, json=payload
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise GlpiError(f"Cannot solve ticket {ticket_id}: {exc!r}") from exc
 
     async def list_answered_surveys(self) -> list[GlpiSurvey]:
         """The answered satisfaction surveys among the latest 1000, newest first.

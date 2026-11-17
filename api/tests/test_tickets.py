@@ -443,6 +443,8 @@ def test_ticket_answers_lists_the_sources_of_each_followup(
                     "domain": "example.org",
                 }
             ],
+            "escalated": False,
+            "verdict": None,
         }
     ]
 
@@ -470,6 +472,8 @@ def test_ticket_answers_survives_a_malformed_stored_source(
         {
             "followup_id": 7,
             "sources": [{"title": "Page", "url": "", "domain": ""}],
+            "escalated": False,
+            "verdict": None,
         }
     ]
 

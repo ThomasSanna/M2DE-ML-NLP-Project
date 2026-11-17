@@ -89,7 +89,7 @@ class FakeWebSearch:
 
 class FakeGlpi:
     """Serves one ticket (TICKET by default) and the given surveys, and records the
-    followups, without a GLPI server."""
+    followups and the solved tickets, without a GLPI server."""
 
     def __init__(
         self,
@@ -97,12 +97,15 @@ class FakeGlpi:
         fail_read: bool = False,
         fail_followup: bool = False,
         surveys: list[GlpiSurvey] | None = None,
+        fail_solve: bool = False,
     ) -> None:
         self._ticket = ticket
         self._fail_read = fail_read
         self._fail_followup = fail_followup
+        self._fail_solve = fail_solve
         self.surveys = surveys or []
         self.followups: list[tuple[int, str, bool]] = []
+        self.solved: list[int] = []
 
     async def get_ticket(self, ticket_id: int) -> GlpiTicket | None:
         if self._fail_read:
@@ -119,6 +122,11 @@ class FakeGlpi:
         if self._fail_read:
             raise GlpiError("GLPI down")
         return list(self.surveys)
+
+    async def mark_solved(self, ticket_id: int) -> None:
+        if self._fail_solve:
+            raise GlpiError("GLPI down")
+        self.solved.append(ticket_id)
 
 
 class FailingEmbedder:

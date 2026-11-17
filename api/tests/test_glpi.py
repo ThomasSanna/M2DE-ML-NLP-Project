@@ -150,6 +150,19 @@ def test_add_followup_posts_html() -> None:
     }
 
 
+def test_mark_solved_sets_the_solved_status() -> None:
+    server = FakeGlpiServer()
+    _run(server, lambda glpi: glpi.mark_solved(42))
+    put = next(r for r in server.requests if r.method == "PUT")
+    assert put.url.path.endswith("/Ticket/42")
+    assert json.loads(put.content) == {"input": {"status": 5}}
+
+
+def test_mark_solved_of_a_missing_ticket_raises_glpi_error() -> None:
+    with pytest.raises(GlpiError):
+        _run(FakeGlpiServer(), lambda glpi: glpi.mark_solved(999))
+
+
 def test_bad_token_raises_glpi_error() -> None:
     with pytest.raises(GlpiError):
         _run(FakeGlpiServer(), lambda glpi: glpi.get_ticket(42), user_token="wrong")

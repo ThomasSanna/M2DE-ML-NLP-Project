@@ -18,8 +18,8 @@ from app.api.deps import (
     WebSearchDep,
     require_api_key,
 )
-from app.schemas.ticket import AnswerSourcesRead, ProgressRead, SourceRead
-from app.services import answer, survey
+from app.schemas.ticket import AnswerSourcesRead, ProgressRead, SourceRead, VerdictCreate
+from app.services import answer, survey, verdict
 from app.services.embeddings import EmbeddingError
 from app.services.glpi import GlpiError
 from app.services.llm import LLMError
@@ -133,19 +133,34 @@ async def ticket_progress(
 async def ticket_answers(
     ticket_id: Annotated[int, Path(gt=0)], session: SessionDep
 ) -> list[AnswerSourcesRead]:
-    """Web sources of each answer posted on the ticket, oldest first."""
-    rows = await survey.list_web_sources(session, ticket_id)
+    """Each followup the bot posted on the ticket, oldest first: its web sources, whether it
+    handed the ticket over, and the requester's verdict on it."""
     return [
         AnswerSourcesRead(
-            followup_id=followup_id,
+            followup_id=row.glpi_followup_id,
             sources=[
                 SourceRead(
                     title=source.get("title", ""),
                     url=source.get("url", ""),
                     domain=domain_of(source.get("url", "")),
                 )
-                for source in sources
+                for source in row.web_sources
             ],
+            escalated=row.escalated,
+            verdict=row.verdict,
         )
-        for followup_id, sources in rows
+        for row in await survey.list_answers(session, ticket_id)
     ]
+
+
+@router.post("/{ticket_id}/verdict", status_code=status.HTTP_204_NO_CONTENT)
+async def ticket_verdict(
+    ticket_id: Annotated[int, Path(gt=0)],
+    body: VerdictCreate,
+    session: SessionDep,
+    glpi: GlpiDep,
+) -> None:
+    """The requester's verdict on the bot's latest answer: `resolved` adds a private note and
+    sets the ticket to Solved, `technician` adds a private note and hands the ticket over."""
+    if not await verdict.give_verdict(session, glpi, ticket_id, body.verdict):
+        raise HTTPException(status.HTTP_409_CONFLICT, "No answer of the bot awaits a verdict")

@@ -4,6 +4,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
+from app.models import RequesterVerdict
+
 ProgressStatus = Literal["idle", "thinking", "searching", "done", "failed"]
 
 
@@ -41,5 +43,14 @@ class ProgressRead(BaseModel):
 
 
 class AnswerSourcesRead(BaseModel):
+    """A followup the bot posted: the plugin shows its sources and, on the latest answer,
+    the verdict buttons."""
+
     followup_id: int
     sources: list[SourceRead]
+    escalated: bool
+    verdict: RequesterVerdict | None
+
+
+class VerdictCreate(BaseModel):
+    verdict: RequesterVerdict
