@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.services.agent_prompt import (
+    IMAGES_NOTICE,
     NO_MEMORY,
     THREAD_MAX_CHARS,
     AnswerAction,
@@ -166,3 +167,13 @@ def test_initial_messages() -> None:
     assert [message["role"] for message in messages] == ["system", "user"]
     assert messages[1]["content"] == "Mémoire : …\n\nFil : …"
     assert messages[0]["content"] == other[0]["content"]
+
+
+def test_initial_messages_put_the_images_before_the_text() -> None:
+    messages = initial_messages("Mémoire : …", "Fil : …", ["data:image/png;base64,AA"])
+
+    assert messages[1]["content"] == [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA"}},
+        {"type": "text", "text": f"{IMAGES_NOTICE}\n\nMémoire : …\n\nFil : …"},
+    ]
+    assert messages[0] == initial_messages("Mémoire : …", "Fil : …")[0]

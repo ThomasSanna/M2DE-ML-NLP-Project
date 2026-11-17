@@ -108,6 +108,7 @@ class GlpiEventWorker:
                     self.web_search,
                     self.metrics,
                     self.settings,
+                    self.glpi,
                     ticket,
                     source="worker",
                     board=self.progress,

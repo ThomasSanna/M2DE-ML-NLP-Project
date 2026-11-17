@@ -188,6 +188,11 @@ the GLPI REST API (bot user). The thread, answered as by `POST /api/v1/answer`, 
 title and description, then its latest 49 public followups: the requesters' as `user`, the
 others' (bot, technicians) as `assistant`. Private followups are never read.
 
+**Images**: the requester's latest `LLM_MAX_IMAGES` images (pasted inline or attached, in
+the ticket or their public followups; PNG, JPEG, WebP or GIF, 5 MB max each) are downloaded
+from GLPI and sent to the model as `data:` URIs, before the text of the first user message.
+The memory search still reads the text only. A GLPI failure while reading them is logged
+and the thread is answered from its text. The worker does the same.
 
 ```bash
 curl -N -X POST http://localhost:8000/api/v1/tickets/42/answer/stream -H "X-API-Key: $API_KEY"
@@ -387,6 +392,7 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `LLM_MODEL` | `google/gemma-4-12B-it` | model name sent to the server (vLLM rejects an unknown name with a 404) |
 | `LLM_MAX_TOKENS` | `512` | max tokens generated per model call |
 | `LLM_TIMEOUT_SECONDS` | `60.0` | timeout of one model call |
+| `LLM_MAX_IMAGES` | `1` | latest images of the requester (PNG, JPEG, WebP, GIF, 5 MB max each) sent to the model with a GLPI ticket; `0` sends none. Keep it at or under the server's `--limit-mm-per-prompt` image limit, or vLLM rejects the request |
 | `RERANKER_BASE_URL` | **required** | university reranker URL, without `/v1` (VPN required) |
 | `RERANKER_TIMEOUT_SECONDS` | `30.0` | timeout of one rerank call |
 | `RETRIEVAL_CANDIDATES` | `20` | vector-search candidates sent to the reranker |

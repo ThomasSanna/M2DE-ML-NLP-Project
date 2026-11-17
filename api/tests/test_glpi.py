@@ -5,9 +5,11 @@ import httpx
 import pytest
 
 from app.services.glpi import (
+    IMAGE_MAX_BYTES,
     Author,
     GlpiError,
     GlpiFollowup,
+    GlpiImage,
     GlpiRestClient,
     GlpiSurvey,
     GlpiTicket,
@@ -48,6 +50,33 @@ SURVEYS = [
 ]
 
 
+# Documents by id (mime, content) and the documents each message links, as GLPI stores a
+# file pasted inline or attached: linked to the ticket itself or to its followup.
+DOCUMENTS = {
+    1: ("image/png", b"png"),
+    2: ("image/jpeg", b"x" * (IMAGE_MAX_BYTES + 1)),
+    3: ("application/pdf", b"pdf"),
+    4: ("image/webp", b"webp"),
+    5: ("image/png", b"bot"),
+}
+DOCUMENT_LINKS = {
+    "ITILFollowup/12": [{"id": 5, "documents_id": 3}],
+    "ITILFollowup/11": [{"id": 6, "documents_id": 5}],
+    "ITILFollowup/10": [{"id": 2, "documents_id": 1}, {"id": 4, "documents_id": 2}],
+    "Ticket/42": [{"id": 1, "documents_id": 4}],
+}
+IMAGE_THREAD = GlpiTicket(
+    id=42,
+    title="Wifi",
+    content="Mon wifi",
+    followups=(
+        GlpiFollowup(10, Author.REQUESTER, "Voici l'erreur"),
+        GlpiFollowup(11, Author.BOT, "Supprimez le profil"),
+        GlpiFollowup(12, Author.REQUESTER, "Le journal"),
+    ),
+)
+
+
 class FakeGlpiServer:
     """Mimics the GLPI REST API v1 and records the requests it receives."""
 
@@ -67,6 +96,13 @@ class FakeGlpiServer:
         assert request.headers["App-Token"] == "app-token"
         if path == "killSession":
             return httpx.Response(200, json=[])
+        if path.endswith("/Document_Item"):
+            return httpx.Response(200, json=DOCUMENT_LINKS[path.removesuffix("/Document_Item")])
+        if path.startswith("Document/"):
+            mime, content = DOCUMENTS[int(path.removeprefix("Document/"))]
+            if request.headers.get("Accept") == "application/octet-stream":
+                return httpx.Response(200, content=content)
+            return httpx.Response(200, json={"mime": mime})
         if path == "Ticket/42/Ticket_User":
             return httpx.Response(200, json=TICKET_USERS)
         if path == "Ticket/42/ITILFollowup":
@@ -186,3 +222,39 @@ def test_list_answered_surveys_skips_unanswered_ones() -> None:
 def test_list_surveys_with_a_bad_token_raises_glpi_error() -> None:
     with pytest.raises(GlpiError):
         _run(FakeGlpiServer(), lambda glpi: glpi.list_answered_surveys(), user_token="wrong")
+
+
+def _document_requests(server: FakeGlpiServer) -> list[str]:
+    paths = [r.url.path.removeprefix("/apirest.php/") for r in server.requests]
+    return [path for path in paths if "Document" in path]
+
+
+def test_get_images_reads_the_requester_messages_newest_first() -> None:
+    server = FakeGlpiServer()
+
+    images = _run(server, lambda glpi: glpi.get_images(IMAGE_THREAD, 2))
+
+    # The PDF and the oversized JPEG are skipped; the bot's followup is never read.
+    assert images == [GlpiImage("image/png", b"png"), GlpiImage("image/webp", b"webp")]
+    assert "ITILFollowup/11/Document_Item" not in _document_requests(server)
+
+
+def test_get_images_stops_at_the_limit() -> None:
+    server = FakeGlpiServer()
+
+    images = _run(server, lambda glpi: glpi.get_images(IMAGE_THREAD, 1))
+
+    assert images == [GlpiImage("image/png", b"png")]
+    assert "Ticket/42/Document_Item" not in _document_requests(server)
+
+
+def test_get_images_with_no_limit_calls_nothing() -> None:
+    server = FakeGlpiServer()
+
+    assert _run(server, lambda glpi: glpi.get_images(IMAGE_THREAD, 0)) == []
+    assert server.requests == []
+
+
+def test_get_images_with_a_bad_token_raises_glpi_error() -> None:
+    with pytest.raises(GlpiError):
+        _run(FakeGlpiServer(), lambda glpi: glpi.get_images(IMAGE_THREAD, 1), user_token="wrong")

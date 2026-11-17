@@ -2,11 +2,12 @@
 JSON action protocol. Model-facing text is French; the rest of the code is English."""
 
 import re
+from collections.abc import Sequence
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-from app.services.llm import ChatMessage
+from app.services.llm import ChatMessage, ImagePart, TextPart
 from app.services.websearch import WebResult
 
 # Caps keep the prompt under 5000 tokens with 3 memory entries, a full thread and 2 searches.
@@ -21,6 +22,10 @@ NO_MEMORY = "Aucune connaissance pertinente en mémoire."
 DUPLICATE_SEARCH = "Déjà cherché, résultats ci-dessus. Réponds ou cherche autre chose."
 SEARCH_UNAVAILABLE = "Recherche web indisponible, réponds avec la mémoire ou passe la main."
 MAX_STEPS_NOTICE = "Nombre maximal d'étapes atteint : réponds ou passe la main maintenant."
+IMAGES_NOTICE = (
+    "Images ci-dessus : jointes au ticket par l'utilisateur, de la plus ancienne à la plus"
+    " récente. Sers-t'en pour comprendre la demande ; ce ne sont pas des sources."
+)
 
 SYSTEM_PROMPT = """\
 Tu es l'assistant du support informatique de l'Université de Corse. \
@@ -173,8 +178,16 @@ def invalid_output(error: str) -> str:
     return f"Sortie invalide : {error}. Réponds avec un seul objet JSON valide."
 
 
-def initial_messages(memory_block: str, thread_block: str) -> list[ChatMessage]:
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"{memory_block}\n\n{thread_block}"},
+def initial_messages(
+    memory_block: str, thread_block: str, images: Sequence[str] = ()
+) -> list[ChatMessage]:
+    """The system prompt and the first user message. `images` are `data:` URIs, oldest
+    first, placed before the text as in Gemma 4's examples."""
+    text = f"{memory_block}\n\n{thread_block}"
+    if not images:
+        return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": text}]
+    parts: list[TextPart | ImagePart] = [
+        {"type": "image_url", "image_url": {"url": url}} for url in images
     ]
+    parts.append({"type": "text", "text": f"{IMAGES_NOTICE}\n\n{text}"})
+    return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": parts}]

@@ -49,6 +49,14 @@ class AgentRun:
     escalation_reason: str | None = None
 
 
+def _with_notice(message: ChatMessage, notice: str) -> ChatMessage:
+    """The message with the notice appended to its text, images kept."""
+    content = message["content"]
+    if isinstance(content, str):
+        return {"role": message["role"], "content": f"{content}\n\n{notice}"}
+    return {"role": message["role"], "content": [*content, {"type": "text", "text": notice}]}
+
+
 def _parse(completion: Completion) -> SearchAction | AnswerAction | EscalateAction | str:
     """The action, or a short error to feed back to the model."""
     if completion.finish_reason == "length":
@@ -79,11 +87,7 @@ async def run_agent(
         if last:
             # Appended to the message not sent yet: roles keep alternating and the
             # cached prefix is unchanged. The grammar below then forbids `search`.
-            final = messages[-1]
-            messages[-1] = {
-                "role": final["role"],
-                "content": f"{final['content']}\n\n{MAX_STEPS_NOTICE}",
-            }
+            messages[-1] = _with_notice(messages[-1], MAX_STEPS_NOTICE)
         known = memory_refs | web_results.keys()
         if progress is not None:
             progress.thinking()

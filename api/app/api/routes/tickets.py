@@ -73,6 +73,7 @@ async def stream_ticket_answer(
             web_search,
             metrics,
             settings,
+            glpi,
             ticket,
             source="ticket_stream",
             board=progress,

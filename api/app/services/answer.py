@@ -1,4 +1,6 @@
+import base64
 import logging
+from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,8 +62,12 @@ async def answer_thread(
     source: Source,
     ticket_id: int | None = None,
     progress: TicketProgress | None = None,
+    images: Sequence[str] = (),
 ) -> AnswerOutcome:
-    """Answer the thread's last user message from the memory, then the web if needed."""
+    """Answer the thread's last user message from the memory, then the web if needed.
+
+    `images` (`data:` URIs, oldest first) go to the model with the thread; the retrieval
+    reads the text only."""
     recorder = RunRecorder()
     text = _retrieval_query(request.messages)
 
@@ -108,6 +114,7 @@ async def answer_thread(
                 initial_messages(
                     render_memory([(entry.question, entry.answer) for entry in knowledge.values()]),
                     render_thread(thread),
+                    images,
                 ),
                 set(knowledge),
                 settings.agent_max_steps,
@@ -161,6 +168,7 @@ async def answer_ticket(
     web_search: WebSearch | None,
     metrics: CsvMetricsWriter | None,
     settings: Settings,
+    glpi: Glpi,
     ticket: GlpiTicket,
     *,
     source: Source,
@@ -184,6 +192,7 @@ async def answer_ticket(
     # Opened only once the bot owes an answer: the followup the bot itself posts
     # comes back as a ticket_answer event and must not leave a stale state.
     progress = board.start(ticket.id) if board is not None else None
+    images = await _ticket_images(glpi, ticket, settings.llm_max_images)
     request = AnswerRequest(messages=messages)
     return await answer_thread(
         session,
@@ -197,7 +206,25 @@ async def answer_ticket(
         source=source,
         ticket_id=ticket.id,
         progress=progress,
+        images=images,
     )
+
+
+async def _ticket_images(glpi: Glpi, ticket: GlpiTicket, limit: int) -> list[str]:
+    """The requester's latest images as `data:` URIs, oldest first.
+
+    A help, not the answer: a GLPI failure here is logged and the thread is answered from
+    its text.
+    """
+    try:
+        images = await glpi.get_images(ticket, limit)
+    except GlpiError as exc:
+        logger.warning("Images of ticket %d skipped: %s", ticket.id, exc)
+        return []
+    return [
+        f"data:{image.mime};base64,{base64.b64encode(image.data).decode()}"
+        for image in reversed(images)
+    ]
 
 
 def followup_text(result: AnswerOutcome) -> str:
