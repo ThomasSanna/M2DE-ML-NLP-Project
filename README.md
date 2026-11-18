@@ -66,7 +66,8 @@ Compose runs it as three services: `postgres` (PostgreSQL 17 + pgvector), `migra
 | `POST` | `/api/v1/answer` | `X-API-Key` | answer a ticket thread from memory and web search, with sources, or hand it over to a technician |
 | `POST` | `/api/v1/tickets/{id}/answer/stream` | `X-API-Key` | answer a GLPI ticket's thread and post the answer as a followup (SSE) |
 | `GET` | `/api/v1/tickets/{id}/progress` | `X-API-Key` | live progress of the answer the bot is writing on a ticket |
-| `GET` | `/api/v1/tickets/{id}/answers` | `X-API-Key` | web sources cited by each answer the bot posted on a ticket |
+| `GET` | `/api/v1/tickets/{id}/answers` | `X-API-Key` | each answer the bot posted on a ticket: web sources, handover, requester's verdict |
+| `POST` | `/api/v1/tickets/{id}/verdict` | `X-API-Key` | requester's verdict on the bot's latest answer: solved (note + Solved status) or ask for a technician (note + handover) |
 
 When `GLPI_WEBHOOK_SECRET` is set, the `X-GLPI-signature` header is verified (`HMAC-SHA256(body + X-GLPI-timestamp, secret)`, GLPI 11 format). When it is empty, every request is accepted and a warning is logged at startup.
 
@@ -108,7 +109,8 @@ After changing API code, rebuild the container: `docker compose up -d --build ap
 ## GLPI AI assistant plugin
 
 Source in [`glpi/plugins/aiassistant/`](glpi/plugins/aiassistant/). It makes the bot's
-answer visible while it is being written, and gives the cited pages a readable shape.
+answer visible while it is being written, gives the cited pages a readable shape, and lets
+the requester say whether the answer solved the problem.
 
 - **Progress bubble**: on a ticket the bot is answering, an "Assistant IA" entry appears at
   the end of the timeline with "Réflexion", then "Recherche sur le web « … »" with the
@@ -120,11 +122,22 @@ answer visible while it is being written, and gives the cited pages a readable s
   Escape or a click outside closes it.
 - **Plain text kept**: the followup itself still contains the `Sources :` list, so the
   e-mail GLPI sends to the requester is unchanged.
+- **Verdict buttons**: under the bot's latest answer, a requester of the ticket sees "Cette
+  réponse a-t-elle résolu votre problème ?" with "Oui, c'est résolu" and "Demander à un
+  agent" (`POST /api/v1/tickets/{id}/verdict`). The first adds a private note and sets the
+  ticket to Solved, for a technician to close; the second adds a private note and hands the
+  ticket over. Everyone then sees the verdict under the answer. No buttons on a handed-over,
+  solved or closed ticket, nor while the bot is answering; to have the bot try again, the
+  requester just replies in the thread.
 
 The browser never sees `API_KEY`: `ajax/ticket.php` checks the GLPI session and the ticket
 READ right, then calls `GET /api/v1/tickets/{id}/progress` and `/answers` with the key
 stored encrypted in `glpi_configs` (context `plugin:aiassistant`). Both calls are bounded to
-2 s; an unreachable API means "nothing running", never a broken page.
+2 s; an unreachable API means "nothing running", never a broken page. A `POST` to the same
+script (GLPI checks its `X-Glpi-Csrf-Token` header) forwards a requester's verdict.
+
+GLPI caches the plugin's JS and CSS for 30 days under a URL that only changes with the
+plugin version: after editing them, browsers need a hard reload (Ctrl+Shift+R).
 
 Deployment: `docker-compose.yml` mounts `./glpi/plugins/aiassistant` read-only into the GLPI
 container, and step 8 of `scripts/configure-glpi.sh` stores `http://api:8000` + `API_KEY`,

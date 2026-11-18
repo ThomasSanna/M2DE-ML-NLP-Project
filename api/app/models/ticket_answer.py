@@ -1,11 +1,20 @@
 import uuid
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import Boolean, DateTime, Integer, Uuid, false, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.models.knowledge import str_enum
+
+
+class RequesterVerdict(StrEnum):
+    """What the requester said of the bot's answer, from the GLPI plugin's buttons."""
+
+    RESOLVED = "resolved"  # the answer solved the problem: a technician can close the ticket
+    TECHNICIAN = "technician"  # the requester asked for a technician: a handover
 
 
 class TicketAnswer(Base):
@@ -28,4 +37,6 @@ class TicketAnswer(Base):
     web_sources: Mapped[list[dict[str, str]]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'")
     )
+    # Set once, on the latest answer only: a newer answer gets its own buttons.
+    verdict: Mapped[RequesterVerdict | None] = mapped_column(str_enum(RequesterVerdict))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

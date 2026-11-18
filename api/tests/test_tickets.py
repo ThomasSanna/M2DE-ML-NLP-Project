@@ -20,7 +20,7 @@ from app.core.config import Settings
 from app.db.session import create_engine, create_sessionmaker
 from app.schemas.answer import AnswerResult
 from app.services import answer
-from app.services.glpi import Author, GlpiFollowup
+from app.services.glpi import Author, GlpiFollowup, GlpiImage
 from app.services.metrics import CsvMetricsWriter
 from app.services.progress import ProgressBoard
 from app.services.websearch import WebResult
@@ -145,6 +145,7 @@ def test_answer_ticket_leaves_the_board_untouched_when_the_bot_answered_last(
                     None,
                     CsvMetricsWriter(tmp_path),
                     settings,
+                    FakeGlpi(ticket),
                     ticket,
                     source="worker",
                     board=board,
@@ -443,6 +444,8 @@ def test_ticket_answers_lists_the_sources_of_each_followup(
                     "domain": "example.org",
                 }
             ],
+            "escalated": False,
+            "verdict": None,
         }
     ]
 
@@ -470,6 +473,8 @@ def test_ticket_answers_survives_a_malformed_stored_source(
         {
             "followup_id": 7,
             "sources": [{"title": "Page", "url": "", "domain": ""}],
+            "escalated": False,
+            "verdict": None,
         }
     ]
 
@@ -531,3 +536,36 @@ def test_ticket_stream_marks_the_run_failed_when_the_followup_fails(
     view = _board(client).get(TICKET.id)
     assert view is not None
     assert (view.status, view.followup_id) == ("failed", None)
+
+
+def test_ticket_stream_sends_the_requester_images_to_the_model(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    # Newest first from GLPI, oldest first in the prompt.
+    glpi = FakeGlpi(images=[GlpiImage("image/png", b"new"), GlpiImage("image/jpeg", b"old")])
+    model = ScriptedChatModel([json.dumps({"action": "answer", "answer": "Supprimez le profil"})])
+    override(client, get_glpi, glpi)
+    override(client, get_chat_model, model)
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert glpi.image_limits == [1]
+    [image, text] = model.calls[0][0][1]["content"]
+    assert image == {"type": "image_url", "image_url": {"url": "data:image/png;base64,bmV3"}}
+    assert TICKET.content in text["text"]
+
+
+def test_ticket_stream_answers_from_the_text_when_the_images_fail(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    glpi = FakeGlpi(fail_images=True)
+    model = ScriptedChatModel([json.dumps({"action": "answer", "answer": "Supprimez le profil"})])
+    override(client, get_glpi, glpi)
+    override(client, get_chat_model, model)
+
+    response = client.post(URL, headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert isinstance(model.calls[0][0][1]["content"], str)
+    assert glpi.followups == [(TICKET.id, "Supprimez le profil", False)]

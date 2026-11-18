@@ -1,4 +1,4 @@
-/* Bulle de progression et panneau des sources, aux couleurs du thème GLPI. */
+/* Bulle de progression, panneau des sources et avis du demandeur, aux couleurs du thème GLPI. */
 
 .aiassistant-bubble {
   padding: 0.75rem 1rem;
@@ -167,4 +167,33 @@
   font-size: 0.75rem;
   opacity: 0.6;
   white-space: nowrap;
+}
+
+.aiassistant-verdict {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--tblr-border-color, #dadfe5);
+  font-size: 0.875rem;
+}
+
+.aiassistant-verdict--ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.aiassistant-verdict--given {
+  opacity: 0.75;
+  font-style: italic;
+}
+
+.aiassistant-verdict-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.aiassistant-verdict-error {
+  flex-basis: 100%;
+  color: var(--tblr-danger, #d63939);
 }

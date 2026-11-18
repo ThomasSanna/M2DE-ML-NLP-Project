@@ -172,6 +172,18 @@ def test_single_step_notice_goes_on_initial_message() -> None:
     assert _enum(schema) == ["answer", "escalate"]
 
 
+def test_single_step_notice_keeps_the_images() -> None:
+    model = ScriptedChatModel([_answer()])
+    messages = initial_messages("Mémoire : …", "Fil : …", ["data:image/png;base64,AA"])
+
+    asyncio.run(run_agent(model, None, messages, {"K1"}, 1, RunRecorder()))
+
+    [image, text, notice] = model.calls[0][0][1]["content"]
+    assert image == {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA"}}
+    assert text["type"] == "text"
+    assert notice == {"type": "text", "text": MAX_STEPS_NOTICE}
+
+
 def test_citations_are_filtered_and_deduplicated() -> None:
     model = ScriptedChatModel([_answer("Voir", ["K1", "K9", "K1", "W1"])])
 

@@ -1,8 +1,8 @@
 <?php
 
 /**
- * Plugin « Assistant IA » : progression de la réponse et panneau des sources
- * dans la chronologie du ticket.
+ * Plugin « Assistant IA » : progression de la réponse, panneau des sources et
+ * avis du demandeur (résolu ou demande d'un agent) dans la chronologie du ticket.
  *
  * GLPI sert `public/*` d'un plugin sous `/{plugin}/{fichier}` : les noms donnés
  * aux hooks ADD_JAVASCRIPT / ADD_CSS sont donc relatifs à `public/`.

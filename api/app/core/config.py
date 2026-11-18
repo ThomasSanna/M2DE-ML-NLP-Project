@@ -64,6 +64,9 @@ class Settings(DatabaseSettings):
     llm_model: str = "google/gemma-4-12B-it"
     llm_max_tokens: int = Field(default=512, ge=1)
     llm_timeout_seconds: float = 60.0
+    # Latest images of the requester sent to the model with a GLPI ticket; 0 sends none.
+    # vLLM rejects a request with more images than its `--limit-mm-per-prompt` (400).
+    llm_max_images: int = Field(default=1, ge=0)
 
     # University reranker (`POST /rerank`), URL without `/v1`.
     reranker_base_url: AnyHttpUrl

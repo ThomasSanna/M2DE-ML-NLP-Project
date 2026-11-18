@@ -37,6 +37,14 @@ class GlpiTicket:
 
 
 @dataclass(frozen=True)
+class GlpiImage:
+    """An image the requester pasted or attached in the ticket or one of their followups."""
+
+    mime: str
+    data: bytes
+
+
+@dataclass(frozen=True)
 class GlpiSurvey:
     """A satisfaction survey the requester answered."""
 
@@ -52,13 +60,23 @@ class Glpi(Protocol):
 
     async def list_answered_surveys(self) -> list[GlpiSurvey]: ...
 
+    async def mark_solved(self, ticket_id: int) -> None: ...
 
+    async def get_images(self, ticket: GlpiTicket, limit: int) -> list[GlpiImage]: ...
+
+
+# Ticket.status of a solved ticket: a technician still closes it (6), or GLPI's auto-close.
+_SOLVED = 5
 # Ticket_User.type of a requester (2 is an assigned technician, 3 an observer).
 _REQUESTER = 1
 # The latest 49: with the ticket itself, the 50 messages an answer thread can hold.
 _FOLLOWUPS = {"sort": "id", "order": "DESC", "range": "0-48"}
 # The latest 1000 surveys: older tickets are closed long ago, their feedback already synced.
 _SURVEYS = {"sort": "id", "order": "DESC", "range": "0-999"}
+
+# The image types Gemma 4 reads; the cap keeps a request to the model server small.
+IMAGE_MIMES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
+IMAGE_MAX_BYTES = 5_000_000
 
 _TAG = re.compile(r"<[^>]+>")
 _BLOCK_END = re.compile(r"</(p|div|li|h[1-6])>|<br\s*/?>", re.IGNORECASE)
@@ -166,6 +184,61 @@ class GlpiRestClient:
                 return int(response.json()["id"])
             except (httpx.HTTPError, ValueError, KeyError) as exc:
                 raise GlpiError(f"Cannot add a followup to ticket {ticket_id}: {exc!r}") from exc
+
+    async def mark_solved(self, ticket_id: int) -> None:
+        """Set the ticket to Solved, so the ticket list shows it is ready to close."""
+        payload = {"input": {"status": _SOLVED}}
+        async with self._session() as (headers, _):
+            try:
+                response = await self._http.put(
+                    f"Ticket/{ticket_id}", headers=headers, json=payload
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise GlpiError(f"Cannot solve ticket {ticket_id}: {exc!r}") from exc
+
+    async def get_images(self, ticket: GlpiTicket, limit: int) -> list[GlpiImage]:
+        """The requester's latest `limit` images, newest first.
+
+        GLPI links each document, pasted inline or attached, to the message that carries it:
+        the ticket itself or a followup. The requester's followups are read newest first,
+        then the ticket. Other types and files over `IMAGE_MAX_BYTES` are skipped.
+        """
+        if limit <= 0:
+            return []
+        messages = [
+            f"ITILFollowup/{followup.id}"
+            for followup in reversed(ticket.followups)
+            if followup.author is Author.REQUESTER
+        ] + [f"Ticket/{ticket.id}"]
+        images: list[GlpiImage] = []
+        async with self._session() as (headers, _):
+            try:
+                for message in messages:
+                    links = await self._get_list(f"{message}/Document_Item", headers)
+                    for link in sorted(links, key=lambda link: int(link["id"]), reverse=True):
+                        image = await self._get_image(int(link["documents_id"]), headers)
+                        if image is not None:
+                            images.append(image)
+                        if len(images) == limit:
+                            return images
+            except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+                raise GlpiError(f"Cannot read the images of ticket {ticket.id}: {exc!r}") from exc
+        return images
+
+    async def _get_image(self, document_id: int, headers: dict[str, str]) -> GlpiImage | None:
+        response = await self._http.get(f"Document/{document_id}", headers=headers)
+        response.raise_for_status()
+        mime = response.json()["mime"]
+        if mime not in IMAGE_MIMES:
+            return None
+        response = await self._http.get(
+            f"Document/{document_id}", headers=headers | {"Accept": "application/octet-stream"}
+        )
+        response.raise_for_status()
+        if len(response.content) > IMAGE_MAX_BYTES:
+            return None
+        return GlpiImage(mime, response.content)
 
     async def list_answered_surveys(self) -> list[GlpiSurvey]:
         """The answered satisfaction surveys among the latest 1000, newest first.
