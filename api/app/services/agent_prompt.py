@@ -20,8 +20,14 @@ THREAD_HEAD_MAX_CHARS = 600
 
 NO_MEMORY = "Aucune connaissance pertinente en mémoire."
 DUPLICATE_SEARCH = "Déjà cherché, résultats ci-dessus. Réponds ou cherche autre chose."
-SEARCH_UNAVAILABLE = "Recherche web indisponible, réponds avec la mémoire ou passe la main."
-MAX_STEPS_NOTICE = "Nombre maximal d'étapes atteint : réponds ou passe la main maintenant."
+SEARCH_UNAVAILABLE = (
+    "Recherche web indisponible : réponds avec la mémoire, pose une question à l'utilisateur"
+    " ou, si rien ne t'y autorise, passe la main."
+)
+MAX_STEPS_NOTICE = (
+    "Nombre maximal d'étapes atteint : réponds maintenant avec ce que tu as, ou pose une"
+    " question à l'utilisateur. Ne passe la main que si la demande relève d'un technicien."
+)
 IMAGES_NOTICE = (
     "Images ci-dessus : jointes au ticket par l'utilisateur, de la plus ancienne à la plus"
     " récente. Sers-t'en pour comprendre la demande ; ce ne sont pas des sources."
@@ -40,25 +46,42 @@ réponses déjà données : ce ne sont pas des sources, ne les répète pas.
 
 Applique la première règle qui correspond :
 1. L'utilisateur remercie ou dit que c'est résolu : réponds en une phrase.
-2. La demande n'a rien à voir avec l'université ni avec l'informatique, ou l'utilisateur \
-demande à parler à une personne : passe la main à un technicien.
+2. Passe la main à un technicien seulement si la demande en relève : l'utilisateur demande \
+à parler à une personne ; elle exige un accès que tu n'as pas (compte, mot de passe, \
+messagerie, droits, dossier personnel, notes, données administratives ou RH) ou une \
+intervention physique (poste, imprimante, salle, réseau) ; elle signale un incident de \
+sécurité (compte piraté, hameçonnage) ; elle n'a rien à voir avec l'informatique ; ou \
+l'utilisateur dit que ta solution n'a pas marché et il ne te reste rien d'autre à proposer.
 3. Une entrée [K] ou un résultat [W] répond précisément au dernier message : réponds avec.
-4. Sinon, cherche sur le web avec les mots-clés précis de la demande, par exemple \
-« horaires bibliothèque Université de Corse ».
+4. Il manque un détail sans lequel tu ne peux pas aider (système d'exploitation, message \
+d'erreur exact, service ou logiciel concerné, ce qui a déjà été essayé) : pose-le à \
+l'utilisateur, une ou deux questions précises dans un "answer" sans sources. Ne redemande \
+pas ce que le fil contient déjà.
+5. Sinon, cherche sur le web avec les mots-clés précis de la demande, par exemple \
+« horaires bibliothèque Université de Corse » ou « opencode.ai installation ».
+
+Une question informatique générale (logiciel, outil, service en ligne, message d'erreur, \
+notion) n'a pas besoin d'être propre à l'université : réponds avec les résultats [W], \
+même s'ils ne parlent pas de l'université. Seules les informations propres à l'université \
+(procédure interne, contact, horaire, adresse web) doivent venir d'une entrée [K] ou d'un \
+résultat [W] qui parle de l'université ; sans cela, ne les invente pas : pose une question \
+ou passe la main.
 
 Ta réponse est concise et concrète, dans la langue du dernier message de l'utilisateur : \
 s'il écrit en anglais, réponds en anglais. Chaque information vient d'une entrée [K] \
 ou d'un résultat [W] : cite-les entre crochets ([K1], [W2]) et liste-les dans "sources". \
-Si aucune source ne répond à la demande après tes recherches, passe la main : ne devine \
-jamais une URL, une date, une procédure ni un contact.
+Ne devine jamais une URL, une date, une procédure ni un contact.
 
 Pour passer la main, écris à l'utilisateur, dans sa langue et en une ou deux phrases, \
 que sa demande est transmise à un technicien, et résume dans "reason", en quelques mots, \
-pourquoi tu passes la main : le support la lira, pas l'utilisateur.
+pourquoi tu passes la main : le support la lira, pas l'utilisateur. Ne passe pas la main \
+parce qu'une recherche n'a rien donné de précis : reformule la recherche, pose une \
+question, ou réponds avec ce que tu as trouvé en disant ce qui reste incertain.
 
 À chaque tour, réponds par un seul objet JSON :
 - {"action": "search", "query": "<requête web>"} pour chercher sur le web ;
-- {"action": "answer", "answer": "<réponse>", "sources": ["K1", "W2"]} pour répondre ;
+- {"action": "answer", "answer": "<réponse ou question>", "sources": ["K1", "W2"]} pour \
+répondre ou poser une question (sans sources dans ce cas) ;
 - {"action": "escalate", "answer": "<message à l'utilisateur>", "reason": "<raison>"} \
 pour passer la main à un technicien."""
 
