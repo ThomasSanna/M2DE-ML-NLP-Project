@@ -112,6 +112,34 @@ class FixedReranker:
 LOGITS = {KNOWLEDGE[0][0]: 3.0, KNOWLEDGE[1][0]: 0.5, KNOWLEDGE[2][0]: -4.0}
 
 
+def _matches(
+    settings: Settings,
+    reranker: Reranker,
+    text: str,
+    top_k: int = 3,
+    recorder: RunRecorder | None = None,
+    weighting: memory.FeedbackWeighting | None = None,
+) -> list[memory.MemoryMatch]:
+    async def _run() -> list[memory.MemoryMatch]:
+        engine = create_engine(settings.database_url)
+        async with create_sessionmaker(engine)() as session:
+            hits = await memory.retrieve(
+                session,
+                FakeEmbedder(),
+                reranker,
+                text,
+                20,
+                top_k,
+                0.5,
+                recorder or RunRecorder(),
+                weighting,
+            )
+        await engine.dispose()
+        return hits
+
+    return asyncio.run(_run())
+
+
 def _retrieve(
     settings: Settings,
     reranker: Reranker,
@@ -119,16 +147,22 @@ def _retrieve(
     top_k: int = 3,
     recorder: RunRecorder | None = None,
 ) -> list[tuple[str, float]]:
-    async def _run() -> list[tuple[str, float]]:
-        engine = create_engine(settings.database_url)
-        async with create_sessionmaker(engine)() as session:
-            hits = await memory.retrieve(
-                session, FakeEmbedder(), reranker, text, 20, top_k, 0.5, recorder or RunRecorder()
-            )
-        await engine.dispose()
-        return [(knowledge.question, score) for knowledge, score in hits]
+    """Question and reranker score of each entry, without feedback weighting."""
+    hits = _matches(settings, reranker, text, top_k, recorder)
+    return [(hit.knowledge.question, hit.relevance) for hit in hits]
 
-    return asyncio.run(_run())
+
+def _rate(settings: Settings, knowledge_id: str, score: float, age_days: int = 0) -> None:
+    run_sql(
+        settings,
+        "INSERT INTO feedback (knowledge_id, source, score, created_at) VALUES "
+        f"('{knowledge_id}', 'user', {score}, now() - interval '{age_days} days')",
+    )
+
+
+WEIGHTED = memory.FeedbackWeighting(weight=0.3, prior=2.0)
+# Above the threshold, reranker scores sit close together, as on the real memory.
+CLOSE_LOGITS = LOGITS | {KNOWLEDGE[1][0]: 2.5}
 
 
 def test_retrieve_keeps_entries_above_threshold_sorted_by_score(
@@ -259,3 +293,97 @@ def test_retrieve_without_candidates_skips_the_reranker(
         0,
         None,
     )
+
+
+def test_well_rated_entry_moves_ahead_of_a_more_relevant_one(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    first = _add(client, auth, *KNOWLEDGE[0])
+    second = _add(client, auth, *KNOWLEDGE[1])
+    for _ in range(4):
+        _rate(settings, second["id"], 1.0)
+
+    hits = _matches(settings, FixedReranker(CLOSE_LOGITS), "wifi eduroam", weighting=WEIGHTED)
+
+    assert [hit.knowledge.id for hit in hits] == [uuid.UUID(second["id"]), uuid.UUID(first["id"])]
+    # (0.5 * 2 + 4) / (2 + 4) = 0.8333, then 0.7 * 0.9241 + 0.3 * 0.8333 = 0.8969.
+    assert hits[0].relevance == pytest.approx(0.9241, abs=1e-4)
+    assert hits[0].feedback == pytest.approx(0.8333, abs=1e-4)
+    assert hits[0].score == pytest.approx(0.8969, abs=1e-4)
+    assert hits[1].feedback is None
+    assert hits[1].score == pytest.approx(0.7 * 0.9526 + 0.3 * 0.5, abs=1e-4)
+
+
+def test_poorly_rated_entry_drops_out_of_top_k(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    first = _add(client, auth, *KNOWLEDGE[0])
+    second = _add(client, auth, *KNOWLEDGE[1])
+    for _ in range(4):
+        _rate(settings, first["id"], 0.0)
+
+    hits = _matches(
+        settings, FixedReranker(CLOSE_LOGITS), "wifi eduroam", top_k=1, weighting=WEIGHTED
+    )
+
+    assert [hit.knowledge.id for hit in hits] == [uuid.UUID(second["id"])]
+
+
+def test_feedback_never_lets_an_entry_below_the_threshold_in(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    for question, answer in KNOWLEDGE:
+        _add(client, auth, question, answer)
+    third = _add(client, auth, "imprimante bâtiment B en panne", "Redémarrez le spouleur.")
+    for _ in range(10):
+        _rate(settings, third["id"], 1.0)
+    logits = LOGITS | {"imprimante bâtiment B en panne": -4.0}
+
+    hits = _matches(settings, FixedReranker(logits), "wifi eduroam", weighting=WEIGHTED)
+
+    assert uuid.UUID(third["id"]) not in [hit.knowledge.id for hit in hits]
+
+
+def test_zero_weight_ranks_on_the_reranker_alone(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    first = _add(client, auth, *KNOWLEDGE[0])
+    second = _add(client, auth, *KNOWLEDGE[1])
+    for _ in range(4):
+        _rate(settings, second["id"], 1.0)
+
+    hits = _matches(
+        settings,
+        FixedReranker(LOGITS),
+        "wifi eduroam",
+        weighting=memory.FeedbackWeighting(weight=0.0),
+    )
+
+    assert [hit.knowledge.id for hit in hits] == [uuid.UUID(first["id"]), uuid.UUID(second["id"])]
+    assert [hit.feedback for hit in hits] == [None, None]
+    assert [hit.score for hit in hits] == [hit.relevance for hit in hits]
+
+
+def test_old_ratings_fade_with_the_half_life(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    entry = _add(client, auth, *KNOWLEDGE[0])
+    # A bad rating two half-lives old (weight 0.25) and a recent good one (weight 1).
+    _rate(settings, entry["id"], 0.0, age_days=360)
+    _rate(settings, entry["id"], 1.0)
+    weighting = memory.FeedbackWeighting(weight=0.3, prior=2.0, half_life_days=180.0)
+
+    [hit] = _matches(settings, FixedReranker(LOGITS), "wifi eduroam", top_k=1, weighting=weighting)
+
+    # (0.5 * 2 + 0 * 0.25 + 1 * 1) / (2 + 0.25 + 1) = 0.6154
+    assert hit.feedback == pytest.approx(0.6154, abs=1e-3)
+
+
+@pytest.mark.parametrize(
+    ("ratings", "expected"),
+    [([], 0.5), ([0.0], 1 / 3), ([1.0] * 8, 0.9), ([0.0] * 8, 0.1)],
+)
+def test_feedback_score_is_pulled_towards_neutral_by_the_prior(
+    ratings: list[float], expected: float
+) -> None:
+    assert memory.feedback_score(sum(ratings), len(ratings), 2.0) == pytest.approx(expected)

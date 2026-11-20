@@ -75,6 +75,12 @@ class Settings(DatabaseSettings):
     retrieval_candidates: int = Field(default=20, ge=1)
     retrieval_top_k: int = Field(default=3, ge=1)
     rerank_threshold: float = Field(default=0.95, ge=0.0, le=1.0)
+    # Feedback weighting of the entries above the threshold: ranking score =
+    # (1 - weight) * reranker score + weight * smoothed feedback score (0.5 without rating).
+    feedback_weight: float = Field(default=0.3, ge=0.0, le=1.0)
+    feedback_prior: float = Field(default=2.0, gt=0.0)
+    # Age in days at which a rating counts half; empty = ratings never fade.
+    feedback_half_life_days: float | None = Field(default=180.0, gt=0.0)
 
     # Exa web search; empty key = web search disabled.
     exa_api_key: SecretStr | None = None
@@ -110,6 +116,7 @@ class Settings(DatabaseSettings):
         "glpi_app_token",
         "metrics_dir",
         "metrics_label",
+        "feedback_half_life_days",
         mode="before",
     )
     @classmethod
