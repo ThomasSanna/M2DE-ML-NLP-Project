@@ -14,6 +14,8 @@ opencode.json
 # Local default of a relative METRICS_DIR
 api/metrics/
 
+tickets_it.csv
+
 # Python (api/)
 .venv/
 __pycache__/
