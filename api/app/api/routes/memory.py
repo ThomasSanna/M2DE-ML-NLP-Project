@@ -2,9 +2,16 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import EmbedderDep, SessionDep, require_api_key
-from app.schemas.knowledge import KnowledgeCreate, KnowledgeRead, SearchHit, SearchRequest
-from app.services import memory
+from app.api.deps import EmbedderDep, SessionDep, SettingsDep, require_api_key
+from app.schemas.knowledge import (
+    KnowledgeCreate,
+    KnowledgeRead,
+    ReviewDecision,
+    ReviewItem,
+    SearchHit,
+    SearchRequest,
+)
+from app.services import memory, review
 
 router = APIRouter(prefix="/memory", tags=["memory"], dependencies=[Depends(require_api_key)])
 
@@ -36,3 +43,36 @@ async def search_knowledge(
         SearchHit(knowledge=KnowledgeRead.model_validate(knowledge), similarity=similarity)
         for knowledge, similarity in results
     ]
+
+
+@router.get("/review")
+async def list_review(session: SessionDep, settings: SettingsDep) -> list[ReviewItem]:
+    """Entries the feedback sent to `to_review`, the longest waiting first."""
+    weighting = memory.FeedbackWeighting(
+        prior=settings.feedback_prior, half_life_days=settings.feedback_half_life_days
+    )
+    return [
+        ReviewItem(
+            knowledge=KnowledgeRead.model_validate(entry),
+            feedback=stats.score if stats else None,
+            ratings=stats.count if stats else 0,
+        )
+        for entry, stats in await review.list_under_review(session, weighting)
+    ]
+
+
+@router.post("/knowledge/{knowledge_id}/review")
+async def review_knowledge(
+    knowledge_id: uuid.UUID, decision: ReviewDecision, session: SessionDep, embedder: EmbedderDep
+) -> KnowledgeRead:
+    """A technician's decision on an entry under review: `reactivate`, `correct` (a new
+    entry with the fixed answer replaces it) or `archive`."""
+    try:
+        entry = await review.review(
+            session, embedder, knowledge_id, decision.action, decision.answer
+        )
+    except review.NotUnderReview as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Knowledge is not under review") from exc
+    if entry is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Knowledge not found")
+    return KnowledgeRead.model_validate(entry)

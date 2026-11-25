@@ -63,6 +63,8 @@ Compose runs it as three services: `postgres` (PostgreSQL 17 + pgvector), `migra
 | `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | add a Q/A pair (the question is embedded) |
 | `GET` | `/api/v1/memory/knowledge/{id}` | `X-API-Key` | read a knowledge entry |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | top-k cosine similarity search over `active` entries |
+| `GET` | `/api/v1/memory/review` | `X-API-Key` | entries the feedback sent to review, with their feedback score |
+| `POST` | `/api/v1/memory/knowledge/{id}/review` | `X-API-Key` | technician's decision on an entry under review: reactivate, correct (new entry) or archive |
 | `POST` | `/api/v1/answer` | `X-API-Key` | answer a ticket thread from memory and web search, with sources, or hand it over to a technician |
 | `POST` | `/api/v1/tickets/{id}/answer/stream` | `X-API-Key` | answer a GLPI ticket's thread and post the answer as a followup (SSE) |
 | `GET` | `/api/v1/tickets/{id}/progress` | `X-API-Key` | live progress of the answer the bot is writing on a ticket |

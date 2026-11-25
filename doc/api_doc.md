@@ -16,6 +16,8 @@ Routes métier sous `/api/v1`.
 | `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | `201` | `401`, `422`, `502` |
 | `GET` | `/api/v1/memory/knowledge/{knowledge_id}` | `X-API-Key` | `200` | `401`, `404`, `422` |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | `200` | `401`, `422`, `502` |
+| `GET` | `/api/v1/memory/review` | `X-API-Key` | `200` | `401` |
+| `POST` | `/api/v1/memory/knowledge/{knowledge_id}/review` | `X-API-Key` | `200` | `401`, `404`, `409`, `422`, `502` |
 | `POST` | `/api/v1/answer` | `X-API-Key` | `200` | `401`, `422`, `502` |
 | `POST` | `/api/v1/tickets/{ticket_id}/answer/stream` | `X-API-Key` | `200` (SSE) | `401`, `404`, `409`, `422`, `502`, `503` |
 | `GET` | `/api/v1/tickets/{ticket_id}/progress` | `X-API-Key` | `200` | `401`, `422` |
@@ -101,6 +103,43 @@ curl -X POST http://localhost:8000/api/v1/memory/search \
 - `similarity` = similarité cosinus brute, dans [−1, 1] (1 = identique). Aucune pondération (feedback, fraîcheur, réutilisation) pour l'instant.
 - **Aucun seuil** : le top-k renvoie toujours `k` résultats s'il en existe, même peu pertinents.
 - Lecture seule : `reuse_count` n'est pas incrémenté.
+
+### `GET /api/v1/memory/review`
+
+The entries the feedback sent to `to_review` (see [Review of poorly rated entries](#review-of-poorly-rated-entries)),
+the longest waiting first, with their feedback as the ranking reads it.
+
+```json
+[{"knowledge": {"id": "3f2a...", "question": "...", "answer": "...", "status": "to_review", ...},
+  "feedback": 0.2, "ratings": 3}]
+```
+
+`feedback` is `null` and `ratings` 0 for an entry sent to review without rating (by hand).
+
+### `POST /api/v1/memory/knowledge/{knowledge_id}/review`
+
+A technician's decision on an entry under review. **Input** (`ReviewDecision`):
+
+| `action` | `answer` | Effect | Returns |
+|---|---|---|---|
+| `reactivate` | refused | back to `active`, ratings kept | the entry |
+| `correct` | required, fixed text | the entry is archived; a new `active` entry with the same question, the fixed answer, `source = technician` and no rating replaces it | the new entry |
+| `archive` | refused | `archived`, out of the memory for good | the entry |
+
+```bash
+curl -X POST http://localhost:8000/api/v1/memory/knowledge/3f2a.../review \
+  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+  -d '{"action": "correct", "answer": "Supprimez le profil eduroam, puis reconnectez-vous."}'
+```
+
+- A correction is a new entry rather than an edit: the old ratings judged the wrong answer,
+  and the survey sync would write them again if they were deleted. The archived entry keeps
+  its history.
+- A reactivated entry keeps its ratings: it ranks low and goes back to review at its next
+  poor rating. To start from zero, `correct` it.
+- `404` unknown entry; `409` the entry is not `to_review` (already decided); `422` an
+  `answer` with `reactivate` or `archive`, or a `correct` without one; `502` the
+  embeddings server is down (`correct` embeds the question again): nothing changes.
 
 ### `POST /api/v1/answer`
 
@@ -415,9 +454,9 @@ as above) under `FEEDBACK_REVIEW_THRESHOLD` goes to `to_review` (`services/feedb
   stops reaching requesters after a few bad ratings, instead of only sinking in the ranking.
 - With the defaults (0.3, 3 ratings, prior 2): three ratings of 0 give 0.2 and send the entry
   to review; two of 0 and one of 1 give 0.4 and keep it.
-- Archived entries are left alone. No route puts an entry back yet: a technician reviews it
-  with `GET /memory/knowledge/{id}` (which shows any status) and sets it `active` again in
-  the database.
+- Archived entries are left alone. A technician lists the entries with
+  `GET /memory/review`, then reactivates, corrects or archives each one with
+  `POST /memory/knowledge/{id}/review`.
 - The flagged ids are logged at INFO. `FEEDBACK_REVIEW_THRESHOLD=0` disables the review.
 
 ### Memory growth
@@ -621,4 +660,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Garde-fous du pipeline LLM, routes de feedback, route de révision (remettre une entrée `to_review` en `active`). La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même. Pas de déduplication des entrées apprises : deux tickets résolus sur le même problème donnent deux entrées.
+Garde-fous du pipeline LLM, routes de feedback. La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même. Pas de déduplication des entrées apprises : deux tickets résolus sur le même problème donnent deux entrées.
