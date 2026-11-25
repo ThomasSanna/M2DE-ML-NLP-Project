@@ -534,7 +534,7 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `LLM_MODEL` | `google/gemma-4-12B-it` | model name sent to the server (vLLM rejects an unknown name with a 404) |
 | `LLM_MAX_TOKENS` | `512` | max tokens generated per model call |
 | `LLM_TIMEOUT_SECONDS` | `60.0` | timeout of one model call |
-| `GUARD_BASE_URL` | empty | input guardrail model URL (vLLM, OpenAI-compatible), with `/v1` (VPN required); empty = no guardrail |
+| `GUARD_BASE_URL` | empty | input guardrail model URL (TGI, OpenAI-compatible), with `/v1` (VPN required); empty = no guardrail |
 | `GUARD_MODEL` | `google/gemma3-4b-it` | guardrail model name sent to the server |
 | `GUARD_TIMEOUT_SECONDS` | `10.0` | timeout of the guardrail call; a timeout lets the request through |
 | `LLM_MAX_IMAGES` | `1` | latest images of the requester (PNG, JPEG, WebP, GIF, 5 MB max each) sent to the model with a GLPI ticket; `0` sends none. Keep it at or under the server's `--limit-mm-per-prompt` image limit, or vLLM rejects the request |

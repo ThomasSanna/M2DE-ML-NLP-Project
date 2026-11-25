@@ -16,7 +16,7 @@ from app.services.feedback import ReviewPolicy
 from app.services.glpi import GlpiError, GlpiRestClient
 from app.services.glpi_worker import GlpiEventWorker
 from app.services.guard import GUARD_MAX_TOKENS
-from app.services.llm import LLMError, VLLMChatClient
+from app.services.llm import LLMError, TGIChatClient, VLLMChatClient
 from app.services.metrics import CsvMetricsWriter
 from app.services.progress import ProgressBoard
 from app.services.reranker import HttpRerankerClient, RerankerError
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     timeout=settings.guard_timeout_seconds,
                 )
             )
-            app.state.guard_model = VLLMChatClient(
+            app.state.guard_model = TGIChatClient(
                 guard_http, settings.guard_model, GUARD_MAX_TOKENS
             )
         reranker_http = await stack.enter_async_context(

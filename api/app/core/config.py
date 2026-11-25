@@ -68,7 +68,7 @@ class Settings(DatabaseSettings):
     # vLLM rejects a request with more images than its `--limit-mm-per-prompt` (400).
     llm_max_images: int = Field(default=1, ge=0)
 
-    # Input guardrail: a small model (vLLM, OpenAI-compatible, URL including `/v1`) reads the
+    # Input guardrail: a small model (TGI, OpenAI-compatible, URL including `/v1`) reads the
     # requester's text first and hands an off-topic request (neither IT nor university) over
     # to a technician. Empty URL = no guardrail; a failing guard lets the request through.
     guard_base_url: AnyHttpUrl | None = None
