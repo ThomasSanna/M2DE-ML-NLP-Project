@@ -391,6 +391,22 @@ weighted_score = (1 − FEEDBACK_WEIGHT) · reranker score + FEEDBACK_WEIGHT · 
   untouched: the weighting runs on the few entries the reranker kept, with one extra query.
 - `POST /memory/search` stays on raw similarity.
 
+### Threshold calibration
+
+`RERANK_THRESHOLD` was 0.95 (logit 2.9). In the metrics of 08/11 (162 runs with memory
+candidates), the best reranker score of each run, split by whether the answer cited the
+memory:
+
+| Threshold | Runs citing the memory kept | Runs not citing it filtered out |
+|---|---|---|
+| 0.95 | 100 % | 17 % |
+| 0.985 | 100 % | 29 % |
+| 0.99 | 97 % | 39 % |
+
+Every run that cited the memory scored 0.9895 or more: 0.985 keeps them all and drops more
+off-topic entries from the prompt. A run that does not cite the memory is not proof its
+entries were off-topic: re-measure with a labelled evaluation set.
+
 ## Schéma (résumé)
 
 **`knowledge`** : `id`, `question`, `answer`, `category`, `source`, `status` (`active` / `to_review` / `archived`), `glpi_ticket_id`, `reuse_count`, `embedding` (`halfvec(3584)`, embedding de la question, index HNSW cosinus), `created_at`, `updated_at`.
@@ -421,7 +437,7 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `RERANKER_TIMEOUT_SECONDS` | `30.0` | timeout of one rerank call |
 | `RETRIEVAL_CANDIDATES` | `20` | vector-search candidates sent to the reranker |
 | `RETRIEVAL_TOP_K` | `3` | max memory entries given to the model |
-| `RERANK_THRESHOLD` | `0.95` | min reranker score (sigmoid of the logit, 0 to 1) to keep an entry; 0.95 is logit 2.9 |
+| `RERANK_THRESHOLD` | `0.985` | min reranker score (sigmoid of the logit, 0 to 1) to keep an entry; 0.985 is logit 4.18 (see [Threshold calibration](#threshold-calibration)) |
 | `FEEDBACK_WEIGHT` | `0.3` | share of the feedback score in the ranking of the kept entries (0 to 1; 0 = reranker only) |
 | `FEEDBACK_PRIOR` | `2` | neutral pseudo-ratings (0.5) added to each entry's feedback score |
 | `FEEDBACK_HALF_LIFE_DAYS` | `180` | age at which a rating counts half; empty = ratings never fade |

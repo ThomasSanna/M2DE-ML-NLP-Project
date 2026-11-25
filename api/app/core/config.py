@@ -73,11 +73,12 @@ class Settings(DatabaseSettings):
     reranker_timeout_seconds: float = 30.0
 
     # Vector candidates sent to the reranker, then entries kept above the threshold
-    # (sigmoid of the reranker logit). 0.95 is logit 2.9: on the seed memory, expected
-    # entries score 4.3 or more, off-topic queries under 3.2.
+    # (sigmoid of the reranker logit). 0.985 is logit 4.18: on the seed memory, expected
+    # entries score 4.3 or more, off-topic queries under 3.2; in the 08/11 metrics campaign,
+    # every answer that cited the memory had a best score of 0.9895 or more.
     retrieval_candidates: int = Field(default=20, ge=1)
     retrieval_top_k: int = Field(default=3, ge=1)
-    rerank_threshold: float = Field(default=0.95, ge=0.0, le=1.0)
+    rerank_threshold: float = Field(default=0.985, ge=0.0, le=1.0)
     # Feedback weighting of the entries above the threshold: ranking score =
     # (1 - weight) * reranker score + weight * smoothed feedback score (0.5 without rating).
     feedback_weight: float = Field(default=0.3, ge=0.0, le=1.0)

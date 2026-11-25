@@ -85,3 +85,8 @@ def test_empty_metrics_settings_are_none(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_empty_feedback_half_life_never_fades(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FEEDBACK_HALF_LIFE_DAYS", "")
     assert _settings().feedback_half_life_days is None
+
+
+def test_default_rerank_threshold_keeps_every_entry_the_model_cited() -> None:
+    # Calibrated on the 08/11 metrics: the lowest best score of a memory-citing run was 0.9895.
+    assert _settings().rerank_threshold == 0.985
