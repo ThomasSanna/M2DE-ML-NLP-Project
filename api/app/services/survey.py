@@ -4,11 +4,11 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import Feedback, FeedbackSource, Knowledge, TicketAnswer
+from app.models import Feedback, FeedbackSource, Knowledge, RequesterVerdict, TicketAnswer
 from app.schemas.answer import (
     AnswerOutcome,
     AnswerResult,
@@ -56,21 +56,23 @@ async def record_answer(
 
 
 async def is_escalated(session: AsyncSession, ticket_id: int) -> bool:
-    """Whether the bot handed the ticket to a technician: it then never answers it again."""
-    handover = exists().where(TicketAnswer.glpi_ticket_id == ticket_id, TicketAnswer.escalated)
+    """Whether the bot, or the requester, handed the ticket to a technician: the bot then
+    never answers it again."""
+    handover = exists().where(
+        TicketAnswer.glpi_ticket_id == ticket_id,
+        or_(TicketAnswer.escalated, TicketAnswer.verdict == RequesterVerdict.TECHNICIAN),
+    )
     return bool(await session.scalar(select(handover)))
 
 
-async def list_web_sources(
-    session: AsyncSession, ticket_id: int
-) -> list[tuple[int, list[dict[str, str]]]]:
-    """Sources of each answer posted on the ticket, oldest first."""
+async def list_answers(session: AsyncSession, ticket_id: int) -> list[TicketAnswer]:
+    """The followups the bot posted on the ticket, oldest first."""
     rows = await session.scalars(
         select(TicketAnswer)
         .where(TicketAnswer.glpi_ticket_id == ticket_id)
         .order_by(TicketAnswer.created_at, TicketAnswer.id)
     )
-    return [(row.glpi_followup_id, row.web_sources) for row in rows]
+    return list(rows)
 
 
 async def sync_surveys(session: AsyncSession, glpi: Glpi) -> int:

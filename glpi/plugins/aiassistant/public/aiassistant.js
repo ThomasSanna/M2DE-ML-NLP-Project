@@ -1,5 +1,6 @@
 /**
- * Bulle « Assistant IA » dans la chronologie du ticket et panneau des sources.
+ * Bulle « Assistant IA » dans la chronologie du ticket, panneau des sources et,
+ * sous la dernière réponse, l'avis du demandeur (résolu ou demande d'un agent).
  *
  * La page interroge le proxy PHP (la clé d'API ne quitte jamais le serveur) :
  * 1 s pendant une réponse, 3 s au repos, en pause quand l'onglet est caché.
@@ -62,10 +63,12 @@
       schedule(IDLE_MS);
       return;
     }
+    var active = state.status === 'thinking' || state.status === 'searching';
     applySources(state.answers || []);
+    applyVerdict(state.answers || [], Boolean(state.can_verdict) && !active);
     revealPendingSources();
 
-    if (state.status === 'thinking' || state.status === 'searching') {
+    if (active) {
       sawActive = true;
       renderBubble(state);
       schedule(ACTIVE_MS);
@@ -229,9 +232,7 @@
       if (!answer.sources || !answer.sources.length) {
         return;
       }
-      var item = document.querySelector(
-        '.timeline-item[data-itemtype="ITILFollowup"][data-items-id="' + answer.followup_id + '"]'
-      );
+      var item = followupItem(answer.followup_id);
       if (!item || item.querySelector('.aiassistant-sources')) {
         return;
       }
@@ -260,6 +261,109 @@
       wrapper.appendChild(body);
       host.appendChild(wrapper);
     });
+  }
+
+  var VERDICT_TEXT = {
+    resolved: 'Le demandeur indique que cette réponse a résolu son problème.',
+    technician: "Le demandeur a demandé l'intervention d'un technicien."
+  };
+
+  function followupItem(followupId) {
+    return document.querySelector(
+      '.timeline-item[data-itemtype="ITILFollowup"][data-items-id="' + followupId + '"]'
+    );
+  }
+
+  // Everyone sees the verdict (the technician decides from it to close the ticket); only a
+  // requester gets the buttons, on the latest answer, until the ticket is handed over.
+  function applyVerdict(answers, canVerdict) {
+    var latest = answers[answers.length - 1];
+    var handedOver = answers.some(function (answer) {
+      return answer.escalated || answer.verdict === 'technician';
+    });
+    document.querySelectorAll('.aiassistant-verdict--ask').forEach(function (node) {
+      if (!canVerdict || handedOver || !latest || node.dataset.followupId !== String(latest.followup_id)) {
+        node.remove();
+      }
+    });
+    answers.forEach(function (answer) {
+      var item = VERDICT_TEXT[answer.verdict] && followupItem(answer.followup_id);
+      if (item && !item.querySelector('.aiassistant-verdict--given')) {
+        var host = item.querySelector('.read-only-content') || item;
+        host.appendChild(el('div', 'aiassistant-verdict aiassistant-verdict--given', VERDICT_TEXT[answer.verdict]));
+      }
+    });
+    if (!canVerdict || handedOver || !latest || latest.verdict) {
+      return;
+    }
+    var item = followupItem(latest.followup_id);
+    if (!item || item.querySelector('.aiassistant-verdict--ask')) {
+      return;
+    }
+    (item.querySelector('.read-only-content') || item).appendChild(verdictButtons(latest.followup_id));
+  }
+
+  function verdictButtons(followupId) {
+    var wrapper = el('div', 'aiassistant-verdict aiassistant-verdict--ask');
+    wrapper.dataset.followupId = String(followupId);
+    var actions = el('div', 'aiassistant-verdict-actions');
+    var error = el('div', 'aiassistant-verdict-error');
+    error.hidden = true;
+    var buttons = [
+      verdictButton('resolved', "Oui, c'est résolu", 'btn btn-sm btn-success'),
+      verdictButton('technician', 'Demander à un agent', 'btn btn-sm btn-outline-secondary')
+    ];
+    buttons.forEach(function (button) {
+      button.addEventListener('click', function (event) {
+        event.stopPropagation();
+        sendVerdict(button.dataset.verdict, buttons, error);
+      });
+      actions.appendChild(button);
+    });
+    wrapper.appendChild(el('span', 'aiassistant-verdict-question', 'Cette réponse a-t-elle résolu votre problème ?'));
+    wrapper.appendChild(actions);
+    wrapper.appendChild(error);
+    return wrapper;
+  }
+
+  function verdictButton(verdict, label, className) {
+    var button = el('button', className, label);
+    button.type = 'button';
+    button.dataset.verdict = verdict;
+    return button;
+  }
+
+  function sendVerdict(verdict, buttons, error) {
+    var token = document.querySelector('meta[property="glpi:csrf_token"]');
+    buttons.forEach(function (button) {
+      button.disabled = true;
+    });
+    error.hidden = true;
+    fetch(endpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-Glpi-Csrf-Token': token ? token.getAttribute('content') : ''
+      },
+      credentials: 'same-origin',
+      body: new URLSearchParams({ verdict: verdict }).toString()
+    })
+      .then(function (response) {
+        // 409: the answer no longer awaits a verdict (another tab, a newer answer).
+        if (response.status !== 204 && response.status !== 409) {
+          throw new Error('HTTP ' + response.status);
+        }
+        // The note and the new status are in the timeline only after a reload.
+        window.location.reload();
+      })
+      .catch(function () {
+        buttons.forEach(function (button) {
+          button.disabled = false;
+        });
+        error.textContent = "Votre réponse n'a pas pu être enregistrée, réessayez.";
+        error.hidden = false;
+      });
   }
 
   function closePanels() {

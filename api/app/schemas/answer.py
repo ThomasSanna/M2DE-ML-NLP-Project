@@ -44,7 +44,12 @@ Citation = Annotated[KnowledgeCitation | WebCitation, Field(discriminator="type"
 
 class MemoryHit(BaseModel):
     knowledge_id: uuid.UUID
+    # Reranker score in [0, 1]: what the threshold applies to.
     score: float
+    # Smoothed feedback score in [0, 1]; None when the entry has no rating.
+    feedback: float | None
+    # Ranking score: the reranker score blended with the feedback.
+    weighted_score: float
 
 
 class Usage(BaseModel):

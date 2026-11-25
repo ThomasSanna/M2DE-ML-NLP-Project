@@ -80,7 +80,15 @@ def test_answer_returns_cited_sources(client: TestClient, auth: dict[str, str]) 
                 "title": "Configurer eduroam",
             },
         ],
-        "memory": [{"knowledge_id": knowledge_id, "score": pytest.approx(0.9933, abs=1e-4)}],
+        "memory": [
+            {
+                "knowledge_id": knowledge_id,
+                "score": pytest.approx(0.9933, abs=1e-4),
+                # No rating: the feedback counts as a neutral 0.5 (default weight 0.3).
+                "feedback": None,
+                "weighted_score": pytest.approx(0.7 * 0.9933 + 0.3 * 0.5, abs=1e-4),
+            }
+        ],
         "searches": ["eduroam mac"],
         "steps": 2,
         "usage": {"prompt_tokens": 200, "completion_tokens": 20},

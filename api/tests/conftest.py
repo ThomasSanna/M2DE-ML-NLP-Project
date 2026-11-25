@@ -21,7 +21,7 @@ from app.db.session import create_engine
 from app.main import create_app
 from app.models import EMBEDDING_DIM
 from app.services.embeddings import EmbeddingError
-from app.services.glpi import GlpiError, GlpiSurvey, GlpiTicket
+from app.services.glpi import GlpiError, GlpiImage, GlpiSurvey, GlpiTicket
 from app.services.llm import ChatMessage, Completion, LLMError
 from app.services.reranker import RerankerError
 from app.services.websearch import WebResult, WebSearchError, WebSearchResponse
@@ -88,8 +88,8 @@ class FakeWebSearch:
 
 
 class FakeGlpi:
-    """Serves one ticket (TICKET by default) and the given surveys, and records the
-    followups, without a GLPI server."""
+    """Serves one ticket (TICKET by default), its images and the given surveys, and records
+    the followups, the solved tickets and the image limits asked, without a GLPI server."""
 
     def __init__(
         self,
@@ -97,12 +97,20 @@ class FakeGlpi:
         fail_read: bool = False,
         fail_followup: bool = False,
         surveys: list[GlpiSurvey] | None = None,
+        fail_solve: bool = False,
+        images: list[GlpiImage] | None = None,
+        fail_images: bool = False,
     ) -> None:
         self._ticket = ticket
         self._fail_read = fail_read
         self._fail_followup = fail_followup
+        self._fail_solve = fail_solve
         self.surveys = surveys or []
         self.followups: list[tuple[int, str, bool]] = []
+        self.solved: list[int] = []
+        self._images = images or []
+        self._fail_images = fail_images
+        self.image_limits: list[int] = []
 
     async def get_ticket(self, ticket_id: int) -> GlpiTicket | None:
         if self._fail_read:
@@ -119,6 +127,17 @@ class FakeGlpi:
         if self._fail_read:
             raise GlpiError("GLPI down")
         return list(self.surveys)
+
+    async def get_images(self, ticket: GlpiTicket, limit: int) -> list[GlpiImage]:
+        self.image_limits.append(limit)
+        if self._fail_images:
+            raise GlpiError("GLPI down")
+        return self._images[:limit]
+
+    async def mark_solved(self, ticket_id: int) -> None:
+        if self._fail_solve:
+            raise GlpiError("GLPI down")
+        self.solved.append(ticket_id)
 
 
 class FailingEmbedder:

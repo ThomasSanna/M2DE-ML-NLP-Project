@@ -12,9 +12,24 @@ class LLMError(RuntimeError):
 RESPONSE_FORMAT_NAME = "agent_step"
 
 
+class TextPart(TypedDict):
+    type: Literal["text"]
+    text: str
+
+
+class ImageUrl(TypedDict):
+    url: str  # a `data:` URI: the model server cannot fetch from GLPI
+
+
+class ImagePart(TypedDict):
+    type: Literal["image_url"]
+    image_url: ImageUrl
+
+
 class ChatMessage(TypedDict):
     role: Literal["system", "user", "assistant"]
-    content: str
+    # A list of parts only for a message carrying images.
+    content: str | list[TextPart | ImagePart]
 
 
 @dataclass(frozen=True)

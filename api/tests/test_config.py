@@ -44,6 +44,9 @@ def test_empty_exa_api_key_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
         {"rerank_threshold": 1.5},
         {"retrieval_top_k": 0},
         {"glpi_survey_poll_seconds": 0},
+        {"feedback_weight": 1.5},
+        {"feedback_prior": 0},
+        {"feedback_half_life_days": 0},
     ],
 )
 def test_invalid_agent_settings_are_rejected(overrides: dict[str, object]) -> None:
@@ -77,3 +80,8 @@ def test_empty_metrics_settings_are_none(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("METRICS_LABEL", "")
     settings = _settings()
     assert (settings.metrics_dir, settings.metrics_label) == (None, None)
+
+
+def test_empty_feedback_half_life_never_fades(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FEEDBACK_HALF_LIFE_DAYS", "")
+    assert _settings().feedback_half_life_days is None

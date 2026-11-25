@@ -20,6 +20,7 @@ Routes métier sous `/api/v1`.
 | `POST` | `/api/v1/tickets/{ticket_id}/answer/stream` | `X-API-Key` | `200` (SSE) | `401`, `404`, `409`, `422`, `502`, `503` |
 | `GET` | `/api/v1/tickets/{ticket_id}/progress` | `X-API-Key` | `200` | `401`, `422` |
 | `GET` | `/api/v1/tickets/{ticket_id}/answers` | `X-API-Key` | `200` | `401`, `422` |
+| `POST` | `/api/v1/tickets/{ticket_id}/verdict` | `X-API-Key` | `204` | `401`, `409`, `422`, `502`, `503` |
 
 ### Conventions
 
@@ -105,7 +106,7 @@ curl -X POST http://localhost:8000/api/v1/memory/search \
 
 Answers a ticket thread. The first and last user messages (the problem and the current
 request, 1000 characters at most) are searched in the memory (vector candidates, then the
-reranker), and the model either answers from it or runs a web search
+reranker, then the feedback weighting), and the model either answers from it or runs a web search
 (Exa) first, for at most `AGENT_MAX_STEPS` steps. Synchronous: about 1 to 15 s depending on
 the number of searches.
 
@@ -137,7 +138,7 @@ curl -X POST http://localhost:8000/api/v1/answer \
     {"ref": "K1", "type": "knowledge", "knowledge_id": "3f2a...", "question": "Eduroam refuse mon mot de passe"},
     {"ref": "W2", "type": "web", "url": "https://...", "title": "Configurer eduroam sous macOS"}
   ],
-  "memory": [{"knowledge_id": "3f2a...", "score": 0.94}],
+  "memory": [{"knowledge_id": "3f2a...", "score": 0.97, "feedback": 0.83, "weighted_score": 0.93}],
   "searches": ["eduroam macOS mot de passe en boucle"],
   "steps": 2,
   "usage": {"prompt_tokens": 3120, "completion_tokens": 210}
@@ -148,8 +149,10 @@ curl -X POST http://localhost:8000/api/v1/answer \
   entry, `W<n>` a web result; refs the model made up are dropped. In the answer text only
   bracketed refs (`[K1]`, `[K1, W2]`) count, and refs left in earlier answers of the thread
   are hidden from the model.
-- `memory`: every retrieved entry with its reranker score in [0, 1], cited or not. Entries
-  under `RERANK_THRESHOLD` are not retrieved.
+- `memory`: every retrieved entry, cited or not, best first: `score` is its reranker score
+  in [0, 1] (entries under `RERANK_THRESHOLD` are not retrieved), `feedback` its smoothed
+  feedback score in [0, 1] (`null` without any rating), `weighted_score` the ranking score
+  (see [Feedback weighting](#feedback-weighting)). The `K<n>` refs follow this order.
 - `searches`: the queries Exa answered (duplicates are not resent; a failed call is not
   listed and the model may retry it).
 - `502` with a generic `detail` when the embeddings server (`Embeddings server unavailable`),
@@ -186,6 +189,12 @@ Answers a GLPI ticket's thread, then posts the answer as a followup of the ticke
 the GLPI REST API (bot user). The thread, answered as by `POST /api/v1/answer`, is the ticket's
 title and description, then its latest 49 public followups: the requesters' as `user`, the
 others' (bot, technicians) as `assistant`. Private followups are never read.
+
+**Images**: the requester's latest `LLM_MAX_IMAGES` images (pasted inline or attached, in
+the ticket or their public followups; PNG, JPEG, WebP or GIF, 5 MB max each) are downloaded
+from GLPI and sent to the model as `data:` URIs, before the text of the first user message.
+The memory search still reads the text only. A GLPI failure while reading them is logged
+and the thread is answered from its text. The worker does the same.
 
 ```bash
 curl -N -X POST http://localhost:8000/api/v1/tickets/42/answer/stream -H "X-API-Key: $API_KEY"
@@ -266,8 +275,9 @@ curl http://localhost:8000/api/v1/tickets/42/progress -H "X-API-Key: $API_KEY"
 
 ### `GET /api/v1/tickets/{ticket_id}/answers`
 
-Web pages cited by each answer the bot posted on a ticket, for the plugin's sources
-pill. Read from `ticket_answer.web_sources`, so it survives a restart.
+Each answer the bot posted on a ticket, for the plugin: the web pages it cited (sources
+pill), whether it handed the ticket over, and the requester's verdict on it (verdict
+buttons). Read from `ticket_answer`, so it survives a restart.
 
 ```bash
 curl http://localhost:8000/api/v1/tickets/42/answers -H "X-API-Key: $API_KEY"
@@ -278,14 +288,41 @@ curl http://localhost:8000/api/v1/tickets/42/answers -H "X-API-Key: $API_KEY"
 ```json
 [{"followup_id": 1234, "sources": [
   {"title": "Acheter Windows 11", "url": "https://example.org/win11", "domain": "example.org"}
-]}]
+], "escalated": false, "verdict": null}]
 ```
 
 - One entry per recorded bot answer, in the order they were posted. An answer that cited
   no web page has an empty `sources` list (the plugin ignores it).
 - Empty list for an unknown ticket or a ticket the bot never answered.
 - Memory entries (`K` refs) are never listed: only web pages, deduplicated by URL.
+- `escalated`: the answer handed the ticket to a technician. `verdict`: `null`, `resolved`
+  or `technician` (see the next route).
 - Read-only, no remote call. A non-positive `ticket_id` is `422`.
+
+### `POST /api/v1/tickets/{ticket_id}/verdict`
+
+The requester's verdict on the bot's latest answer, sent by the plugin's buttons. Only a
+technician closes a ticket: the verdict tells the technicians whether they can.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/tickets/42/verdict -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" -d '{"verdict": "resolved"}'
+```
+
+**Input**: `{"verdict": "resolved" | "technician"}`. **Output**: `204`, no body.
+
+- `resolved`: a private followup ("Le demandeur indique que la réponse de l'assistant a
+  résolu son problème…"), then the ticket is set to Solved (status 5), so the ticket list
+  shows it. A technician closes it, or GLPI's auto-close. GLPI also shows the requester its
+  own "approval of the solution" form: approving it closes the ticket.
+- `technician`: a private followup, then a handover: the bot never answers the ticket again,
+  like a handover by the agent.
+- The verdict applies to the latest bot answer (`ticket_answer.verdict`), once. A newer
+  answer gets its own verdict.
+- `409`: no answer awaits a verdict (none posted, the latest is a handover, or it already
+  has one). `503`: `GLPI_USER_TOKEN` is empty.
+- `502` `{"detail": "GLPI unavailable"}`: the verdict is withdrawn and can be sent again. If
+  the note was posted before the failure, a retry posts it a second time.
 
 ### Automatic answer to tickets and followups
 
@@ -296,6 +333,7 @@ arrives within about a minute.
 
 - The bot answers each public followup of a requester, until someone else (a technician)
   writes a public followup: from then on it stays silent on that ticket.
+- A requester's `technician` verdict (plugin button) is a handover too.
 - When the agent hands a ticket over to a technician, the bot posts its message (public
   unless `GLPI_FOLLOWUP_PRIVATE`), records the handover in `ticket_answer`, adds the reason
   in a private followup, and never answers that ticket again.
@@ -329,7 +367,29 @@ every `GLPI_SURVEY_POLL_SECONDS`: GLPI sends no webhook for them.
 - Skipped: surveys not answered yet, tickets the bot never answered, answers citing only web
   pages, entries deleted since the answer.
 - A GLPI failure is logged at WARNING and retried at the next poll.
-- The rows are stored but not used yet: the search does not weight by feedback.
+- The rows feed the [feedback weighting](#feedback-weighting) of the answer engine.
+
+### Feedback weighting
+
+The answer engine (`POST /answer`, the ticket stream and the worker) reorders the memory
+entries the reranker kept by their `feedback` rows, every source counted (`memory.retrieve`):
+
+```
+feedback       = (0.5 · FEEDBACK_PRIOR + Σ score · decay) / (FEEDBACK_PRIOR + Σ decay)
+decay          = 0.5 ^ (age in days / FEEDBACK_HALF_LIFE_DAYS)        (1 when empty)
+weighted_score = (1 − FEEDBACK_WEIGHT) · reranker score + FEEDBACK_WEIGHT · feedback
+```
+
+- An entry without rating counts as a neutral 0.5. `FEEDBACK_PRIOR` pseudo-ratings at 0.5
+  keep one rating from swinging an entry: with the default 2, one rating of 0 gives 0.33,
+  eight give 0.1.
+- The threshold applies to the reranker score alone: feedback never brings in an off-topic
+  entry, but reorders the relevant ones and can push a poorly rated one past
+  `RETRIEVAL_TOP_K`. Above the threshold the reranker scores sit close together (0.95 to 1),
+  so the feedback decides the order among relevant entries.
+- `FEEDBACK_WEIGHT=0` ranks on the reranker alone. The vector search and its HNSW index are
+  untouched: the weighting runs on the few entries the reranker kept, with one extra query.
+- `POST /memory/search` stays on raw similarity.
 
 ## Schéma (résumé)
 
@@ -337,7 +397,7 @@ every `GLPI_SURVEY_POLL_SECONDS`: GLPI sends no webhook for them.
 
 **`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`, unique par ticket et entrée) ; non exposé par l'API.
 
-**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
+**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `verdict` = the requester's verdict from the plugin, `resolved` or `technician`, null until given, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
 
 **`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par le worker (`app/services/glpi_worker.py`).
 
@@ -356,11 +416,15 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `LLM_MODEL` | `google/gemma-4-12B-it` | model name sent to the server (vLLM rejects an unknown name with a 404) |
 | `LLM_MAX_TOKENS` | `512` | max tokens generated per model call |
 | `LLM_TIMEOUT_SECONDS` | `60.0` | timeout of one model call |
+| `LLM_MAX_IMAGES` | `1` | latest images of the requester (PNG, JPEG, WebP, GIF, 5 MB max each) sent to the model with a GLPI ticket; `0` sends none. Keep it at or under the server's `--limit-mm-per-prompt` image limit, or vLLM rejects the request |
 | `RERANKER_BASE_URL` | **required** | university reranker URL, without `/v1` (VPN required) |
 | `RERANKER_TIMEOUT_SECONDS` | `30.0` | timeout of one rerank call |
 | `RETRIEVAL_CANDIDATES` | `20` | vector-search candidates sent to the reranker |
 | `RETRIEVAL_TOP_K` | `3` | max memory entries given to the model |
 | `RERANK_THRESHOLD` | `0.95` | min reranker score (sigmoid of the logit, 0 to 1) to keep an entry; 0.95 is logit 2.9 |
+| `FEEDBACK_WEIGHT` | `0.3` | share of the feedback score in the ranking of the kept entries (0 to 1; 0 = reranker only) |
+| `FEEDBACK_PRIOR` | `2` | neutral pseudo-ratings (0.5) added to each entry's feedback score |
+| `FEEDBACK_HALF_LIFE_DAYS` | `180` | age at which a rating counts half; empty = ratings never fade |
 | `EXA_API_KEY` | empty | Exa key; empty = web search disabled |
 | `EXA_INCLUDE_DOMAINS` | empty | comma-separated domains web search is restricted to |
 | `EXA_NUM_RESULTS` | `3` | results per web search |
@@ -486,4 +550,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Garde-fous du pipeline LLM, routes de feedback, pondération de la recherche (les retours des enquêtes de satisfaction sont collectés dans `feedback` mais pas encore utilisés).
+Garde-fous du pipeline LLM, routes de feedback. La pondération ne tient compte que du feedback : ni réutilisation (`reuse_count` reste à 0) ni fraîcheur de l'entrée.
