@@ -216,6 +216,25 @@ The memory API also syncs the answered surveys into its `feedback` table, as a s
 memory entry the bot cited on the ticket; the answer engine ranks well-rated entries first
 (see [`doc/api_doc.md`](doc/api_doc.md#feedback-weighting)).
 
+## Evaluation
+
+`data/eval_set.json` holds 47 labelled questions: 27 rewordings of seed questions (the
+answer must cite that seed entry), 14 IT questions outside the memory (the answer must cite
+no memory entry) and 6 requests a technician must take (handover).
+
+```bash
+python scripts/evaluate.py --check                                  # check the file, offline
+API_KEY=<your API_KEY> python scripts/evaluate.py --out eval.json   # VPN, seed memory loaded
+```
+
+The script calls `POST /api/v1/answer`, which writes nothing (no ticket, no reuse, nothing
+learnt), and prints the share of correct routes per kind, whether the expected entry was
+retrieved and cited, the latency, and the cosine similarities of `POST /memory/search`:
+reworded question to its seed entry, and question outside the memory to its closest entry.
+The gap between the two tells where to set `GROWTH_DEDUP_SIMILARITY`. Run it once per
+configuration (e.g. `RERANK_THRESHOLD`, `FEEDBACK_WEIGHT`), restarting the API in between;
+with `METRICS_DIR` and a `METRICS_LABEL` per run, the metrics report compares the latencies.
+
 ## Stop and reset
 
 ```bash
@@ -264,6 +283,6 @@ docker compose restart api
 | `api/` | Memory API (FastAPI, SQLAlchemy, Alembic, tests) |
 | `glpi/` | GLPI configuration script and SQL queries |
 | `ldap/` | LDAP seed (`bootstrap.ldif`) |
-| `scripts/` | GLPI setup, feedback export, memory seeding |
-| `data/` | Sample knowledge base (`knowledge_seed.json`) |
+| `scripts/` | GLPI setup, feedback export, memory seeding, evaluation |
+| `data/` | Sample knowledge base (`knowledge_seed.json`), evaluation set (`eval_set.json`) |
 | `doc/` | Project notes and API reference |
