@@ -150,6 +150,7 @@ class SurveySync:
     # Set to grow the memory: validated answers are indexed after each sync.
     embedder: Embedder | None = None
     growth_min_score: float = 0.8
+    dedup_similarity: float = 1.0
 
     async def run(self) -> None:
         """Sync until cancelled at shutdown."""
@@ -167,7 +168,7 @@ class SurveySync:
                 if self.embedder is not None:
                     # Also retries the verdicts indexed while the embeddings server was down.
                     async with self.sessionmaker() as session:
-                        await growth.index_validated(session, self.embedder)
+                        await growth.index_validated(session, self.embedder, self.dedup_similarity)
             except (GlpiError, EmbeddingError) as exc:
                 logger.warning("Survey sync: %s", exc)
             except Exception:

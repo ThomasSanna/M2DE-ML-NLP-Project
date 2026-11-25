@@ -174,5 +174,7 @@ async def ticket_verdict(
     sets the ticket to Solved, `technician` adds a private note and hands the ticket over."""
     review = feedback.ReviewPolicy.from_settings(settings)
     grow = embedder if settings.memory_growth else None
-    if not await verdict.give_verdict(session, glpi, ticket_id, body.verdict, review, grow):
+    if not await verdict.give_verdict(
+        session, glpi, ticket_id, body.verdict, review, grow, settings.growth_dedup_similarity
+    ):
         raise HTTPException(status.HTTP_409_CONFLICT, "No answer of the bot awaits a verdict")

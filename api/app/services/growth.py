@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Knowledge, KnowledgeSource, TicketAnswer
+from app.services import memory
 from app.services.embeddings import Embedder
 
 logger = logging.getLogger(__name__)
@@ -31,11 +32,16 @@ async def validate_latest(session: AsyncSession, ticket_id: int) -> None:
         latest.validated = True
 
 
-async def index_validated(session: AsyncSession, embedder: Embedder) -> list[uuid.UUID]:
+async def index_validated(
+    session: AsyncSession, embedder: Embedder, dedup_similarity: float = 1.0
+) -> list[uuid.UUID]:
     """Turn validated answers not indexed yet into memory entries; the entries created.
 
-    Raises `EmbeddingError` with nothing written: the answers stay pending for the next
-    call. Each answer is indexed once, even if its entry is deleted later.
+    An answer whose question is at least `dedup_similarity` (cosine) from an active entry's
+    is linked to that entry instead: the same problem solved twice must not give two
+    entries. Entries under review or archived do not count, so a validated answer can take
+    their place. Raises `EmbeddingError` with nothing written: the answers stay pending for
+    the next call. Each answer is indexed once, even if its entry is deleted later.
     """
     pending = list(
         await session.scalars(
@@ -60,6 +66,17 @@ async def index_validated(session: AsyncSession, embedder: Embedder) -> list[uui
     embeddings = await embedder.embed([row.question or "" for row in pending])
     created = []
     for row, embedding in zip(pending, embeddings, strict=True):
+        # Sees the entries flushed earlier in this loop: two answers of a batch dedupe too.
+        closest = await memory.closest_active(session, embedding)
+        if closest is not None and closest[1] >= dedup_similarity:
+            row.indexed_knowledge_id = closest[0].id
+            logger.info(
+                "Answer of ticket %d duplicates entry %s (similarity %.3f): not indexed",
+                row.glpi_ticket_id,
+                closest[0].id,
+                closest[1],
+            )
+            continue
         entry = Knowledge(
             question=row.question,
             answer=row.answer,
@@ -72,5 +89,6 @@ async def index_validated(session: AsyncSession, embedder: Embedder) -> list[uui
         row.indexed_knowledge_id = entry.id
         created.append(entry.id)
     await session.commit()
-    logger.info("Memory grew by %d validated answers: %s", len(created), created)
+    if created:
+        logger.info("Memory grew by %d validated answers: %s", len(created), created)
     return created

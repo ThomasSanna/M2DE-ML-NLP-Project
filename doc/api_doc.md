@@ -473,6 +473,12 @@ next requester with the same problem gets it from the memory instead of the web.
   that cited an entry would duplicate it; its feedback goes to that entry instead.
 - The new entry has `source = llm`, the ticket's `glpi_ticket_id`, and is `active` with no
   rating: the weighting and the review then treat it like any other.
+- Deduplication: when the closest `active` entry's question is at least
+  `GROWTH_DEDUP_SIMILARITY` (cosine, the embedding space of the search) from the answer's
+  question, no entry is created and `indexed_knowledge_id` points to that entry. Two answers
+  indexed in the same pass dedupe too. Entries under review or archived do not count: a
+  validated answer can take their place. The default 0.9 is not calibrated yet:
+  `scripts/evaluate.py` reports how close paraphrases of the same question score.
 - Indexing needs the embeddings server. A `resolved` verdict tries at once; on failure, or
   for a survey, the survey task indexes the pending answers at its next pass (every
   `GLPI_SURVEY_POLL_SECONDS`). Each answer is indexed once (`indexed_knowledge_id`), even if
@@ -535,6 +541,7 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `FEEDBACK_REVIEW_MIN_RATINGS` | `3` | ratings an entry needs before it can go to review |
 | `MEMORY_GROWTH` | `true` | validated answers that cited no memory entry become entries |
 | `GROWTH_SURVEY_MIN_SCORE` | `0.8` | survey score (rating / 5) at or above which the ticket's latest answer is validated |
+| `GROWTH_DEDUP_SIMILARITY` | `0.9` | cosine similarity from which a validated answer is linked to an existing active entry instead of becoming one (1 = identical questions only) |
 | `EXA_API_KEY` | empty | Exa key; empty = web search disabled |
 | `EXA_INCLUDE_DOMAINS` | empty | comma-separated domains web search is restricted to |
 | `EXA_NUM_RESULTS` | `3` | results per web search |
@@ -660,4 +667,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Garde-fous du pipeline LLM, routes de feedback. La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même. Pas de déduplication des entrées apprises : deux tickets résolus sur le même problème donnent deux entrées.
+Garde-fous du pipeline LLM, routes de feedback. La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même.

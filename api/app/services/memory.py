@@ -80,6 +80,14 @@ async def search(
     return await _nearest(session, embedding, top_k)
 
 
+async def closest_active(
+    session: AsyncSession, embedding: list[float]
+) -> tuple[Knowledge, float] | None:
+    """The active entry whose question is closest, with its cosine similarity."""
+    hits = await _nearest(session, embedding, 1)
+    return hits[0] if hits else None
+
+
 async def _nearest(
     session: AsyncSession, embedding: list[float], top_k: int
 ) -> list[tuple[Knowledge, float]]:

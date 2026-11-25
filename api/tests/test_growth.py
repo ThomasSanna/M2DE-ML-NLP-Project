@@ -48,12 +48,12 @@ def _learnt(settings: Settings) -> list[Any]:
     )
 
 
-def _index(settings: Settings) -> list[uuid.UUID]:
+def _index(settings: Settings, dedup_similarity: float = 1.0) -> list[uuid.UUID]:
     async def run() -> list[uuid.UUID]:
         engine = create_engine(settings.database_url)
         try:
             async with create_sessionmaker(engine)() as session:
-                return await growth.index_validated(session, FakeEmbedder())
+                return await growth.index_validated(session, FakeEmbedder(), dedup_similarity)
         finally:
             await engine.dispose()
 
@@ -184,3 +184,79 @@ def test_worker_records_the_question_and_the_followup_text(
     [(question, answer)] = _rows(settings, "SELECT question, answer FROM ticket_answer")
     assert question == f"{TICKET.title}\n\n{TICKET.content}"
     assert answer == "Supprimez le profil"
+
+
+def _validate_all(settings: Settings) -> None:
+    run_sql(settings, "UPDATE ticket_answer SET validated = true")
+
+
+def _entry(client: TestClient, auth: dict[str, str], question: str) -> str:
+    return client.post(
+        "/api/v1/memory/knowledge", json={"question": question, "answer": "R"}, headers=auth
+    ).json()["id"]
+
+
+def _links(settings: Settings) -> list[Any]:
+    return _rows(settings, "SELECT indexed_knowledge_id::text FROM ticket_answer ORDER BY id")
+
+
+def test_same_problem_solved_twice_gives_one_entry(client: TestClient, settings: Settings) -> None:
+    _answer(settings, 7)
+    _answer(settings, 9)
+    _validate_all(settings)
+
+    [created] = _index(settings, dedup_similarity=0.9)
+
+    assert len(_learnt(settings)) == 1
+    assert _links(settings) == [(str(created),), (str(created),)]
+
+
+def test_answer_close_to_an_active_entry_is_linked_to_it(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    existing = _entry(client, auth, QUESTION)
+    _answer(settings, 7)
+    _validate_all(settings)
+
+    assert _index(settings, dedup_similarity=0.9) == []
+
+    assert _learnt(settings) == []
+    assert _links(settings) == [(existing,)]
+
+
+def test_answer_far_from_every_entry_is_indexed(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    _entry(client, auth, "Imprimante du bâtiment B en panne")
+    _answer(settings, 7)
+    _validate_all(settings)
+
+    assert len(_index(settings, dedup_similarity=0.9)) == 1
+    assert len(_learnt(settings)) == 1
+
+
+def test_entry_under_review_does_not_block_a_validated_answer(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    flagged = _entry(client, auth, QUESTION)
+    run_sql(settings, f"UPDATE knowledge SET status = 'to_review' WHERE id = '{flagged}'")
+    _answer(settings, 7)
+    _validate_all(settings)
+
+    [created] = _index(settings, dedup_similarity=0.9)
+
+    assert str(created) != flagged
+    assert _learnt(settings) == [(QUESTION, ANSWER, "llm", TICKET.id)]
+
+
+def test_resolved_verdict_dedupes_with_the_configured_similarity(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    existing = _entry(client, auth, QUESTION)
+    _answer(settings, 7)
+    override(client, get_glpi, FakeGlpi())
+
+    assert client.post(URL, headers=auth, json={"verdict": "resolved"}).status_code == 204
+
+    assert _learnt(settings) == []
+    assert _links(settings) == [(existing,)]
