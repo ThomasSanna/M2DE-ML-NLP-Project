@@ -36,6 +36,7 @@ async def give_verdict(
     verdict: RequesterVerdict,
     review: ReviewPolicy | None = None,
     embedder: Embedder | None = None,
+    dedup_similarity: float = 1.0,
 ) -> bool:
     """Record the verdict on the latest answer, tell the technicians in GLPI, then credit
     the entries that answer cited (feedback 1 for `resolved`, 0 for `technician`).
@@ -79,7 +80,7 @@ async def give_verdict(
     await session.commit()
     if latest.validated and embedder is not None:
         try:
-            await growth.index_validated(session, embedder)
+            await growth.index_validated(session, embedder, dedup_similarity)
         except EmbeddingError as exc:
             # The answer stays validated: the survey sync indexes it on its next pass.
             logger.warning("Indexing the answer resolved on ticket %d failed: %s", ticket_id, exc)

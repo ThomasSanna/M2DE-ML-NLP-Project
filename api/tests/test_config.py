@@ -53,6 +53,8 @@ def test_empty_exa_api_key_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
         {"feedback_review_threshold": 1.5},
         {"feedback_review_min_ratings": 0},
         {"growth_survey_min_score": 1.5},
+        {"growth_dedup_similarity": 0},
+        {"growth_dedup_similarity": 1.5},
     ],
 )
 def test_invalid_agent_settings_are_rejected(overrides: dict[str, object]) -> None:

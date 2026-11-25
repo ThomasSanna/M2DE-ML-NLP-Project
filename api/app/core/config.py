@@ -98,6 +98,9 @@ class Settings(DatabaseSettings):
     # "resolved" verdict, or a survey of the ticket at or above growth_survey_min_score.
     memory_growth: bool = True
     growth_survey_min_score: float = Field(default=0.8, ge=0.0, le=1.0)
+    # Cosine similarity, between the questions, from which a validated answer is linked to an
+    # existing active entry instead of becoming a new one (1 = only identical questions).
+    growth_dedup_similarity: float = Field(default=0.9, gt=0.0, le=1.0)
 
     # Exa web search; empty key = web search disabled.
     exa_api_key: SecretStr | None = None
