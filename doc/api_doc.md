@@ -16,6 +16,8 @@ Routes métier sous `/api/v1`.
 | `POST` | `/api/v1/memory/knowledge` | `X-API-Key` | `201` | `401`, `422`, `502` |
 | `GET` | `/api/v1/memory/knowledge/{knowledge_id}` | `X-API-Key` | `200` | `401`, `404`, `422` |
 | `POST` | `/api/v1/memory/search` | `X-API-Key` | `200` | `401`, `422`, `502` |
+| `GET` | `/api/v1/memory/review` | `X-API-Key` | `200` | `401` |
+| `POST` | `/api/v1/memory/knowledge/{knowledge_id}/review` | `X-API-Key` | `200` | `401`, `404`, `409`, `422`, `502` |
 | `POST` | `/api/v1/answer` | `X-API-Key` | `200` | `401`, `422`, `502` |
 | `POST` | `/api/v1/tickets/{ticket_id}/answer/stream` | `X-API-Key` | `200` (SSE) | `401`, `404`, `409`, `422`, `502`, `503` |
 | `GET` | `/api/v1/tickets/{ticket_id}/progress` | `X-API-Key` | `200` | `401`, `422` |
@@ -101,6 +103,43 @@ curl -X POST http://localhost:8000/api/v1/memory/search \
 - `similarity` = similarité cosinus brute, dans [−1, 1] (1 = identique). Aucune pondération (feedback, fraîcheur, réutilisation) pour l'instant.
 - **Aucun seuil** : le top-k renvoie toujours `k` résultats s'il en existe, même peu pertinents.
 - Lecture seule : `reuse_count` n'est pas incrémenté.
+
+### `GET /api/v1/memory/review`
+
+The entries the feedback sent to `to_review` (see [Review of poorly rated entries](#review-of-poorly-rated-entries)),
+the longest waiting first, with their feedback as the ranking reads it.
+
+```json
+[{"knowledge": {"id": "3f2a...", "question": "...", "answer": "...", "status": "to_review", ...},
+  "feedback": 0.2, "ratings": 3}]
+```
+
+`feedback` is `null` and `ratings` 0 for an entry sent to review without rating (by hand).
+
+### `POST /api/v1/memory/knowledge/{knowledge_id}/review`
+
+A technician's decision on an entry under review. **Input** (`ReviewDecision`):
+
+| `action` | `answer` | Effect | Returns |
+|---|---|---|---|
+| `reactivate` | refused | back to `active`, ratings kept | the entry |
+| `correct` | required, fixed text | the entry is archived; a new `active` entry with the same question, the fixed answer, `source = technician` and no rating replaces it | the new entry |
+| `archive` | refused | `archived`, out of the memory for good | the entry |
+
+```bash
+curl -X POST http://localhost:8000/api/v1/memory/knowledge/3f2a.../review \
+  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+  -d '{"action": "correct", "answer": "Supprimez le profil eduroam, puis reconnectez-vous."}'
+```
+
+- A correction is a new entry rather than an edit: the old ratings judged the wrong answer,
+  and the survey sync would write them again if they were deleted. The archived entry keeps
+  its history.
+- A reactivated entry keeps its ratings: it ranks low and goes back to review at its next
+  poor rating. To start from zero, `correct` it.
+- `404` unknown entry; `409` the entry is not `to_review` (already decided); `422` an
+  `answer` with `reactivate` or `archive`, or a `correct` without one; `502` the
+  embeddings server is down (`correct` embeds the question again): nothing changes.
 
 ### `POST /api/v1/answer`
 
@@ -415,10 +454,30 @@ as above) under `FEEDBACK_REVIEW_THRESHOLD` goes to `to_review` (`services/feedb
   stops reaching requesters after a few bad ratings, instead of only sinking in the ranking.
 - With the defaults (0.3, 3 ratings, prior 2): three ratings of 0 give 0.2 and send the entry
   to review; two of 0 and one of 1 give 0.4 and keep it.
-- Archived entries are left alone. No route puts an entry back yet: a technician reviews it
-  with `GET /memory/knowledge/{id}` (which shows any status) and sets it `active` again in
-  the database.
+- Archived entries are left alone. A technician lists the entries with
+  `GET /memory/review`, then reactivates, corrects or archives each one with
+  `POST /memory/knowledge/{id}/review`.
 - The flagged ids are logged at INFO. `FEEDBACK_REVIEW_THRESHOLD=0` disables the review.
+
+### Memory growth
+
+A validated answer that cited no memory entry becomes one (`services/growth.py`), so the
+next requester with the same problem gets it from the memory instead of the web.
+
+- Each followup the bot posts records the retrieval query (`ticket_answer.question`, the
+  first and last messages of the requester) and the text the requester read
+  (`ticket_answer.answer`, refs removed, web pages listed).
+- An answer is validated by the requester's `resolved` verdict, or by a survey of its ticket
+  at or above `GROWTH_SURVEY_MIN_SCORE` (the latest answer that was not a handover).
+- Only an answer that cited no memory entry is indexed: from the web or the model alone. One
+  that cited an entry would duplicate it; its feedback goes to that entry instead.
+- The new entry has `source = llm`, the ticket's `glpi_ticket_id`, and is `active` with no
+  rating: the weighting and the review then treat it like any other.
+- Indexing needs the embeddings server. A `resolved` verdict tries at once; on failure, or
+  for a survey, the survey task indexes the pending answers at its next pass (every
+  `GLPI_SURVEY_POLL_SECONDS`). Each answer is indexed once (`indexed_knowledge_id`), even if
+  its entry is deleted later.
+- `MEMORY_GROWTH=false` turns it off.
 
 ### Threshold calibration
 
@@ -442,7 +501,7 @@ entries were off-topic: re-measure with a labelled evaluation set.
 
 **`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey` / `verdict`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`) et par le verdict du demandeur (`source = verdict`), chacun unique par ticket et entrée (`services/feedback.py`) ; non exposé par l'API.
 
-**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `verdict` = the requester's verdict from the plugin, `resolved` or `technician`, null until given, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
+**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `verdict` = the requester's verdict from the plugin, `resolved` or `technician`, null until given, `question` = the retrieval query, `answer` = the text the requester read, `validated` = resolved verdict or good survey, `indexed_knowledge_id` = the memory entry the answer became, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
 
 **`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par le worker (`app/services/glpi_worker.py`).
 
@@ -474,6 +533,8 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `REUSE_HALF` | `5` | citations at which the reuse score reaches 0.5 |
 | `FEEDBACK_REVIEW_THRESHOLD` | `0.3` | feedback score under which an entry goes to `to_review` (0 = never) |
 | `FEEDBACK_REVIEW_MIN_RATINGS` | `3` | ratings an entry needs before it can go to review |
+| `MEMORY_GROWTH` | `true` | validated answers that cited no memory entry become entries |
+| `GROWTH_SURVEY_MIN_SCORE` | `0.8` | survey score (rating / 5) at or above which the ticket's latest answer is validated |
 | `EXA_API_KEY` | empty | Exa key; empty = web search disabled |
 | `EXA_INCLUDE_DOMAINS` | empty | comma-separated domains web search is restricted to |
 | `EXA_NUM_RESULTS` | `3` | results per web search |
@@ -599,4 +660,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Garde-fous du pipeline LLM, routes de feedback, route de révision (remettre une entrée `to_review` en `active`). La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même.
+Garde-fous du pipeline LLM, routes de feedback. La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même. Pas de déduplication des entrées apprises : deux tickets résolus sur le même problème donnent deux entrées.

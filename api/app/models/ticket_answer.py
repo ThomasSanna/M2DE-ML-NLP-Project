@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, Integer, Uuid, false, func, text
+from sqlalchemy import Boolean, DateTime, Integer, Text, Uuid, false, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,4 +39,12 @@ class TicketAnswer(Base):
     )
     # Set once, on the latest answer only: a newer answer gets its own buttons.
     verdict: Mapped[RequesterVerdict | None] = mapped_column(str_enum(RequesterVerdict))
+    # The retrieval query and the text the requester read: a validated answer that cited no
+    # memory entry becomes one (`services/growth.py`). Null on rows from before 0007.
+    question: Mapped[str | None] = mapped_column(Text)
+    answer: Mapped[str | None] = mapped_column(Text)
+    # Resolved verdict, or a good survey of the ticket: the answer may enter the memory.
+    validated: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    # The entry it became; no foreign key, like `knowledge_ids`: set once, never redone.
+    indexed_knowledge_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

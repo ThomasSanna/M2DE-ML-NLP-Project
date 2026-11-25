@@ -15,7 +15,8 @@ from app.schemas.answer import (
     KnowledgeCitation,
     WebCitation,
 )
-from app.services import feedback
+from app.services import feedback, growth
+from app.services.embeddings import Embedder, EmbeddingError
 from app.services.feedback import ReviewPolicy, TicketRating
 from app.services.glpi import Glpi, GlpiError
 
@@ -32,9 +33,16 @@ def _web_sources(result: AnswerResult) -> list[dict[str, str]]:
 
 
 async def record_answer(
-    session: AsyncSession, ticket_id: int, followup_id: int, result: AnswerOutcome
+    session: AsyncSession,
+    ticket_id: int,
+    followup_id: int,
+    result: AnswerOutcome,
+    *,
+    question: str | None = None,
+    answer: str | None = None,
 ) -> None:
-    """Remember a followup posted to the ticket: what it cited, or a handover."""
+    """Remember a followup posted to the ticket: what it cited, or a handover, and the
+    question and text a validated answer would enter the memory with."""
     if isinstance(result, EscalationResult):
         # A handover cites nothing: the survey has no entry to credit, the panel no page.
         cited: list[uuid.UUID] = []
@@ -51,6 +59,8 @@ async def record_answer(
             knowledge_ids=cited,
             escalated=escalated,
             web_sources=pages,
+            question=question,
+            answer=answer,
         )
     )
     if cited:
@@ -84,7 +94,10 @@ async def list_answers(session: AsyncSession, ticket_id: int) -> list[TicketAnsw
 
 
 async def sync_surveys(
-    session: AsyncSession, glpi: Glpi, review: ReviewPolicy | None = None
+    session: AsyncSession,
+    glpi: Glpi,
+    review: ReviewPolicy | None = None,
+    growth_min_score: float | None = None,
 ) -> int:
     """Turn the answered GLPI surveys into feedback on the entries the bot cited.
 
@@ -94,6 +107,10 @@ async def sync_surveys(
     surveys = {survey.ticket_id: survey for survey in await glpi.list_answered_surveys()}
     if not surveys:
         return 0
+    if growth_min_score is not None:
+        for ticket_id, rated in surveys.items():
+            if rated.score >= growth_min_score:
+                await growth.validate_latest(session, ticket_id)
     rows = await session.execute(
         select(TicketAnswer.glpi_ticket_id, TicketAnswer.knowledge_ids).where(
             TicketAnswer.glpi_ticket_id.in_(surveys)
@@ -130,16 +147,28 @@ class SurveySync:
     glpi: Glpi
     poll_seconds: float
     review: ReviewPolicy | None = None
+    # Set to grow the memory: validated answers are indexed after each sync.
+    embedder: Embedder | None = None
+    growth_min_score: float = 0.8
 
     async def run(self) -> None:
         """Sync until cancelled at shutdown."""
         while True:
             try:
                 async with self.sessionmaker() as session:
-                    changed = await sync_surveys(session, self.glpi, self.review)
+                    changed = await sync_surveys(
+                        session,
+                        self.glpi,
+                        self.review,
+                        self.growth_min_score if self.embedder is not None else None,
+                    )
                 if changed:
                     logger.info("Survey sync: %d feedback rows added or updated", changed)
-            except GlpiError as exc:
+                if self.embedder is not None:
+                    # Also retries the verdicts indexed while the embeddings server was down.
+                    async with self.sessionmaker() as session:
+                        await growth.index_validated(session, self.embedder)
+            except (GlpiError, EmbeddingError) as exc:
                 logger.warning("Survey sync: %s", exc)
             except Exception:
                 # A database outage or a bug must not stop the sync until the next restart.

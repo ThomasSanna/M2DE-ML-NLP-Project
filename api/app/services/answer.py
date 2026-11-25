@@ -192,17 +192,7 @@ async def answer_ticket(
 ) -> AnswerOutcome | None:
     """Answer a GLPI ticket's thread; None when the support side wrote last or the bot
     handed the ticket to a technician."""
-    messages = [
-        ThreadMessage(
-            role="user", content=f"{ticket.title}\n\n{ticket.content}"[:THREAD_MESSAGE_MAX_CHARS]
-        )
-    ] + [
-        ThreadMessage(
-            role="user" if followup.author is Author.REQUESTER else "assistant",
-            content=followup.content[:THREAD_MESSAGE_MAX_CHARS],
-        )
-        for followup in ticket.followups
-    ]
+    messages = ticket_messages(ticket)
     if messages[-1].role != "user" or await survey.is_escalated(session, ticket.id):
         return None
     # Opened only once the bot owes an answer: the followup the bot itself posts
@@ -224,6 +214,28 @@ async def answer_ticket(
         progress=progress,
         images=images,
     )
+
+
+def ticket_messages(ticket: GlpiTicket) -> list[ThreadMessage]:
+    """The ticket's thread as the model reads it: title and description, then the public
+    followups, the requesters' as `user` and everyone else's as `assistant`."""
+    return [
+        ThreadMessage(
+            role="user", content=f"{ticket.title}\n\n{ticket.content}"[:THREAD_MESSAGE_MAX_CHARS]
+        )
+    ] + [
+        ThreadMessage(
+            role="user" if followup.author is Author.REQUESTER else "assistant",
+            content=followup.content[:THREAD_MESSAGE_MAX_CHARS],
+        )
+        for followup in ticket.followups
+    ]
+
+
+def ticket_question(ticket: GlpiTicket) -> str:
+    """The text the memory was searched with for this ticket: the question a new entry
+    learnt from the answer is stored under, so later searches match it the same way."""
+    return _retrieval_query(ticket_messages(ticket))
 
 
 async def _ticket_images(glpi: Glpi, ticket: GlpiTicket, limit: int) -> list[str]:

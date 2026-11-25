@@ -94,6 +94,10 @@ class Settings(DatabaseSettings):
     # least min_ratings ratings and a smoothed feedback score under the threshold (0 = never).
     feedback_review_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
     feedback_review_min_ratings: int = Field(default=3, ge=1)
+    # A validated answer that cited no memory entry becomes one: on the requester's
+    # "resolved" verdict, or a survey of the ticket at or above growth_survey_min_score.
+    memory_growth: bool = True
+    growth_survey_min_score: float = Field(default=0.8, ge=0.0, le=1.0)
 
     # Exa web search; empty key = web search disabled.
     exa_api_key: SecretStr | None = None
