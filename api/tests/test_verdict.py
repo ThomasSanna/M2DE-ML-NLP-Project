@@ -1,8 +1,13 @@
+import asyncio
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from app.api.deps import get_glpi
 from app.core.config import Settings
+from app.db.session import create_engine
 from tests.conftest import TICKET, FakeGlpi, override, run_sql
 
 URL = f"/api/v1/tickets/{TICKET.id}/verdict"
@@ -22,6 +27,41 @@ def _answer(settings: Settings, followup_id: int, *, escalated: bool = False) ->
         "INSERT INTO ticket_answer (glpi_ticket_id, glpi_followup_id, knowledge_ids, escalated) "
         f"VALUES ({TICKET.id}, {followup_id}, '{{}}', {str(escalated).lower()})",
     )
+
+
+def _answer_citing(settings: Settings, followup_id: int, *knowledge_ids: str) -> None:
+    ids = ",".join(knowledge_ids)
+    run_sql(
+        settings,
+        "INSERT INTO ticket_answer (glpi_ticket_id, glpi_followup_id, knowledge_ids) "
+        f"VALUES ({TICKET.id}, {followup_id}, '{{{ids}}}')",
+    )
+
+
+def _knowledge(client: TestClient, auth: dict[str, str], question: str) -> str:
+    response = client.post(
+        "/api/v1/memory/knowledge", json={"question": question, "answer": "R"}, headers=auth
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+def _feedback(settings: Settings) -> list[Any]:
+    async def run() -> list[Any]:
+        engine = create_engine(settings.database_url)
+        try:
+            async with engine.connect() as connection:
+                result = await connection.execute(
+                    text(
+                        "SELECT knowledge_id::text, source, score, glpi_ticket_id FROM feedback "
+                        "ORDER BY knowledge_id"
+                    )
+                )
+                return [tuple(row) for row in result.all()]
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(run())
 
 
 def _verdicts(client: TestClient, auth: dict[str, str]) -> list[object]:
@@ -155,3 +195,43 @@ def test_answers_report_a_handover(
     body = client.get(f"/api/v1/tickets/{TICKET.id}/answers", headers=auth).json()
 
     assert body == [{"followup_id": 7, "sources": [], "escalated": True, "verdict": None}]
+
+
+@pytest.mark.parametrize(("verdict", "score"), [("resolved", 1.0), ("technician", 0.0)])
+def test_verdict_credits_the_entries_the_answer_cited(
+    client: TestClient, auth: dict[str, str], settings: Settings, verdict: str, score: float
+) -> None:
+    entry = _knowledge(client, auth, "Wifi eduroam")
+    _answer_citing(settings, 7, entry)
+    override(client, get_glpi, FakeGlpi())
+
+    assert client.post(URL, headers=auth, json={"verdict": verdict}).status_code == 204
+
+    assert _feedback(settings) == [(entry, "verdict", score, TICKET.id)]
+
+
+def test_verdict_credits_only_the_rated_answer(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    earlier = _knowledge(client, auth, "Wifi eduroam")
+    latest = _knowledge(client, auth, "Mot de passe ENT")
+    _answer_citing(settings, 7, earlier)
+    _answer_citing(settings, 9, latest)
+    override(client, get_glpi, FakeGlpi())
+
+    assert client.post(URL, headers=auth, json={"verdict": "resolved"}).status_code == 204
+
+    assert _feedback(settings) == [(latest, "verdict", 1.0, TICKET.id)]
+
+
+@pytest.mark.parametrize("glpi", [FakeGlpi(fail_followup=True), FakeGlpi(fail_solve=True)])
+def test_withdrawn_verdict_leaves_no_feedback(
+    client: TestClient, auth: dict[str, str], settings: Settings, glpi: FakeGlpi
+) -> None:
+    entry = _knowledge(client, auth, "Wifi eduroam")
+    _answer_citing(settings, 7, entry)
+    override(client, get_glpi, glpi)
+
+    assert client.post(URL, headers=auth, json={"verdict": "resolved"}).status_code == 502
+
+    assert _feedback(settings) == []

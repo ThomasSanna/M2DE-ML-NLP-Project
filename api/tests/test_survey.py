@@ -250,3 +250,30 @@ def test_list_answers_returns_each_followup_oldest_first(
         (7, [{"title": "Page", "url": "https://example.org"}]),
         (8, [{"title": "Page", "url": "https://example.org"}]),
     ]
+
+
+def _reuse(settings: Settings, knowledge_id: uuid.UUID) -> int:
+    [(count,)] = _rows(settings, f"SELECT reuse_count FROM knowledge WHERE id = '{knowledge_id}'")
+    return count
+
+
+def test_record_answer_counts_a_reuse_of_each_cited_entry(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    cited = _knowledge(client, auth, "Wifi eduroam")
+    other = _knowledge(client, auth, "Mot de passe ENT")
+
+    _record(settings, TICKET_ID, 7, _result(cited))
+    _record(settings, TICKET_ID, 8, _result(cited))
+
+    assert (_reuse(settings, cited), _reuse(settings, other)) == (2, 0)
+
+
+def test_handover_counts_no_reuse(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    entry = _knowledge(client, auth, "Wifi eduroam")
+
+    _record(settings, TICKET_ID, 7, _escalation())
+
+    assert _reuse(settings, entry) == 0

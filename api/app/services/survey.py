@@ -4,11 +4,10 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sqlalchemy import exists, or_, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import Feedback, FeedbackSource, Knowledge, RequesterVerdict, TicketAnswer
+from app.models import FeedbackSource, Knowledge, RequesterVerdict, TicketAnswer
 from app.schemas.answer import (
     AnswerOutcome,
     AnswerResult,
@@ -16,6 +15,8 @@ from app.schemas.answer import (
     KnowledgeCitation,
     WebCitation,
 )
+from app.services import feedback
+from app.services.feedback import ReviewPolicy, TicketRating
 from app.services.glpi import Glpi, GlpiError
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,13 @@ async def record_answer(
             web_sources=pages,
         )
     )
+    if cited:
+        # Counted when the answer reaches the requester, not on `POST /answer` (read-only).
+        await session.execute(
+            update(Knowledge)
+            .where(Knowledge.id.in_(cited))
+            .values(reuse_count=Knowledge.reuse_count + 1)
+        )
     await session.commit()
 
 
@@ -75,7 +83,9 @@ async def list_answers(session: AsyncSession, ticket_id: int) -> list[TicketAnsw
     return list(rows)
 
 
-async def sync_surveys(session: AsyncSession, glpi: Glpi) -> int:
+async def sync_surveys(
+    session: AsyncSession, glpi: Glpi, review: ReviewPolicy | None = None
+) -> int:
     """Turn the answered GLPI surveys into feedback on the entries the bot cited.
 
     Every entry cited by any bot answer on the ticket gets the survey's score: the survey
@@ -92,38 +102,24 @@ async def sync_surveys(session: AsyncSession, glpi: Glpi) -> int:
     cited: dict[int, set[uuid.UUID]] = defaultdict(set)
     for ticket_id, knowledge_ids in rows:
         cited[ticket_id].update(knowledge_ids)
-    wanted = set().union(*cited.values())
-    existing = set(
-        await session.scalars(select(Knowledge.id).where(Knowledge.id.in_(wanted)))
-        if wanted
-        else []
-    )
-    values = [
-        {
-            "knowledge_id": knowledge_id,
-            "source": FeedbackSource.SURVEY,
-            "score": surveys[ticket_id].score,
-            "comment": surveys[ticket_id].comment,
-            "glpi_ticket_id": ticket_id,
-        }
-        for ticket_id, knowledge_ids in cited.items()
-        for knowledge_id in sorted(knowledge_ids & existing)
-    ]
-    if not values:
-        await session.commit()
-        return 0
-    statement = insert(Feedback).values(values)
     # The poll returns every answered survey again: only a new or edited survey writes a row.
-    statement = statement.on_conflict_do_update(
-        index_elements=[Feedback.glpi_ticket_id, Feedback.knowledge_id],
-        index_where=Feedback.source == FeedbackSource.SURVEY,
-        set_={"score": statement.excluded.score, "comment": statement.excluded.comment},
-        where=(Feedback.score != statement.excluded.score)
-        | Feedback.comment.is_distinct_from(statement.excluded.comment),
-    ).returning(Feedback.id)
-    changed = len((await session.execute(statement)).all())
+    changed = await feedback.credit(
+        session,
+        FeedbackSource.SURVEY,
+        [
+            TicketRating(
+                ticket_id,
+                frozenset(knowledge_ids),
+                surveys[ticket_id].score,
+                surveys[ticket_id].comment,
+            )
+            for ticket_id, knowledge_ids in cited.items()
+        ],
+    )
+    if review is not None:
+        await feedback.flag_for_review(session, changed, review)
     await session.commit()
-    return changed
+    return len(changed)
 
 
 @dataclass(frozen=True)
@@ -133,13 +129,14 @@ class SurveySync:
     sessionmaker: async_sessionmaker[AsyncSession]
     glpi: Glpi
     poll_seconds: float
+    review: ReviewPolicy | None = None
 
     async def run(self) -> None:
         """Sync until cancelled at shutdown."""
         while True:
             try:
                 async with self.sessionmaker() as session:
-                    changed = await sync_surveys(session, self.glpi)
+                    changed = await sync_surveys(session, self.glpi, self.review)
                 if changed:
                     logger.info("Survey sync: %d feedback rows added or updated", changed)
             except GlpiError as exc:

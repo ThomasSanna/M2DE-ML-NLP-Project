@@ -138,7 +138,7 @@ curl -X POST http://localhost:8000/api/v1/answer \
     {"ref": "K1", "type": "knowledge", "knowledge_id": "3f2a...", "question": "Eduroam refuse mon mot de passe"},
     {"ref": "W2", "type": "web", "url": "https://...", "title": "Configurer eduroam sous macOS"}
   ],
-  "memory": [{"knowledge_id": "3f2a...", "score": 0.97, "feedback": 0.83, "weighted_score": 0.93}],
+  "memory": [{"knowledge_id": "3f2a...", "score": 0.99, "feedback": 0.83, "weighted_score": 0.86, "reuse_count": 4}],
   "searches": ["eduroam macOS mot de passe en boucle"],
   "steps": 2,
   "usage": {"prompt_tokens": 3120, "completion_tokens": 210}
@@ -151,8 +151,9 @@ curl -X POST http://localhost:8000/api/v1/answer \
   are hidden from the model.
 - `memory`: every retrieved entry, cited or not, best first: `score` is its reranker score
   in [0, 1] (entries under `RERANK_THRESHOLD` are not retrieved), `feedback` its smoothed
-  feedback score in [0, 1] (`null` without any rating), `weighted_score` the ranking score
-  (see [Feedback weighting](#feedback-weighting)). The `K<n>` refs follow this order.
+  feedback score in [0, 1] (`null` without any rating), `reuse_count` the answers posted to
+  GLPI that cited it, `weighted_score` the ranking score (see
+  [Feedback weighting](#feedback-weighting)). The `K<n>` refs follow this order.
 - `searches`: the queries Exa answered (duplicates are not resent; a failed call is not
   listed and the model may retry it).
 - `502` with a generic `detail` when the embeddings server (`Embeddings server unavailable`),
@@ -323,6 +324,10 @@ curl -X POST http://localhost:8000/api/v1/tickets/42/verdict -H "X-API-Key: $API
   has one). `503`: `GLPI_USER_TOKEN` is empty.
 - `502` `{"detail": "GLPI unavailable"}`: the verdict is withdrawn and can be sent again. If
   the note was posted before the failure, a retry posts it a second time.
+- Once GLPI took it, the verdict is feedback on the memory entries the rated answer cited:
+  one `feedback` row per entry (`source = verdict`, `score` 1 for `resolved`, 0 for
+  `technician`), used by the [feedback weighting](#feedback-weighting). A withdrawn verdict
+  writes none; a later verdict of the same ticket on the same entry replaces the row.
 
 ### Automatic answer to tickets and followups
 
@@ -372,13 +377,21 @@ every `GLPI_SURVEY_POLL_SECONDS`: GLPI sends no webhook for them.
 ### Feedback weighting
 
 The answer engine (`POST /answer`, the ticket stream and the worker) reorders the memory
-entries the reranker kept by their `feedback` rows, every source counted (`memory.retrieve`):
+entries the reranker kept by their `feedback` rows, every source counted, and by their reuse
+(`memory.retrieve`):
 
 ```
 feedback       = (0.5 · FEEDBACK_PRIOR + Σ score · decay) / (FEEDBACK_PRIOR + Σ decay)
 decay          = 0.5 ^ (age in days / FEEDBACK_HALF_LIFE_DAYS)        (1 when empty)
-weighted_score = (1 − FEEDBACK_WEIGHT) · reranker score + FEEDBACK_WEIGHT · feedback
+reuse          = reuse_count / (reuse_count + REUSE_HALF)
+weighted_score = (1 − FEEDBACK_WEIGHT − REUSE_WEIGHT) · reranker score
+                 + FEEDBACK_WEIGHT · feedback + REUSE_WEIGHT · reuse
 ```
+
+- `reuse_count` goes up by one for each entry a followup posted to GLPI cites (worker and
+  ticket stream, in `record_answer`); `POST /answer` and handovers count nothing. The reuse
+  score saturates (0.5 at `REUSE_HALF` citations, 0.9 at 9 times that) and its weight stays
+  small: an entry cited often, even without rating, cannot outrun a well-rated one.
 
 - An entry without rating counts as a neutral 0.5. `FEEDBACK_PRIOR` pseudo-ratings at 0.5
   keep one rating from swinging an entry: with the default 2, one rating of 0 gives 0.33,
@@ -387,15 +400,47 @@ weighted_score = (1 − FEEDBACK_WEIGHT) · reranker score + FEEDBACK_WEIGHT · 
   entry, but reorders the relevant ones and can push a poorly rated one past
   `RETRIEVAL_TOP_K`. Above the threshold the reranker scores sit close together (0.95 to 1),
   so the feedback decides the order among relevant entries.
-- `FEEDBACK_WEIGHT=0` ranks on the reranker alone. The vector search and its HNSW index are
+- `FEEDBACK_WEIGHT=0` and `REUSE_WEIGHT=0` rank on the reranker alone; their sum may not
+  exceed 1. The vector search and its HNSW index are
   untouched: the weighting runs on the few entries the reranker kept, with one extra query.
 - `POST /memory/search` stays on raw similarity.
+
+### Review of poorly rated entries
+
+Each feedback write (survey sync, verdict) checks the entries it rated: an `active` entry with
+at least `FEEDBACK_REVIEW_MIN_RATINGS` ratings and a feedback score (same smoothing and fading
+as above) under `FEEDBACK_REVIEW_THRESHOLD` goes to `to_review` (`services/feedback.py`).
+
+- A `to_review` entry is no longer retrieved (the search keeps `active` ones): a wrong answer
+  stops reaching requesters after a few bad ratings, instead of only sinking in the ranking.
+- With the defaults (0.3, 3 ratings, prior 2): three ratings of 0 give 0.2 and send the entry
+  to review; two of 0 and one of 1 give 0.4 and keep it.
+- Archived entries are left alone. No route puts an entry back yet: a technician reviews it
+  with `GET /memory/knowledge/{id}` (which shows any status) and sets it `active` again in
+  the database.
+- The flagged ids are logged at INFO. `FEEDBACK_REVIEW_THRESHOLD=0` disables the review.
+
+### Threshold calibration
+
+`RERANK_THRESHOLD` was 0.95 (logit 2.9). In the metrics of 08/11 (162 runs with memory
+candidates), the best reranker score of each run, split by whether the answer cited the
+memory:
+
+| Threshold | Runs citing the memory kept | Runs not citing it filtered out |
+|---|---|---|
+| 0.95 | 100 % | 17 % |
+| 0.985 | 100 % | 29 % |
+| 0.99 | 97 % | 39 % |
+
+Every run that cited the memory scored 0.9895 or more: 0.985 keeps them all and drops more
+off-topic entries from the prompt. A run that does not cite the memory is not proof its
+entries were off-topic: re-measure with a labelled evaluation set.
 
 ## Schéma (résumé)
 
 **`knowledge`** : `id`, `question`, `answer`, `category`, `source`, `status` (`active` / `to_review` / `archived`), `glpi_ticket_id`, `reuse_count`, `embedding` (`halfvec(3584)`, embedding de la question, index HNSW cosinus), `created_at`, `updated_at`.
 
-**`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`, unique par ticket et entrée) ; non exposé par l'API.
+**`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey` / `verdict`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`) et par le verdict du demandeur (`source = verdict`), chacun unique par ticket et entrée (`services/feedback.py`) ; non exposé par l'API.
 
 **`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `verdict` = the requester's verdict from the plugin, `resolved` or `technician`, null until given, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
 
@@ -421,10 +466,14 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `RERANKER_TIMEOUT_SECONDS` | `30.0` | timeout of one rerank call |
 | `RETRIEVAL_CANDIDATES` | `20` | vector-search candidates sent to the reranker |
 | `RETRIEVAL_TOP_K` | `3` | max memory entries given to the model |
-| `RERANK_THRESHOLD` | `0.95` | min reranker score (sigmoid of the logit, 0 to 1) to keep an entry; 0.95 is logit 2.9 |
+| `RERANK_THRESHOLD` | `0.985` | min reranker score (sigmoid of the logit, 0 to 1) to keep an entry; 0.985 is logit 4.18 (see [Threshold calibration](#threshold-calibration)) |
 | `FEEDBACK_WEIGHT` | `0.3` | share of the feedback score in the ranking of the kept entries (0 to 1; 0 = reranker only) |
 | `FEEDBACK_PRIOR` | `2` | neutral pseudo-ratings (0.5) added to each entry's feedback score |
 | `FEEDBACK_HALF_LIFE_DAYS` | `180` | age at which a rating counts half; empty = ratings never fade |
+| `REUSE_WEIGHT` | `0.1` | share of the reuse score in the ranking (0 to 1; with `FEEDBACK_WEIGHT`, at most 1) |
+| `REUSE_HALF` | `5` | citations at which the reuse score reaches 0.5 |
+| `FEEDBACK_REVIEW_THRESHOLD` | `0.3` | feedback score under which an entry goes to `to_review` (0 = never) |
+| `FEEDBACK_REVIEW_MIN_RATINGS` | `3` | ratings an entry needs before it can go to review |
 | `EXA_API_KEY` | empty | Exa key; empty = web search disabled |
 | `EXA_INCLUDE_DOMAINS` | empty | comma-separated domains web search is restricted to |
 | `EXA_NUM_RESULTS` | `3` | results per web search |
@@ -550,4 +599,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Garde-fous du pipeline LLM, routes de feedback. La pondération ne tient compte que du feedback : ni réutilisation (`reuse_count` reste à 0) ni fraîcheur de l'entrée.
+Garde-fous du pipeline LLM, routes de feedback, route de révision (remettre une entrée `to_review` en `active`). La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même.

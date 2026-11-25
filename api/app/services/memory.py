@@ -15,7 +15,7 @@ from app.services.reranker import Reranker
 
 @dataclass(frozen=True)
 class FeedbackWeighting:
-    """How the feedback on an entry reorders the entries the reranker kept."""
+    """How the feedback on an entry, and its reuse, reorder the entries the reranker kept."""
 
     # Share of the feedback score in the ranking score; 0 ranks on the reranker alone.
     weight: float = 0.0
@@ -23,6 +23,10 @@ class FeedbackWeighting:
     prior: float = 2.0
     # Age at which a rating counts half; None keeps every rating at full weight.
     half_life_days: float | None = None
+    # Share of the reuse score: how often the entry was cited in answers posted to GLPI.
+    reuse_weight: float = 0.0
+    # Citations at which the reuse score reaches 0.5; it saturates so no entry runs away.
+    reuse_half: float = 5.0
 
 
 @dataclass(frozen=True)
@@ -30,7 +34,18 @@ class MemoryMatch:
     knowledge: Knowledge
     relevance: float  # reranker score in [0, 1], the one the threshold applies to
     feedback: float | None  # smoothed feedback score in [0, 1], None without any rating
-    score: float  # ranking score: relevance blended with the feedback (0.5 without rating)
+    score: float  # ranking score: relevance blended with the feedback and the reuse
+
+
+@dataclass(frozen=True)
+class FeedbackStats:
+    score: float  # smoothed feedback score in [0, 1]
+    count: int  # ratings, whatever their age
+
+
+def reuse_score(reuse_count: int, half: float) -> float:
+    """Citations mapped to [0, 1): 0 for a new entry, 0.5 at `half` citations."""
+    return reuse_count / (reuse_count + half)
 
 
 def feedback_score(weighted_sum: float, weight_total: float, prior: float) -> float:
@@ -122,7 +137,14 @@ async def retrieve(
     recorder.memory_top_score = max(score for _, score in scored)
     relevant = [(knowledge, score) for knowledge, score in scored if score >= threshold]
     feedback = (
-        await _feedback_scores(session, [knowledge.id for knowledge, _ in relevant], weighting)
+        {
+            knowledge_id: stats.score
+            for knowledge_id, stats in (
+                await feedback_stats(
+                    session, [knowledge.id for knowledge, _ in relevant], weighting
+                )
+            ).items()
+        }
         if relevant and weighting.weight > 0
         else {}
     )
@@ -131,8 +153,9 @@ async def retrieve(
             knowledge=knowledge,
             relevance=relevance,
             feedback=feedback.get(knowledge.id),
-            score=(1 - weighting.weight) * relevance
-            + weighting.weight * feedback.get(knowledge.id, 0.5),
+            score=(1 - weighting.weight - weighting.reuse_weight) * relevance
+            + weighting.weight * feedback.get(knowledge.id, 0.5)
+            + weighting.reuse_weight * reuse_score(knowledge.reuse_count, weighting.reuse_half),
         )
         for knowledge, relevance in relevant
     ]
@@ -141,23 +164,30 @@ async def retrieve(
     return kept
 
 
-async def _feedback_scores(
+async def feedback_stats(
     session: AsyncSession, knowledge_ids: list[uuid.UUID], weighting: FeedbackWeighting
-) -> dict[uuid.UUID, float]:
-    """Smoothed feedback score of each entry that has at least one rating."""
+) -> dict[uuid.UUID, FeedbackStats]:
+    """Smoothed feedback score and rating count of each entry with at least one rating."""
     if weighting.half_life_days is None:
         decay = literal(1.0)
     else:
         age_days = func.extract("epoch", func.now() - Feedback.created_at) / 86400
         decay = func.power(0.5, age_days / weighting.half_life_days)
     rows = await session.execute(
-        select(Feedback.knowledge_id, func.sum(Feedback.score * decay), func.sum(decay))
+        select(
+            Feedback.knowledge_id,
+            func.sum(Feedback.score * decay),
+            func.sum(decay),
+            func.count(),
+        )
         .where(Feedback.knowledge_id.in_(knowledge_ids))
         .group_by(Feedback.knowledge_id)
     )
     return {
-        knowledge_id: feedback_score(float(weighted_sum), float(weight_total), weighting.prior)
-        for knowledge_id, weighted_sum, weight_total in rows
+        knowledge_id: FeedbackStats(
+            feedback_score(float(weighted_sum), float(weight_total), weighting.prior), count
+        )
+        for knowledge_id, weighted_sum, weight_total, count in rows
     }
 
 

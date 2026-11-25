@@ -387,3 +387,24 @@ def test_feedback_score_is_pulled_towards_neutral_by_the_prior(
     ratings: list[float], expected: float
 ) -> None:
     assert memory.feedback_score(sum(ratings), len(ratings), 2.0) == pytest.approx(expected)
+
+
+def test_often_reused_entry_moves_ahead(
+    client: TestClient, auth: dict[str, str], settings: Settings
+) -> None:
+    first = _add(client, auth, *KNOWLEDGE[0])
+    second = _add(client, auth, *KNOWLEDGE[1])
+    run_sql(settings, f"UPDATE knowledge SET reuse_count = 5 WHERE id = '{second['id']}'")
+    weighting = memory.FeedbackWeighting(weight=0.0, reuse_weight=0.2, reuse_half=5.0)
+
+    hits = _matches(settings, FixedReranker(CLOSE_LOGITS), "wifi eduroam", weighting=weighting)
+
+    assert [hit.knowledge.id for hit in hits] == [uuid.UUID(second["id"]), uuid.UUID(first["id"])]
+    # 0.8 * 0.9241 + 0.2 * 5 / (5 + 5) = 0.8393, against 0.8 * 0.9526 = 0.7621.
+    assert hits[0].score == pytest.approx(0.8393, abs=1e-4)
+    assert hits[1].score == pytest.approx(0.7621, abs=1e-4)
+
+
+@pytest.mark.parametrize(("count", "expected"), [(0, 0.0), (5, 0.5), (45, 0.9)])
+def test_reuse_score_saturates(count: int, expected: float) -> None:
+    assert memory.reuse_score(count, 5.0) == pytest.approx(expected)
