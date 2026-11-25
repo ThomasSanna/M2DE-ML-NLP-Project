@@ -8,7 +8,9 @@ a technician (a handover: the bot never answers the ticket again).
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import RequesterVerdict, TicketAnswer
+from app.models import FeedbackSource, RequesterVerdict, TicketAnswer
+from app.services import feedback
+from app.services.feedback import TicketRating
 from app.services.glpi import Glpi, GlpiError
 
 _NOTES = {
@@ -17,12 +19,16 @@ _NOTES = {
     RequesterVerdict.TECHNICIAN: "Le demandeur demande l'intervention d'un technicien :"
     " l'assistant ne répondra plus sur ce ticket.",
 }
+# Feedback on the entries the rated answer cited: "solved" is a success, asking for a
+# technician says the answer did not help.
+_SCORES = {RequesterVerdict.RESOLVED: 1.0, RequesterVerdict.TECHNICIAN: 0.0}
 
 
 async def give_verdict(
     session: AsyncSession, glpi: Glpi, ticket_id: int, verdict: RequesterVerdict
 ) -> bool:
-    """Record the verdict on the latest answer and tell the technicians in GLPI.
+    """Record the verdict on the latest answer, tell the technicians in GLPI, then credit
+    the entries that answer cited (feedback 1 for `resolved`, 0 for `technician`).
 
     False when no answer awaits a verdict: none was posted, the latest one is a handover, or
     it already has a verdict. On a GLPI failure the verdict is withdrawn, so the requester
@@ -50,4 +56,11 @@ async def give_verdict(
         latest.verdict = None
         await session.commit()
         raise
+    # Only once GLPI took the verdict: a withdrawn one must leave no feedback behind.
+    await feedback.credit(
+        session,
+        FeedbackSource.VERDICT,
+        [TicketRating(ticket_id, frozenset(latest.knowledge_ids), _SCORES[verdict])],
+    )
+    await session.commit()
     return True

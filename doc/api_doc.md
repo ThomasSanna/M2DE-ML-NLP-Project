@@ -324,6 +324,10 @@ curl -X POST http://localhost:8000/api/v1/tickets/42/verdict -H "X-API-Key: $API
   has one). `503`: `GLPI_USER_TOKEN` is empty.
 - `502` `{"detail": "GLPI unavailable"}`: the verdict is withdrawn and can be sent again. If
   the note was posted before the failure, a retry posts it a second time.
+- Once GLPI took it, the verdict is feedback on the memory entries the rated answer cited:
+  one `feedback` row per entry (`source = verdict`, `score` 1 for `resolved`, 0 for
+  `technician`), used by the [feedback weighting](#feedback-weighting). A withdrawn verdict
+  writes none; a later verdict of the same ticket on the same entry replaces the row.
 
 ### Automatic answer to tickets and followups
 
@@ -421,7 +425,7 @@ entries were off-topic: re-measure with a labelled evaluation set.
 
 **`knowledge`** : `id`, `question`, `answer`, `category`, `source`, `status` (`active` / `to_review` / `archived`), `glpi_ticket_id`, `reuse_count`, `embedding` (`halfvec(3584)`, embedding de la question, index HNSW cosinus), `created_at`, `updated_at`.
 
-**`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`, unique par ticket et entrée) ; non exposé par l'API.
+**`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey` / `verdict`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`) et par le verdict du demandeur (`source = verdict`), chacun unique par ticket et entrée (`services/feedback.py`) ; non exposé par l'API.
 
 **`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `verdict` = the requester's verdict from the plugin, `resolved` or `technician`, null until given, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
 

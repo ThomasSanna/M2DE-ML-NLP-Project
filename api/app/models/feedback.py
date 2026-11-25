@@ -24,6 +24,7 @@ class FeedbackSource(StrEnum):
     TECHNICIAN = "technician"  # deferred review by a technician
     IMPLICIT = "implicit"  # implicit signal (ticket reopened, no follow-up...)
     SURVEY = "survey"  # GLPI satisfaction survey of a ticket the bot answered
+    VERDICT = "verdict"  # requester's verdict on the bot's answer (GLPI plugin buttons)
 
 
 class Feedback(Base):
@@ -54,5 +55,13 @@ class Feedback(Base):
             "knowledge_id",
             unique=True,
             postgresql_where=text("source = 'survey'"),
+        ),
+        # Same for the verdict: the latest verdict of the ticket on an entry wins.
+        Index(
+            "uq_feedback_verdict",
+            "glpi_ticket_id",
+            "knowledge_id",
+            unique=True,
+            postgresql_where=text("source = 'verdict'"),
         ),
     )
