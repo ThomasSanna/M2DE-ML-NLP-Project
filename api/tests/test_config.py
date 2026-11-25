@@ -50,6 +50,8 @@ def test_empty_exa_api_key_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
         {"reuse_weight": -0.1},
         {"reuse_half": 0},
         {"feedback_weight": 0.6, "reuse_weight": 0.5},
+        {"feedback_review_threshold": 1.5},
+        {"feedback_review_min_ratings": 0},
     ],
 )
 def test_invalid_agent_settings_are_rejected(overrides: dict[str, object]) -> None:

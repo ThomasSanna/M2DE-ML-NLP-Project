@@ -12,6 +12,7 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.db.session import create_engine, create_sessionmaker
 from app.services.embeddings import EmbeddingError, OpenAIEmbeddingClient
+from app.services.feedback import ReviewPolicy
 from app.services.glpi import GlpiError, GlpiRestClient
 from app.services.glpi_worker import GlpiEventWorker
 from app.services.llm import LLMError, VLLMChatClient
@@ -104,7 +105,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # strong reference to the task.
             stack.callback(asyncio.create_task(worker.run()).cancel)
             survey_sync = SurveySync(
-                app.state.sessionmaker, app.state.glpi, settings.glpi_survey_poll_seconds
+                app.state.sessionmaker,
+                app.state.glpi,
+                settings.glpi_survey_poll_seconds,
+                ReviewPolicy.from_settings(settings),
             )
             stack.callback(asyncio.create_task(survey_sync.run()).cancel)
         yield

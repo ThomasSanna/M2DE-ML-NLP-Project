@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import FeedbackSource, RequesterVerdict, TicketAnswer
 from app.services import feedback
-from app.services.feedback import TicketRating
+from app.services.feedback import ReviewPolicy, TicketRating
 from app.services.glpi import Glpi, GlpiError
 
 _NOTES = {
@@ -25,7 +25,11 @@ _SCORES = {RequesterVerdict.RESOLVED: 1.0, RequesterVerdict.TECHNICIAN: 0.0}
 
 
 async def give_verdict(
-    session: AsyncSession, glpi: Glpi, ticket_id: int, verdict: RequesterVerdict
+    session: AsyncSession,
+    glpi: Glpi,
+    ticket_id: int,
+    verdict: RequesterVerdict,
+    review: ReviewPolicy | None = None,
 ) -> bool:
     """Record the verdict on the latest answer, tell the technicians in GLPI, then credit
     the entries that answer cited (feedback 1 for `resolved`, 0 for `technician`).
@@ -57,10 +61,12 @@ async def give_verdict(
         await session.commit()
         raise
     # Only once GLPI took the verdict: a withdrawn one must leave no feedback behind.
-    await feedback.credit(
+    changed = await feedback.credit(
         session,
         FeedbackSource.VERDICT,
         [TicketRating(ticket_id, frozenset(latest.knowledge_ids), _SCORES[verdict])],
     )
+    if review is not None:
+        await feedback.flag_for_review(session, changed, review)
     await session.commit()
     return True

@@ -90,6 +90,10 @@ class Settings(DatabaseSettings):
     # 1 - feedback_weight - reuse_weight.
     reuse_weight: float = Field(default=0.1, ge=0.0, le=1.0)
     reuse_half: float = Field(default=5.0, gt=0.0)
+    # A feedback write sends an active entry to review (no longer retrieved) once it has at
+    # least min_ratings ratings and a smoothed feedback score under the threshold (0 = never).
+    feedback_review_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
+    feedback_review_min_ratings: int = Field(default=3, ge=1)
 
     # Exa web search; empty key = web search disabled.
     exa_api_key: SecretStr | None = None

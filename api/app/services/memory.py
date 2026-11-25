@@ -37,6 +37,12 @@ class MemoryMatch:
     score: float  # ranking score: relevance blended with the feedback and the reuse
 
 
+@dataclass(frozen=True)
+class FeedbackStats:
+    score: float  # smoothed feedback score in [0, 1]
+    count: int  # ratings, whatever their age
+
+
 def reuse_score(reuse_count: int, half: float) -> float:
     """Citations mapped to [0, 1): 0 for a new entry, 0.5 at `half` citations."""
     return reuse_count / (reuse_count + half)
@@ -131,7 +137,14 @@ async def retrieve(
     recorder.memory_top_score = max(score for _, score in scored)
     relevant = [(knowledge, score) for knowledge, score in scored if score >= threshold]
     feedback = (
-        await _feedback_scores(session, [knowledge.id for knowledge, _ in relevant], weighting)
+        {
+            knowledge_id: stats.score
+            for knowledge_id, stats in (
+                await feedback_stats(
+                    session, [knowledge.id for knowledge, _ in relevant], weighting
+                )
+            ).items()
+        }
         if relevant and weighting.weight > 0
         else {}
     )
@@ -151,23 +164,30 @@ async def retrieve(
     return kept
 
 
-async def _feedback_scores(
+async def feedback_stats(
     session: AsyncSession, knowledge_ids: list[uuid.UUID], weighting: FeedbackWeighting
-) -> dict[uuid.UUID, float]:
-    """Smoothed feedback score of each entry that has at least one rating."""
+) -> dict[uuid.UUID, FeedbackStats]:
+    """Smoothed feedback score and rating count of each entry with at least one rating."""
     if weighting.half_life_days is None:
         decay = literal(1.0)
     else:
         age_days = func.extract("epoch", func.now() - Feedback.created_at) / 86400
         decay = func.power(0.5, age_days / weighting.half_life_days)
     rows = await session.execute(
-        select(Feedback.knowledge_id, func.sum(Feedback.score * decay), func.sum(decay))
+        select(
+            Feedback.knowledge_id,
+            func.sum(Feedback.score * decay),
+            func.sum(decay),
+            func.count(),
+        )
         .where(Feedback.knowledge_id.in_(knowledge_ids))
         .group_by(Feedback.knowledge_id)
     )
     return {
-        knowledge_id: feedback_score(float(weighted_sum), float(weight_total), weighting.prior)
-        for knowledge_id, weighted_sum, weight_total in rows
+        knowledge_id: FeedbackStats(
+            feedback_score(float(weighted_sum), float(weight_total), weighting.prior), count
+        )
+        for knowledge_id, weighted_sum, weight_total, count in rows
     }
 
 

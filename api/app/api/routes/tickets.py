@@ -19,7 +19,7 @@ from app.api.deps import (
     require_api_key,
 )
 from app.schemas.ticket import AnswerSourcesRead, ProgressRead, SourceRead, VerdictCreate
-from app.services import answer, survey, verdict
+from app.services import answer, feedback, survey, verdict
 from app.services.embeddings import EmbeddingError
 from app.services.glpi import GlpiError
 from app.services.llm import LLMError
@@ -160,8 +160,10 @@ async def ticket_verdict(
     body: VerdictCreate,
     session: SessionDep,
     glpi: GlpiDep,
+    settings: SettingsDep,
 ) -> None:
     """The requester's verdict on the bot's latest answer: `resolved` adds a private note and
     sets the ticket to Solved, `technician` adds a private note and hands the ticket over."""
-    if not await verdict.give_verdict(session, glpi, ticket_id, body.verdict):
+    review = feedback.ReviewPolicy.from_settings(settings)
+    if not await verdict.give_verdict(session, glpi, ticket_id, body.verdict, review):
         raise HTTPException(status.HTTP_409_CONFLICT, "No answer of the bot awaits a verdict")

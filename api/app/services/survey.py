@@ -16,7 +16,7 @@ from app.schemas.answer import (
     WebCitation,
 )
 from app.services import feedback
-from app.services.feedback import TicketRating
+from app.services.feedback import ReviewPolicy, TicketRating
 from app.services.glpi import Glpi, GlpiError
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,9 @@ async def list_answers(session: AsyncSession, ticket_id: int) -> list[TicketAnsw
     return list(rows)
 
 
-async def sync_surveys(session: AsyncSession, glpi: Glpi) -> int:
+async def sync_surveys(
+    session: AsyncSession, glpi: Glpi, review: ReviewPolicy | None = None
+) -> int:
     """Turn the answered GLPI surveys into feedback on the entries the bot cited.
 
     Every entry cited by any bot answer on the ticket gets the survey's score: the survey
@@ -114,6 +116,8 @@ async def sync_surveys(session: AsyncSession, glpi: Glpi) -> int:
             for ticket_id, knowledge_ids in cited.items()
         ],
     )
+    if review is not None:
+        await feedback.flag_for_review(session, changed, review)
     await session.commit()
     return len(changed)
 
@@ -125,13 +129,14 @@ class SurveySync:
     sessionmaker: async_sessionmaker[AsyncSession]
     glpi: Glpi
     poll_seconds: float
+    review: ReviewPolicy | None = None
 
     async def run(self) -> None:
         """Sync until cancelled at shutdown."""
         while True:
             try:
                 async with self.sessionmaker() as session:
-                    changed = await sync_surveys(session, self.glpi)
+                    changed = await sync_surveys(session, self.glpi, self.review)
                 if changed:
                     logger.info("Survey sync: %d feedback rows added or updated", changed)
             except GlpiError as exc:

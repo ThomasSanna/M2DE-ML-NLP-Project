@@ -405,6 +405,21 @@ weighted_score = (1 − FEEDBACK_WEIGHT − REUSE_WEIGHT) · reranker score
   untouched: the weighting runs on the few entries the reranker kept, with one extra query.
 - `POST /memory/search` stays on raw similarity.
 
+### Review of poorly rated entries
+
+Each feedback write (survey sync, verdict) checks the entries it rated: an `active` entry with
+at least `FEEDBACK_REVIEW_MIN_RATINGS` ratings and a feedback score (same smoothing and fading
+as above) under `FEEDBACK_REVIEW_THRESHOLD` goes to `to_review` (`services/feedback.py`).
+
+- A `to_review` entry is no longer retrieved (the search keeps `active` ones): a wrong answer
+  stops reaching requesters after a few bad ratings, instead of only sinking in the ranking.
+- With the defaults (0.3, 3 ratings, prior 2): three ratings of 0 give 0.2 and send the entry
+  to review; two of 0 and one of 1 give 0.4 and keep it.
+- Archived entries are left alone. No route puts an entry back yet: a technician reviews it
+  with `GET /memory/knowledge/{id}` (which shows any status) and sets it `active` again in
+  the database.
+- The flagged ids are logged at INFO. `FEEDBACK_REVIEW_THRESHOLD=0` disables the review.
+
 ### Threshold calibration
 
 `RERANK_THRESHOLD` was 0.95 (logit 2.9). In the metrics of 08/11 (162 runs with memory
@@ -457,6 +472,8 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `FEEDBACK_HALF_LIFE_DAYS` | `180` | age at which a rating counts half; empty = ratings never fade |
 | `REUSE_WEIGHT` | `0.1` | share of the reuse score in the ranking (0 to 1; with `FEEDBACK_WEIGHT`, at most 1) |
 | `REUSE_HALF` | `5` | citations at which the reuse score reaches 0.5 |
+| `FEEDBACK_REVIEW_THRESHOLD` | `0.3` | feedback score under which an entry goes to `to_review` (0 = never) |
+| `FEEDBACK_REVIEW_MIN_RATINGS` | `3` | ratings an entry needs before it can go to review |
 | `EXA_API_KEY` | empty | Exa key; empty = web search disabled |
 | `EXA_INCLUDE_DOMAINS` | empty | comma-separated domains web search is restricted to |
 | `EXA_NUM_RESULTS` | `3` | results per web search |
@@ -582,4 +599,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Garde-fous du pipeline LLM, routes de feedback. La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même.
+Garde-fous du pipeline LLM, routes de feedback, route de révision (remettre une entrée `to_review` en `active`). La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même.
