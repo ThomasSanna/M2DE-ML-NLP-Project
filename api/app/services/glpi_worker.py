@@ -40,6 +40,8 @@ class GlpiEventWorker:
     glpi: Glpi
     settings: Settings
     progress: ProgressBoard
+    # Input guardrail model; None = no guardrail.
+    guard: ChatModel | None
 
     async def run(self) -> None:
         """Process events until cancelled at shutdown."""
@@ -110,6 +112,7 @@ class GlpiEventWorker:
                     self.settings,
                     self.glpi,
                     ticket,
+                    guard=self.guard,
                     source="worker",
                     board=self.progress,
                 )

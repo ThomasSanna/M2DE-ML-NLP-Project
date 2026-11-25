@@ -223,6 +223,14 @@ after searching, the agent hands it over to a technician instead:
   and never reaches the requester (on a GLPI ticket it goes in a private followup). Both
   come from the model; `reason` may be empty.
 
+**Input guardrail** (`GUARD_BASE_URL` set): before the retrieval, a small model
+(`GUARD_MODEL`) reads the requester's text only (first and last user messages, as searched
+in the memory; never the support's replies nor the answer) and says whether it is about IT
+or the university. An off-topic request is handed over with no other call: fixed bilingual
+`message`, `reason` `hors sujet (garde-fou)`, `steps` 0, `usage` 0. A guardrail that fails
+(unreachable, timeout, invalid output) is logged and lets the request through: the answer
+model also hands off-topic requests over. The guardrail never returns a `502`.
+
 ### `POST /api/v1/tickets/{ticket_id}/answer/stream`
 
 Answers a GLPI ticket's thread, then posts the answer as a followup of the ticket through
@@ -526,6 +534,9 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `LLM_MODEL` | `google/gemma-4-12B-it` | model name sent to the server (vLLM rejects an unknown name with a 404) |
 | `LLM_MAX_TOKENS` | `512` | max tokens generated per model call |
 | `LLM_TIMEOUT_SECONDS` | `60.0` | timeout of one model call |
+| `GUARD_BASE_URL` | empty | input guardrail model URL (vLLM, OpenAI-compatible), with `/v1` (VPN required); empty = no guardrail |
+| `GUARD_MODEL` | `google/gemma3-4b-it` | guardrail model name sent to the server |
+| `GUARD_TIMEOUT_SECONDS` | `10.0` | timeout of the guardrail call; a timeout lets the request through |
 | `LLM_MAX_IMAGES` | `1` | latest images of the requester (PNG, JPEG, WebP, GIF, 5 MB max each) sent to the model with a GLPI ticket; `0` sends none. Keep it at or under the server's `--limit-mm-per-prompt` image limit, or vLLM rejects the request |
 | `RERANKER_BASE_URL` | **required** | university reranker URL, without `/v1` (VPN required) |
 | `RERANKER_TIMEOUT_SECONDS` | `30.0` | timeout of one rerank call |
@@ -594,7 +605,7 @@ comparison of configurations: set `METRICS_LABEL` to name each campaign.
 | `ticket_id` | GLPI ticket id, empty for `api` |
 | `label` | `METRICS_LABEL`, empty if unset |
 | `query_hash` | first 16 hex chars of the SHA-256 of the retrieval query |
-| `outcome` | `answered`, `escalated`, `embedding_error`, `reranker_error`, `llm_error` |
+| `outcome` | `answered`, `blocked` (handed over by the input guardrail), `escalated`, `embedding_error`, `reranker_error`, `llm_error` |
 | `llm_model`, `agent_max_steps`, `llm_max_tokens`, `retrieval_candidates`, `retrieval_top_k`, `rerank_threshold` | settings of the run |
 | `web_search_enabled` | `True` when a web search client is configured, else `False` |
 | `total_ms` | `answer_thread` entry to row assembly |
@@ -624,13 +635,13 @@ comparison of configurations: set `METRICS_LABEL` to name each campaign.
 |---|---|
 | `run_id` | joins `runs.v1.csv` |
 | `seq` | 1-based order of the call in the run |
-| `kind` | `embed`, `vector_search`, `rerank`, `llm`, `web_search` |
-| `step` | agent step, empty for retrieval calls |
+| `kind` | `guard`, `embed`, `vector_search`, `rerank`, `llm`, `web_search` |
+| `step` | agent step, empty for the guardrail and retrieval calls |
 | `start_ms` | offset from the run start |
 | `duration_ms` | call duration |
 | `status` | `ok` or the exception class name |
 | `items` | `embed`: texts sent (1); `vector_search`: rows returned; `rerank`: documents sent; `web_search`: results returned; empty for `llm` |
-| `prompt_tokens`, `completion_tokens`, `cached_tokens`, `finish_reason`, `action` | `llm` only; `action` is `search`, `answer`, `escalate` or `invalid` |
+| `prompt_tokens`, `completion_tokens`, `cached_tokens`, `finish_reason`, `action` | `llm` (and `guard`, except `cached_tokens` and `action`); `action` is `search`, `answer`, `escalate` or `invalid`. The run's `steps` and token totals count `llm` calls only |
 | `cost_usd` | `web_search` only |
 
 Ratios are not stored: derive them from the raw columns. The time between two calls of a run
@@ -667,4 +678,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Garde-fous du pipeline LLM, routes de feedback. La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même.
+Garde-fou sur la réponse du modèle (seule la demande est filtrée), routes de feedback. La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même.

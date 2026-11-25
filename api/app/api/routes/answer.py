@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from app.api.deps import (
     ChatModelDep,
     EmbedderDep,
+    GuardDep,
     MetricsDep,
     RerankerDep,
     SessionDep,
@@ -23,6 +24,7 @@ async def create_answer(
     embedder: EmbedderDep,
     reranker: RerankerDep,
     model: ChatModelDep,
+    guard: GuardDep,
     web_search: WebSearchDep,
     metrics: MetricsDep,
     settings: SettingsDep,
@@ -30,5 +32,14 @@ async def create_answer(
     """Answer a ticket thread from the memory and, if needed, a web search, with sources,
     or hand it over to a technician."""
     return await answer.answer_thread(
-        session, embedder, reranker, model, web_search, metrics, settings, data, source="api"
+        session,
+        embedder,
+        reranker,
+        model,
+        web_search,
+        metrics,
+        settings,
+        data,
+        guard=guard,
+        source="api",
     )

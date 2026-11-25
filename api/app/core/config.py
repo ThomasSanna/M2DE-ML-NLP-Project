@@ -68,6 +68,13 @@ class Settings(DatabaseSettings):
     # vLLM rejects a request with more images than its `--limit-mm-per-prompt` (400).
     llm_max_images: int = Field(default=1, ge=0)
 
+    # Input guardrail: a small model (vLLM, OpenAI-compatible, URL including `/v1`) reads the
+    # requester's text first and hands an off-topic request (neither IT nor university) over
+    # to a technician. Empty URL = no guardrail; a failing guard lets the request through.
+    guard_base_url: AnyHttpUrl | None = None
+    guard_model: str = "google/gemma3-4b-it"
+    guard_timeout_seconds: float = 10.0
+
     # University reranker (`POST /rerank`), URL without `/v1`.
     reranker_base_url: AnyHttpUrl
     reranker_timeout_seconds: float = 30.0
@@ -131,6 +138,7 @@ class Settings(DatabaseSettings):
         "glpi_webhook_secret",
         "embedding_api_key",
         "embedding_instruction",
+        "guard_base_url",
         "exa_api_key",
         "glpi_user_token",
         "glpi_app_token",
