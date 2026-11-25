@@ -103,6 +103,8 @@ async def answer_thread(
                     settings.feedback_weight,
                     settings.feedback_prior,
                     settings.feedback_half_life_days,
+                    settings.reuse_weight,
+                    settings.reuse_half,
                 ),
             )
         # Ends the read-only transaction so the pooled connection is not held through the
@@ -135,6 +137,7 @@ async def answer_thread(
             score=hit.relevance,
             feedback=hit.feedback,
             weighted_score=hit.score,
+            reuse_count=hit.knowledge.reuse_count,
         )
         for hit in hits
     ]

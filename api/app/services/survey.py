@@ -4,7 +4,7 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -52,6 +52,13 @@ async def record_answer(
             web_sources=pages,
         )
     )
+    if cited:
+        # Counted when the answer reaches the requester, not on `POST /answer` (read-only).
+        await session.execute(
+            update(Knowledge)
+            .where(Knowledge.id.in_(cited))
+            .values(reuse_count=Knowledge.reuse_count + 1)
+        )
     await session.commit()
 
 

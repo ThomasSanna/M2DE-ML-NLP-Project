@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -85,6 +85,11 @@ class Settings(DatabaseSettings):
     feedback_prior: float = Field(default=2.0, gt=0.0)
     # Age in days at which a rating counts half; empty = ratings never fade.
     feedback_half_life_days: float | None = Field(default=180.0, gt=0.0)
+    # Reuse in the same ranking score: + reuse_weight * reuse / (reuse + reuse_half), where
+    # reuse counts the answers posted to GLPI that cited the entry. The reranker keeps
+    # 1 - feedback_weight - reuse_weight.
+    reuse_weight: float = Field(default=0.1, ge=0.0, le=1.0)
+    reuse_half: float = Field(default=5.0, gt=0.0)
 
     # Exa web search; empty key = web search disabled.
     exa_api_key: SecretStr | None = None
@@ -126,6 +131,12 @@ class Settings(DatabaseSettings):
     @classmethod
     def _empty_as_none(cls, value: object) -> object:
         return None if value == "" else value
+
+    @model_validator(mode="after")
+    def _ranking_weights_leave_room_for_the_reranker(self) -> "Settings":
+        if self.feedback_weight + self.reuse_weight > 1:
+            raise ValueError("feedback_weight + reuse_weight must not exceed 1")
+        return self
 
     @field_validator("exa_include_domains", mode="before")
     @classmethod
