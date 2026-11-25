@@ -10,6 +10,7 @@ from app.api.deps import (
     ChatModelDep,
     EmbedderDep,
     GlpiDep,
+    GuardDep,
     MetricsDep,
     ProgressDep,
     RerankerDep,
@@ -46,6 +47,7 @@ async def stream_ticket_answer(
     embedder: EmbedderDep,
     reranker: RerankerDep,
     model: ChatModelDep,
+    guard: GuardDep,
     web_search: WebSearchDep,
     glpi: GlpiDep,
     metrics: MetricsDep,
@@ -75,6 +77,7 @@ async def stream_ticket_answer(
             settings,
             glpi,
             ticket,
+            guard=guard,
             source="ticket_stream",
             board=progress,
         )

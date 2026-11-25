@@ -12,6 +12,7 @@ from app.core.config import Settings
 from app.db.session import create_engine, create_sessionmaker
 from app.services.glpi import Author, GlpiError, GlpiFollowup
 from app.services.glpi_worker import MAX_ATTEMPTS, GlpiEventWorker
+from app.services.guard import BLOCKED_MESSAGE, BLOCKED_REASON
 from app.services.llm import ChatModel
 from app.services.metrics import CsvMetricsWriter
 from app.services.progress import ProgressBoard
@@ -49,6 +50,7 @@ def _process(
     model: ChatModel | None = None,
     metrics: CsvMetricsWriter | None = None,
     progress: ProgressBoard | None = None,
+    guard: ChatModel | None = None,
 ) -> bool:
     model = model or ScriptedChatModel(
         [json.dumps({"action": "answer", "answer": "Supprimez le profil [K1]"})]
@@ -66,6 +68,7 @@ def _process(
             glpi,
             settings,
             progress or ProgressBoard(),
+            guard,
         )
         try:
             return await worker.process_next()
@@ -278,6 +281,24 @@ def test_handed_over_ticket_is_never_answered_again(client: TestClient, settings
     assert _process(settings, later, FailingChatModel())
 
     assert later.followups == []
+    assert _event_state(settings) == ("done", 1, None)
+
+
+def test_off_topic_ticket_is_handed_over_by_the_guard(
+    client: TestClient, settings: Settings
+) -> None:
+    glpi = FakeGlpi()
+    guard = ScriptedChatModel([json.dumps({"on_topic": False})])
+    _queue(client, NEW_TICKET)
+
+    # A model call would fail the event: the guard alone hands the ticket over.
+    assert _process(settings, glpi, FailingChatModel(), guard=guard)
+
+    assert glpi.followups == [
+        (TICKET.id, BLOCKED_MESSAGE, False),
+        (TICKET.id, f"Passation à un technicien. Raison : {BLOCKED_REASON}", True),
+    ]
+    assert _ticket_answers(settings) == [(TICKET.id, 7, [])]
     assert _event_state(settings) == ("done", 1, None)
 
 

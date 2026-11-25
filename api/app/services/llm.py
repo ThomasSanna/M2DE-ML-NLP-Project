@@ -53,7 +53,7 @@ class VLLMChatClient:
 
     The output is constrained by a JSON grammar through the OpenAI `response_format`
     `{"type": "json_schema", ...}`. TGI's own `{"type": "json", "value": schema}` is rejected
-    by vLLM with a 400, and TGI rejects the OpenAI form: this client no longer talks to TGI.
+    by vLLM with a 400, and TGI rejects the OpenAI form with a 422: use `TGIChatClient` there.
     The server checks the `model` field and answers 404 for a name it does not serve.
     """
 
@@ -71,10 +71,7 @@ class VLLMChatClient:
                     "messages": messages,
                     "max_tokens": self._max_tokens,
                     "temperature": 0,
-                    "response_format": {
-                        "type": "json_schema",
-                        "json_schema": {"name": RESPONSE_FORMAT_NAME, "schema": schema},
-                    },
+                    "response_format": self._response_format(schema),
                 },
             )
             response.raise_for_status()
@@ -94,6 +91,20 @@ class VLLMChatClient:
         if not isinstance(content, str):
             raise LLMError("Language model returned no text content")
         return completion
+
+    def _response_format(self, schema: dict[str, object]) -> dict[str, object]:
+        return {
+            "type": "json_schema",
+            "json_schema": {"name": RESPONSE_FORMAT_NAME, "schema": schema},
+        }
+
+
+class TGIChatClient(VLLMChatClient):
+    """Same OpenAI chat route, served by Hugging Face TGI (the guard server). Only the grammar
+    differs: TGI takes `{"type": "json", "value": schema}` and rejects `json_schema`."""
+
+    def _response_format(self, schema: dict[str, object]) -> dict[str, object]:
+        return {"type": "json", "value": schema}
 
 
 def _cached_tokens(usage: dict[str, object]) -> int | None:

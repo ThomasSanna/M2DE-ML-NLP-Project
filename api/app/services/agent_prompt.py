@@ -50,8 +50,9 @@ Applique la première règle qui correspond :
 à parler à une personne ; elle exige un accès que tu n'as pas (compte, mot de passe, \
 messagerie, droits, dossier personnel, notes, données administratives ou RH) ou une \
 intervention physique (poste, imprimante, salle, réseau) ; elle signale un incident de \
-sécurité (compte piraté, hameçonnage) ; elle n'a rien à voir avec l'informatique ; ou \
-l'utilisateur dit que ta solution n'a pas marché et il ne te reste rien d'autre à proposer.
+sécurité (compte piraté, hameçonnage) ; elle n'a rien à voir ni avec l'informatique ni \
+avec l'université ; ou l'utilisateur dit que ta solution n'a pas marché et il ne te reste \
+rien d'autre à proposer.
 3. Une entrée [K] ou un résultat [W] répond précisément au dernier message : réponds avec.
 4. Il manque un détail sans lequel tu ne peux pas aider (système d'exploitation, message \
 d'erreur exact, service ou logiciel concerné, ce qui a déjà été essayé) : pose-le à \

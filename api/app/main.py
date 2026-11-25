@@ -15,7 +15,8 @@ from app.services.embeddings import EmbeddingError, OpenAIEmbeddingClient
 from app.services.feedback import ReviewPolicy
 from app.services.glpi import GlpiError, GlpiRestClient
 from app.services.glpi_worker import GlpiEventWorker
-from app.services.llm import LLMError, VLLMChatClient
+from app.services.guard import GUARD_MAX_TOKENS
+from app.services.llm import LLMError, TGIChatClient, VLLMChatClient
 from app.services.metrics import CsvMetricsWriter
 from app.services.progress import ProgressBoard
 from app.services.reranker import HttpRerankerClient, RerankerError
@@ -57,6 +58,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
         )
         app.state.chat_model = VLLMChatClient(llm_http, settings.llm_model, settings.llm_max_tokens)
+        if settings.guard_base_url is None:
+            logger.warning("GUARD_BASE_URL is empty: the input guardrail is disabled")
+            app.state.guard_model = None
+        else:
+            guard_http = await stack.enter_async_context(
+                httpx.AsyncClient(
+                    base_url=str(settings.guard_base_url),
+                    timeout=settings.guard_timeout_seconds,
+                )
+            )
+            app.state.guard_model = TGIChatClient(
+                guard_http, settings.guard_model, GUARD_MAX_TOKENS
+            )
         reranker_http = await stack.enter_async_context(
             httpx.AsyncClient(
                 base_url=str(settings.reranker_base_url),
@@ -100,6 +114,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 app.state.glpi,
                 settings,
                 app.state.progress,
+                app.state.guard_model,
             )
             # Registered after the clients: cancelled before they close. Also keeps the only
             # strong reference to the task.

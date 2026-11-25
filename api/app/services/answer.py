@@ -18,6 +18,7 @@ from app.schemas.answer import (
     Usage,
     WebCitation,
 )
+from app.services import guard as input_guard
 from app.services import memory, survey
 from app.services.agent import run_agent
 from app.services.agent_prompt import initial_messages, render_memory, render_thread, strip_refs
@@ -59,6 +60,7 @@ async def answer_thread(
     settings: Settings,
     request: AnswerRequest,
     *,
+    guard: ChatModel | None,
     source: Source,
     ticket_id: int | None = None,
     progress: TicketProgress | None = None,
@@ -66,8 +68,10 @@ async def answer_thread(
 ) -> AnswerOutcome:
     """Answer the thread's last user message from the memory, then the web if needed.
 
-    `images` (`data:` URIs, oldest first) go to the model with the thread; the retrieval
-    reads the text only."""
+    The `guard` model, when set, first reads the requester's text (the retrieval query) and
+    hands an off-topic thread over to a technician before any other call. `images`
+    (`data:` URIs, oldest first) go to the model with the thread; the retrieval reads the
+    text only."""
     recorder = RunRecorder()
     text = _retrieval_query(request.messages)
 
@@ -87,6 +91,17 @@ async def answer_thread(
             cited_refs=cited_refs,
         )
         metrics.write(row, recorder.calls)
+
+    if guard is not None and not await input_guard.is_on_topic(guard, text, recorder):
+        record("blocked", input_guard.BLOCKED_MESSAGE, [])
+        return EscalationResult(
+            message=input_guard.BLOCKED_MESSAGE,
+            reason=input_guard.BLOCKED_REASON,
+            memory=[],
+            searches=[],
+            steps=0,
+            usage=Usage(prompt_tokens=0, completion_tokens=0),
+        )
 
     try:
         with recorder.phase("retrieval"):
@@ -187,6 +202,7 @@ async def answer_ticket(
     glpi: Glpi,
     ticket: GlpiTicket,
     *,
+    guard: ChatModel | None,
     source: Source,
     board: ProgressBoard | None = None,
 ) -> AnswerOutcome | None:
@@ -209,6 +225,7 @@ async def answer_ticket(
         metrics,
         settings,
         request,
+        guard=guard,
         source=source,
         ticket_id=ticket.id,
         progress=progress,

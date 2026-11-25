@@ -147,6 +147,7 @@ def test_answer_ticket_leaves_the_board_untouched_when_the_bot_answered_last(
                     settings,
                     FakeGlpi(ticket),
                     ticket,
+                    guard=None,
                     source="worker",
                     board=board,
                 )

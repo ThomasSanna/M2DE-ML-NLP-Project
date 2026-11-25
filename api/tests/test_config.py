@@ -37,6 +37,11 @@ def test_empty_exa_api_key_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _settings().exa_api_key is None
 
 
+def test_empty_guard_base_url_disables_the_guardrail(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GUARD_BASE_URL", "")
+    assert _settings().guard_base_url is None
+
+
 @pytest.mark.parametrize(
     "overrides",
     [

@@ -5,7 +5,7 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from app.services.llm import ChatMessage, Completion, LLMError, VLLMChatClient
+from app.services.llm import ChatMessage, Completion, LLMError, TGIChatClient, VLLMChatClient
 
 BASE_URL = "http://llm.test/v1"
 MODEL = "google/gemma-4-12B-it"
@@ -54,6 +54,23 @@ def test_sends_grammar_and_greedy_decoding() -> None:
         )
 
     assert _complete(handler) == Completion('{"action":"answer"}', "stop", 10, 3)
+
+
+def test_tgi_client_sends_tgi_grammar() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content)["response_format"] == {"type": "json", "value": SCHEMA}
+        body = {
+            "choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+            "usage": USAGE,
+        }
+        return httpx.Response(200, json=body)
+
+    async def _run() -> Completion:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(base_url=BASE_URL, transport=transport) as http:
+            return await TGIChatClient(http, MODEL, 64).complete(MESSAGES, SCHEMA)
+
+    assert asyncio.run(_run()) == Completion("{}", "stop", 10, 3)
 
 
 def test_http_error_raises_llm_error() -> None:

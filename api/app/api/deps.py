@@ -37,6 +37,10 @@ def get_chat_model(request: Request) -> ChatModel:
     return request.app.state.chat_model
 
 
+def get_guard_model(request: Request) -> ChatModel | None:
+    return request.app.state.guard_model
+
+
 def get_web_search(request: Request) -> WebSearch | None:
     return request.app.state.web_search
 
@@ -61,6 +65,7 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 EmbedderDep = Annotated[Embedder, Depends(get_embedder)]
 RerankerDep = Annotated[Reranker, Depends(get_reranker)]
 ChatModelDep = Annotated[ChatModel, Depends(get_chat_model)]
+GuardDep = Annotated[ChatModel | None, Depends(get_guard_model)]
 WebSearchDep = Annotated[WebSearch | None, Depends(get_web_search)]
 MetricsDep = Annotated[CsvMetricsWriter | None, Depends(get_metrics)]
 GlpiDep = Annotated[Glpi, Depends(get_glpi)]
