@@ -4,11 +4,10 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sqlalchemy import exists, or_, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import Feedback, FeedbackSource, Knowledge, RequesterVerdict, TicketAnswer
+from app.models import FeedbackSource, Knowledge, RequesterVerdict, TicketAnswer
 from app.schemas.answer import (
     AnswerOutcome,
     AnswerResult,
@@ -16,6 +15,9 @@ from app.schemas.answer import (
     KnowledgeCitation,
     WebCitation,
 )
+from app.services import feedback, growth
+from app.services.embeddings import Embedder, EmbeddingError
+from app.services.feedback import ReviewPolicy, TicketRating
 from app.services.glpi import Glpi, GlpiError
 
 logger = logging.getLogger(__name__)
@@ -31,9 +33,16 @@ def _web_sources(result: AnswerResult) -> list[dict[str, str]]:
 
 
 async def record_answer(
-    session: AsyncSession, ticket_id: int, followup_id: int, result: AnswerOutcome
+    session: AsyncSession,
+    ticket_id: int,
+    followup_id: int,
+    result: AnswerOutcome,
+    *,
+    question: str | None = None,
+    answer: str | None = None,
 ) -> None:
-    """Remember a followup posted to the ticket: what it cited, or a handover."""
+    """Remember a followup posted to the ticket: what it cited, or a handover, and the
+    question and text a validated answer would enter the memory with."""
     if isinstance(result, EscalationResult):
         # A handover cites nothing: the survey has no entry to credit, the panel no page.
         cited: list[uuid.UUID] = []
@@ -50,8 +59,17 @@ async def record_answer(
             knowledge_ids=cited,
             escalated=escalated,
             web_sources=pages,
+            question=question,
+            answer=answer,
         )
     )
+    if cited:
+        # Counted when the answer reaches the requester, not on `POST /answer` (read-only).
+        await session.execute(
+            update(Knowledge)
+            .where(Knowledge.id.in_(cited))
+            .values(reuse_count=Knowledge.reuse_count + 1)
+        )
     await session.commit()
 
 
@@ -75,7 +93,12 @@ async def list_answers(session: AsyncSession, ticket_id: int) -> list[TicketAnsw
     return list(rows)
 
 
-async def sync_surveys(session: AsyncSession, glpi: Glpi) -> int:
+async def sync_surveys(
+    session: AsyncSession,
+    glpi: Glpi,
+    review: ReviewPolicy | None = None,
+    growth_min_score: float | None = None,
+) -> int:
     """Turn the answered GLPI surveys into feedback on the entries the bot cited.
 
     Every entry cited by any bot answer on the ticket gets the survey's score: the survey
@@ -84,6 +107,10 @@ async def sync_surveys(session: AsyncSession, glpi: Glpi) -> int:
     surveys = {survey.ticket_id: survey for survey in await glpi.list_answered_surveys()}
     if not surveys:
         return 0
+    if growth_min_score is not None:
+        for ticket_id, rated in surveys.items():
+            if rated.score >= growth_min_score:
+                await growth.validate_latest(session, ticket_id)
     rows = await session.execute(
         select(TicketAnswer.glpi_ticket_id, TicketAnswer.knowledge_ids).where(
             TicketAnswer.glpi_ticket_id.in_(surveys)
@@ -92,38 +119,24 @@ async def sync_surveys(session: AsyncSession, glpi: Glpi) -> int:
     cited: dict[int, set[uuid.UUID]] = defaultdict(set)
     for ticket_id, knowledge_ids in rows:
         cited[ticket_id].update(knowledge_ids)
-    wanted = set().union(*cited.values())
-    existing = set(
-        await session.scalars(select(Knowledge.id).where(Knowledge.id.in_(wanted)))
-        if wanted
-        else []
-    )
-    values = [
-        {
-            "knowledge_id": knowledge_id,
-            "source": FeedbackSource.SURVEY,
-            "score": surveys[ticket_id].score,
-            "comment": surveys[ticket_id].comment,
-            "glpi_ticket_id": ticket_id,
-        }
-        for ticket_id, knowledge_ids in cited.items()
-        for knowledge_id in sorted(knowledge_ids & existing)
-    ]
-    if not values:
-        await session.commit()
-        return 0
-    statement = insert(Feedback).values(values)
     # The poll returns every answered survey again: only a new or edited survey writes a row.
-    statement = statement.on_conflict_do_update(
-        index_elements=[Feedback.glpi_ticket_id, Feedback.knowledge_id],
-        index_where=Feedback.source == FeedbackSource.SURVEY,
-        set_={"score": statement.excluded.score, "comment": statement.excluded.comment},
-        where=(Feedback.score != statement.excluded.score)
-        | Feedback.comment.is_distinct_from(statement.excluded.comment),
-    ).returning(Feedback.id)
-    changed = len((await session.execute(statement)).all())
+    changed = await feedback.credit(
+        session,
+        FeedbackSource.SURVEY,
+        [
+            TicketRating(
+                ticket_id,
+                frozenset(knowledge_ids),
+                surveys[ticket_id].score,
+                surveys[ticket_id].comment,
+            )
+            for ticket_id, knowledge_ids in cited.items()
+        ],
+    )
+    if review is not None:
+        await feedback.flag_for_review(session, changed, review)
     await session.commit()
-    return changed
+    return len(changed)
 
 
 @dataclass(frozen=True)
@@ -133,16 +146,30 @@ class SurveySync:
     sessionmaker: async_sessionmaker[AsyncSession]
     glpi: Glpi
     poll_seconds: float
+    review: ReviewPolicy | None = None
+    # Set to grow the memory: validated answers are indexed after each sync.
+    embedder: Embedder | None = None
+    growth_min_score: float = 0.8
+    dedup_similarity: float = 1.0
 
     async def run(self) -> None:
         """Sync until cancelled at shutdown."""
         while True:
             try:
                 async with self.sessionmaker() as session:
-                    changed = await sync_surveys(session, self.glpi)
+                    changed = await sync_surveys(
+                        session,
+                        self.glpi,
+                        self.review,
+                        self.growth_min_score if self.embedder is not None else None,
+                    )
                 if changed:
                     logger.info("Survey sync: %d feedback rows added or updated", changed)
-            except GlpiError as exc:
+                if self.embedder is not None:
+                    # Also retries the verdicts indexed while the embeddings server was down.
+                    async with self.sessionmaker() as session:
+                        await growth.index_validated(session, self.embedder, self.dedup_similarity)
+            except (GlpiError, EmbeddingError) as exc:
                 logger.warning("Survey sync: %s", exc)
             except Exception:
                 # A database outage or a bug must not stop the sync until the next restart.

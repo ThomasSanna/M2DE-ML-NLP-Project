@@ -84,9 +84,11 @@ def test_answer_returns_cited_sources(client: TestClient, auth: dict[str, str]) 
             {
                 "knowledge_id": knowledge_id,
                 "score": pytest.approx(0.9933, abs=1e-4),
-                # No rating: the feedback counts as a neutral 0.5 (default weight 0.3).
+                # No rating and never reused: feedback counts as a neutral 0.5 (weight 0.3),
+                # reuse as 0 (weight 0.1).
                 "feedback": None,
-                "weighted_score": pytest.approx(0.7 * 0.9933 + 0.3 * 0.5, abs=1e-4),
+                "weighted_score": pytest.approx(0.6 * 0.9933 + 0.3 * 0.5, abs=1e-4),
+                "reuse_count": 0,
             }
         ],
         "searches": ["eduroam mac"],

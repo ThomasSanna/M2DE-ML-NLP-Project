@@ -1,0 +1,264 @@
+[
+  {
+    "id": "mem-01",
+    "question": "J'ai perdu le mot de passe de mon ENT, je fais comment pour en avoir un nouveau ?",
+    "expect": "memory",
+    "knowledge": "J'ai oublié mon mot de passe de l'ENT, comment le réinitialiser ?"
+  },
+  {
+    "id": "mem-02",
+    "question": "Trop de tentatives de connexion, mon compte universitaire est verrouillé",
+    "expect": "memory",
+    "knowledge": "Mon compte est bloqué après plusieurs essais de connexion, que faire ?"
+  },
+  {
+    "id": "mem-03",
+    "question": "Nouveau téléphone, et je n'ai plus accès à mon application de double authentification",
+    "expect": "memory",
+    "knowledge": "J'ai changé de téléphone et je n'ai plus mes codes de double authentification"
+  },
+  {
+    "id": "mem-04",
+    "question": "Plus aucun mail n'arrive dans Outlook depuis ce matin",
+    "expect": "memory",
+    "knowledge": "Je ne reçois plus mes mails Outlook depuis ce matin"
+  },
+  {
+    "id": "mem-05",
+    "question": "Message d'erreur : boîte aux lettres saturée, je ne peux plus envoyer de mails",
+    "expect": "memory",
+    "knowledge": "Ma boîte mail est pleine, je ne peux plus envoyer ni recevoir"
+  },
+  {
+    "id": "mem-06",
+    "question": "Mes destinataires reçoivent mes messages dans leurs courriers indésirables",
+    "expect": "memory",
+    "knowledge": "Mes mails partent en spam chez les destinataires"
+  },
+  {
+    "id": "mem-07",
+    "question": "Je pars en congés, comment mettre un message d'absence automatique ?",
+    "expect": "memory",
+    "knowledge": "Comment configurer une réponse automatique d'absence ?"
+  },
+  {
+    "id": "mem-08",
+    "question": "Impossible de me connecter au wifi eduroam avec mon PC portable",
+    "expect": "memory",
+    "knowledge": "eduroam ne fonctionne pas sur mon ordinateur portable"
+  },
+  {
+    "id": "mem-09",
+    "question": "Le VPN refuse de se connecter quand je suis en télétravail",
+    "expect": "memory",
+    "knowledge": "Je n'arrive pas à me connecter au VPN depuis chez moi"
+  },
+  {
+    "id": "mem-10",
+    "question": "Un intervenant extérieur vient demain sur le campus, il lui faut le wifi",
+    "expect": "memory",
+    "knowledge": "Je suis invité sur le campus, comment obtenir un accès Wi-Fi temporaire ?"
+  },
+  {
+    "id": "mem-11",
+    "question": "Je voudrais imprimer depuis mon portable perso sur les copieurs de la fac",
+    "expect": "memory",
+    "knowledge": "Comment imprimer depuis mon ordinateur portable personnel sur les imprimantes de l'université ?"
+  },
+  {
+    "id": "mem-12",
+    "question": "Comment je rajoute de l'argent sur mon compte d'impression ?",
+    "expect": "memory",
+    "knowledge": "Comment recharger mon crédit d'impression étudiant ?"
+  },
+  {
+    "id": "mem-13",
+    "question": "Est-ce que je peux avoir Word et Excel gratuitement sur mon ordinateur à la maison ?",
+    "expect": "memory",
+    "knowledge": "Comment installer Microsoft Office sur mon ordinateur personnel ?"
+  },
+  {
+    "id": "mem-14",
+    "question": "Pour mon TP de machine learning il me faut Python avec numpy et scikit-learn, comment l'installer ?",
+    "expect": "memory",
+    "knowledge": "Comment installer Python et les bibliothèques pour mon TP de machine learning ?"
+  },
+  {
+    "id": "mem-15",
+    "question": "Matlab ne se lance plus, il me dit que la licence est invalide",
+    "expect": "memory",
+    "knowledge": "Le logiciel Matlab demande une licence et ne démarre plus"
+  },
+  {
+    "id": "mem-16",
+    "question": "Mon PC portable du travail ne s'allume plus du tout",
+    "expect": "memory",
+    "knowledge": "Mon ordinateur portable professionnel ne démarre plus"
+  },
+  {
+    "id": "mem-17",
+    "question": "Mon moniteur reste noir avec le message pas de signal",
+    "expect": "memory",
+    "knowledge": "L'écran de mon poste fixe affiche « pas de signal »"
+  },
+  {
+    "id": "mem-18",
+    "question": "Mon badge étudiant ne déverrouille plus la porte de la salle de TP",
+    "expect": "memory",
+    "knowledge": "Ma carte étudiante n'ouvre plus la porte de la salle de TP"
+  },
+  {
+    "id": "mem-19",
+    "question": "J'ai égaré ma carte multiservices",
+    "expect": "memory",
+    "knowledge": "J'ai perdu ma carte multiservices (badge), que dois-je faire ?"
+  },
+  {
+    "id": "mem-20",
+    "question": "Je suis inscrit mais le cours n'apparaît pas dans mon Moodle",
+    "expect": "memory",
+    "knowledge": "Je ne vois pas mon cours dans Moodle alors que je suis inscrit"
+  },
+  {
+    "id": "mem-21",
+    "question": "Moodle refuse le fichier de mon devoir quand je le dépose",
+    "expect": "memory",
+    "knowledge": "Je n'arrive pas à déposer mon devoir sur Moodle, le fichier est refusé"
+  },
+  {
+    "id": "mem-22",
+    "question": "Où est-ce que je peux récupérer une attestation de scolarité ?",
+    "expect": "memory",
+    "knowledge": "Comment télécharger mon certificat de scolarité ?"
+  },
+  {
+    "id": "mem-23",
+    "question": "J'ai effacé un document sur le partage réseau par erreur, est-il récupérable ?",
+    "expect": "memory",
+    "knowledge": "J'ai supprimé un fichier par erreur sur le lecteur réseau, peut-on le récupérer ?"
+  },
+  {
+    "id": "mem-24",
+    "question": "Je dois envoyer un fichier de 5 Go à un partenaire en dehors de l'université",
+    "expect": "memory",
+    "knowledge": "Comment partager un fichier volumineux avec un partenaire extérieur ?"
+  },
+  {
+    "id": "mem-25",
+    "question": "Des pop-ups de publicité s'ouvrent partout et mon ordinateur rame, c'est un virus ?",
+    "expect": "memory",
+    "knowledge": "Mon ordinateur est lent et affiche des fenêtres publicitaires, je pense avoir un virus"
+  },
+  {
+    "id": "mem-26",
+    "question": "J'arrive à l'université la semaine prochaine, comment est-ce que j'obtiens mes identifiants ?",
+    "expect": "memory",
+    "knowledge": "Je suis nouvel arrivant, comment obtenir mes identifiants ?"
+  },
+  {
+    "id": "mem-27",
+    "question": "J'ai ouvert un ticket il y a une semaine et personne ne m'a répondu",
+    "expect": "memory",
+    "knowledge": "Mon ticket est resté sans réponse depuis plusieurs jours, comment le relancer ?"
+  },
+  {
+    "id": "web-01",
+    "question": "Comment faire une capture d'écran sous Windows 11 ?",
+    "expect": "web"
+  },
+  {
+    "id": "web-02",
+    "question": "Dans Excel, comment figer la première ligne d'un tableau ?",
+    "expect": "web"
+  },
+  {
+    "id": "web-03",
+    "question": "Comment convertir un document Word en PDF ?",
+    "expect": "web"
+  },
+  {
+    "id": "web-04",
+    "question": "Mon clavier tape en QWERTY au lieu d'AZERTY, comment le remettre ?",
+    "expect": "web"
+  },
+  {
+    "id": "web-05",
+    "question": "Comment vider le cache de Google Chrome ?",
+    "expect": "web"
+  },
+  {
+    "id": "web-06",
+    "question": "Git affiche « Permission denied (publickey) » quand je clone un dépôt",
+    "expect": "web"
+  },
+  {
+    "id": "web-07",
+    "question": "Comment compresser un dossier en fichier zip sur un Mac ?",
+    "expect": "web"
+  },
+  {
+    "id": "web-08",
+    "question": "Comment installer Docker sur Ubuntu ?",
+    "expect": "web"
+  },
+  {
+    "id": "web-09",
+    "question": "La batterie de mon ordinateur portable se décharge très vite",
+    "expect": "web"
+  },
+  {
+    "id": "web-10",
+    "question": "Comment insérer une table des matières automatique dans Word ?",
+    "expect": "web"
+  },
+  {
+    "id": "web-11",
+    "question": "En LaTeX, comment insérer une image dans un document ?",
+    "expect": "web"
+  },
+  {
+    "id": "web-12",
+    "question": "Comment changer la langue de Windows en français ?",
+    "expect": "web"
+  },
+  {
+    "id": "web-13",
+    "question": "Comment récupérer un document Word non enregistré après un plantage ?",
+    "expect": "web"
+  },
+  {
+    "id": "web-14",
+    "question": "Comment fusionner plusieurs fichiers PDF en un seul ?",
+    "expect": "web"
+  },
+  {
+    "id": "handover-01",
+    "question": "Je veux parler à un technicien, pas à un robot.",
+    "expect": "handover"
+  },
+  {
+    "id": "handover-02",
+    "question": "Pouvez-vous venir installer un deuxième écran dans mon bureau 214 ?",
+    "expect": "handover"
+  },
+  {
+    "id": "handover-03",
+    "question": "Quelqu'un s'est connecté à mon compte depuis l'étranger cette nuit, j'ai reçu une alerte de connexion.",
+    "expect": "handover"
+  },
+  {
+    "id": "handover-04",
+    "question": "Merci de réinitialiser le mot de passe de mon collègue Paul Martin, il est absent.",
+    "expect": "handover"
+  },
+  {
+    "id": "handover-05",
+    "question": "Quand est-ce que ma bourse sera versée ce mois-ci ?",
+    "expect": "handover"
+  },
+  {
+    "id": "handover-06",
+    "question": "Supprimez mon compte et toutes mes données personnelles, s'il vous plaît.",
+    "expect": "handover"
+  }
+]

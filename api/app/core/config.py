@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -73,17 +73,34 @@ class Settings(DatabaseSettings):
     reranker_timeout_seconds: float = 30.0
 
     # Vector candidates sent to the reranker, then entries kept above the threshold
-    # (sigmoid of the reranker logit). 0.95 is logit 2.9: on the seed memory, expected
-    # entries score 4.3 or more, off-topic queries under 3.2.
+    # (sigmoid of the reranker logit). 0.985 is logit 4.18: on the seed memory, expected
+    # entries score 4.3 or more, off-topic queries under 3.2; in the 08/11 metrics campaign,
+    # every answer that cited the memory had a best score of 0.9895 or more.
     retrieval_candidates: int = Field(default=20, ge=1)
     retrieval_top_k: int = Field(default=3, ge=1)
-    rerank_threshold: float = Field(default=0.95, ge=0.0, le=1.0)
+    rerank_threshold: float = Field(default=0.985, ge=0.0, le=1.0)
     # Feedback weighting of the entries above the threshold: ranking score =
     # (1 - weight) * reranker score + weight * smoothed feedback score (0.5 without rating).
     feedback_weight: float = Field(default=0.3, ge=0.0, le=1.0)
     feedback_prior: float = Field(default=2.0, gt=0.0)
     # Age in days at which a rating counts half; empty = ratings never fade.
     feedback_half_life_days: float | None = Field(default=180.0, gt=0.0)
+    # Reuse in the same ranking score: + reuse_weight * reuse / (reuse + reuse_half), where
+    # reuse counts the answers posted to GLPI that cited the entry. The reranker keeps
+    # 1 - feedback_weight - reuse_weight.
+    reuse_weight: float = Field(default=0.1, ge=0.0, le=1.0)
+    reuse_half: float = Field(default=5.0, gt=0.0)
+    # A feedback write sends an active entry to review (no longer retrieved) once it has at
+    # least min_ratings ratings and a smoothed feedback score under the threshold (0 = never).
+    feedback_review_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
+    feedback_review_min_ratings: int = Field(default=3, ge=1)
+    # A validated answer that cited no memory entry becomes one: on the requester's
+    # "resolved" verdict, or a survey of the ticket at or above growth_survey_min_score.
+    memory_growth: bool = True
+    growth_survey_min_score: float = Field(default=0.8, ge=0.0, le=1.0)
+    # Cosine similarity, between the questions, from which a validated answer is linked to an
+    # existing active entry instead of becoming a new one (1 = only identical questions).
+    growth_dedup_similarity: float = Field(default=0.9, gt=0.0, le=1.0)
 
     # Exa web search; empty key = web search disabled.
     exa_api_key: SecretStr | None = None
@@ -125,6 +142,12 @@ class Settings(DatabaseSettings):
     @classmethod
     def _empty_as_none(cls, value: object) -> object:
         return None if value == "" else value
+
+    @model_validator(mode="after")
+    def _ranking_weights_leave_room_for_the_reranker(self) -> "Settings":
+        if self.feedback_weight + self.reuse_weight > 1:
+            raise ValueError("feedback_weight + reuse_weight must not exceed 1")
+        return self
 
     @field_validator("exa_include_domains", mode="before")
     @classmethod

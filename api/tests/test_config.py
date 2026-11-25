@@ -47,6 +47,14 @@ def test_empty_exa_api_key_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
         {"feedback_weight": 1.5},
         {"feedback_prior": 0},
         {"feedback_half_life_days": 0},
+        {"reuse_weight": -0.1},
+        {"reuse_half": 0},
+        {"feedback_weight": 0.6, "reuse_weight": 0.5},
+        {"feedback_review_threshold": 1.5},
+        {"feedback_review_min_ratings": 0},
+        {"growth_survey_min_score": 1.5},
+        {"growth_dedup_similarity": 0},
+        {"growth_dedup_similarity": 1.5},
     ],
 )
 def test_invalid_agent_settings_are_rejected(overrides: dict[str, object]) -> None:
@@ -85,3 +93,8 @@ def test_empty_metrics_settings_are_none(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_empty_feedback_half_life_never_fades(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FEEDBACK_HALF_LIFE_DAYS", "")
     assert _settings().feedback_half_life_days is None
+
+
+def test_default_rerank_threshold_keeps_every_entry_the_model_cited() -> None:
+    # Calibrated on the 08/11 metrics: the lowest best score of a memory-citing run was 0.9895.
+    assert _settings().rerank_threshold == 0.985

@@ -19,7 +19,7 @@ from app.api.deps import (
     require_api_key,
 )
 from app.schemas.ticket import AnswerSourcesRead, ProgressRead, SourceRead, VerdictCreate
-from app.services import answer, survey, verdict
+from app.services import answer, feedback, survey, verdict
 from app.services.embeddings import EmbeddingError
 from app.services.glpi import GlpiError
 from app.services.llm import LLMError
@@ -103,7 +103,14 @@ async def stream_ticket_answer(
         # `done` reloads the plugin's page, which then reads the sources from this row. The
         # followup is posted: the run is done even if the recording of it fails.
         try:
-            await survey.record_answer(session, ticket_id, followup_id, result)
+            await survey.record_answer(
+                session,
+                ticket_id,
+                followup_id,
+                result,
+                question=answer.ticket_question(ticket),
+                answer=answer.followup_text(result),
+            )
         finally:
             progress.done(ticket_id, followup_id)
         await answer.post_handover_note(glpi, ticket_id, result)
@@ -160,8 +167,14 @@ async def ticket_verdict(
     body: VerdictCreate,
     session: SessionDep,
     glpi: GlpiDep,
+    embedder: EmbedderDep,
+    settings: SettingsDep,
 ) -> None:
     """The requester's verdict on the bot's latest answer: `resolved` adds a private note and
     sets the ticket to Solved, `technician` adds a private note and hands the ticket over."""
-    if not await verdict.give_verdict(session, glpi, ticket_id, body.verdict):
+    review = feedback.ReviewPolicy.from_settings(settings)
+    grow = embedder if settings.memory_growth else None
+    if not await verdict.give_verdict(
+        session, glpi, ticket_id, body.verdict, review, grow, settings.growth_dedup_similarity
+    ):
         raise HTTPException(status.HTTP_409_CONFLICT, "No answer of the bot awaits a verdict")

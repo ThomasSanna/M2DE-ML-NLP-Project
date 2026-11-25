@@ -48,8 +48,10 @@ class MemoryHit(BaseModel):
     score: float
     # Smoothed feedback score in [0, 1]; None when the entry has no rating.
     feedback: float | None
-    # Ranking score: the reranker score blended with the feedback.
+    # Ranking score: the reranker score blended with the feedback and the reuse.
     weighted_score: float
+    # Answers posted to GLPI that cited the entry.
+    reuse_count: int
 
 
 class Usage(BaseModel):
