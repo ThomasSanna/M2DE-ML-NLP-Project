@@ -5,13 +5,18 @@ answer solved the problem (the ticket is then set to Solved) or whether the requ
 a technician (a handover: the bot never answers the ticket again).
 """
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import FeedbackSource, RequesterVerdict, TicketAnswer
-from app.services import feedback
+from app.services import feedback, growth
+from app.services.embeddings import Embedder, EmbeddingError
 from app.services.feedback import ReviewPolicy, TicketRating
 from app.services.glpi import Glpi, GlpiError
+
+logger = logging.getLogger(__name__)
 
 _NOTES = {
     RequesterVerdict.RESOLVED: "Le demandeur indique que la réponse de l'assistant a résolu son"
@@ -30,6 +35,7 @@ async def give_verdict(
     ticket_id: int,
     verdict: RequesterVerdict,
     review: ReviewPolicy | None = None,
+    embedder: Embedder | None = None,
 ) -> bool:
     """Record the verdict on the latest answer, tell the technicians in GLPI, then credit
     the entries that answer cited (feedback 1 for `resolved`, 0 for `technician`).
@@ -68,5 +74,13 @@ async def give_verdict(
     )
     if review is not None:
         await feedback.flag_for_review(session, changed, review)
+    if verdict is RequesterVerdict.RESOLVED and embedder is not None:
+        latest.validated = True
     await session.commit()
+    if latest.validated and embedder is not None:
+        try:
+            await growth.index_validated(session, embedder)
+        except EmbeddingError as exc:
+            # The answer stays validated: the survey sync indexes it on its next pass.
+            logger.warning("Indexing the answer resolved on ticket %d failed: %s", ticket_id, exc)
     return True

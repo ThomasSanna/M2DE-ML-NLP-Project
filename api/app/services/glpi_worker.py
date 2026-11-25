@@ -132,7 +132,14 @@ class GlpiEventWorker:
         # `done` reloads the plugin's page, which then reads the sources from this row. The
         # followup is posted: the run is done even if the recording of it fails.
         try:
-            await survey.record_answer(session, ticket_id, followup_id, result)
+            await survey.record_answer(
+                session,
+                ticket_id,
+                followup_id,
+                result,
+                question=answer.ticket_question(ticket),
+                answer=answer.followup_text(result),
+            )
         finally:
             self.progress.done(ticket_id, followup_id)
         await answer.post_handover_note(self.glpi, ticket_id, result)

@@ -109,6 +109,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 app.state.glpi,
                 settings.glpi_survey_poll_seconds,
                 ReviewPolicy.from_settings(settings),
+                app.state.embedder if settings.memory_growth else None,
+                settings.growth_survey_min_score,
             )
             stack.callback(asyncio.create_task(survey_sync.run()).cancel)
         yield

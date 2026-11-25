@@ -420,6 +420,26 @@ as above) under `FEEDBACK_REVIEW_THRESHOLD` goes to `to_review` (`services/feedb
   the database.
 - The flagged ids are logged at INFO. `FEEDBACK_REVIEW_THRESHOLD=0` disables the review.
 
+### Memory growth
+
+A validated answer that cited no memory entry becomes one (`services/growth.py`), so the
+next requester with the same problem gets it from the memory instead of the web.
+
+- Each followup the bot posts records the retrieval query (`ticket_answer.question`, the
+  first and last messages of the requester) and the text the requester read
+  (`ticket_answer.answer`, refs removed, web pages listed).
+- An answer is validated by the requester's `resolved` verdict, or by a survey of its ticket
+  at or above `GROWTH_SURVEY_MIN_SCORE` (the latest answer that was not a handover).
+- Only an answer that cited no memory entry is indexed: from the web or the model alone. One
+  that cited an entry would duplicate it; its feedback goes to that entry instead.
+- The new entry has `source = llm`, the ticket's `glpi_ticket_id`, and is `active` with no
+  rating: the weighting and the review then treat it like any other.
+- Indexing needs the embeddings server. A `resolved` verdict tries at once; on failure, or
+  for a survey, the survey task indexes the pending answers at its next pass (every
+  `GLPI_SURVEY_POLL_SECONDS`). Each answer is indexed once (`indexed_knowledge_id`), even if
+  its entry is deleted later.
+- `MEMORY_GROWTH=false` turns it off.
+
 ### Threshold calibration
 
 `RERANK_THRESHOLD` was 0.95 (logit 2.9). In the metrics of 08/11 (162 runs with memory
@@ -442,7 +462,7 @@ entries were off-topic: re-measure with a labelled evaluation set.
 
 **`feedback`** : un enregistrement par retour (`knowledge_id`, `source` (`user` / `technician` / `implicit` / `survey` / `verdict`), `score` ∈ [0, 1], `comment`, `glpi_ticket_id`, `created_at`). Rempli par la synchronisation des enquêtes de satisfaction (`source = survey`) et par le verdict du demandeur (`source = verdict`), chacun unique par ticket et entrée (`services/feedback.py`) ; non exposé par l'API.
 
-**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `verdict` = the requester's verdict from the plugin, `resolved` or `technician`, null until given, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
+**`ticket_answer`** : one row per bot followup posted to GLPI (`glpi_ticket_id`, `glpi_followup_id`, `knowledge_ids` = memory entries cited, `escalated` = the followup handed the ticket to a technician, `web_sources` = web pages cited, `{title, url}` once per URL, empty for a handover, `verdict` = the requester's verdict from the plugin, `resolved` or `technician`, null until given, `question` = the retrieval query, `answer` = the text the requester read, `validated` = resolved verdict or good survey, `indexed_knowledge_id` = the memory entry the answer became, `created_at`). Links a satisfaction survey back to the entries it rates, and feeds the plugin's sources pill (`app/services/survey.py`).
 
 **`glpi_event`** : `payload` (JSONB), `event`, `status` (`received` → `processing` → `done` / `failed`), `attempts`, `last_error`, `received_at`, `processed_at`. Consommée par le worker (`app/services/glpi_worker.py`).
 
@@ -474,6 +494,8 @@ Lue par `app/core/config.py` (environnement, et `.env` racine en local).
 | `REUSE_HALF` | `5` | citations at which the reuse score reaches 0.5 |
 | `FEEDBACK_REVIEW_THRESHOLD` | `0.3` | feedback score under which an entry goes to `to_review` (0 = never) |
 | `FEEDBACK_REVIEW_MIN_RATINGS` | `3` | ratings an entry needs before it can go to review |
+| `MEMORY_GROWTH` | `true` | validated answers that cited no memory entry become entries |
+| `GROWTH_SURVEY_MIN_SCORE` | `0.8` | survey score (rating / 5) at or above which the ticket's latest answer is validated |
 | `EXA_API_KEY` | empty | Exa key; empty = web search disabled |
 | `EXA_INCLUDE_DOMAINS` | empty | comma-separated domains web search is restricted to |
 | `EXA_NUM_RESULTS` | `3` | results per web search |
@@ -599,4 +621,4 @@ Les tests démarrent leur propre Postgres+pgvector jetable (testcontainers, Dock
 
 ## Non implémenté
 
-Garde-fous du pipeline LLM, routes de feedback, route de révision (remettre une entrée `to_review` en `active`). La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même.
+Garde-fous du pipeline LLM, routes de feedback, route de révision (remettre une entrée `to_review` en `active`). La pondération ne tient pas compte de la fraîcheur de l'entrée elle-même. Pas de déduplication des entrées apprises : deux tickets résolus sur le même problème donnent deux entrées.
